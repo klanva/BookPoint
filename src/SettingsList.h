@@ -311,6 +311,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                            "wifiAutoOffMinutes", StrId::STR_CAT_SYSTEM),
         SettingInfo::Toggle(StrId::STR_BATTERY_LOG, &CrossPointSettings::batteryLogEnabled, "batteryLogEnabled",
                             StrId::STR_CAT_SYSTEM),
+        // Time. Works on both device classes: X3 via the DS3231 RTC, X4 via
+        // the NTP-set software clock.
+        SettingInfo::Enum(StrId::STR_CLOCK_FORMAT, &CrossPointSettings::clockFormat,
+                          {StrId::STR_CLOCK_FORMAT_24H, StrId::STR_CLOCK_FORMAT_12H}, "clockFormat",
+                          StrId::STR_CAT_SYSTEM),
+        SettingInfo::Action(StrId::STR_CLOCK_UTC_OFFSET, SettingAction::ClockUtcOffset),
+        SettingInfo::Action(StrId::STR_CLOCK_SYNC, SettingAction::ClockSync),
+        SettingInfo::Action(StrId::STR_DICT_DOWNLOAD, SettingAction::DictionaryDownload),
         // --- Controls ---
         SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
                           {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED}, "sideButtonLayout",

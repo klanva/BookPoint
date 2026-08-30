@@ -8,23 +8,28 @@
 // reader can render it at the bottom of the referencing page ("paper style"
 // footnotes).
 //
-// The target element is located by its id/anchor inside the referenced chapter
-// file. Files are streamed from the EPUB archive in small chunks — a huge
-// notes chapter costs a scan pass, not a RAM buffer. Text inside the target
-// element is tag-stripped, entity-decoded, and whitespace-collapsed; extraction
-// stops early once the caller's byte cap is reached.
+// The target element is located by its id/xml:id/name anchor inside the
+// referenced chapter file, and everything up to that element's closing tag is
+// captured. Files are streamed from the EPUB archive in small chunks, so a
+// huge notes chapter costs one scan pass, not a RAM buffer. The text is
+// tag-stripped, entity-decoded, and whitespace-collapsed; extraction stops at
+// the caller's byte cap (safely, at a UTF-8 boundary).
+//
+// `label` is the reference label as shown in the text (e.g. "[14]"). When the
+// captured note starts with the same number (books like royallib put a
+// number-only block first), that leading number is dropped so it is not
+// printed twice.
 namespace FootnoteTextExtractor {
 
-// Returns the decoded plain text of the element with the given href target
-// (e.g. "notes.html#n12" or "#n12" — relative to the current chapter).
-// Returns an empty string when the target cannot be resolved or contains no
-// text. maxBytes caps the returned UTF-8 payload (safely at UTF-8 boundaries).
-std::string extract(const Epub& epub, int currentSpineIndex, const std::string& href, size_t maxBytes = 768);
+std::string extract(const Epub& epub, int currentSpineIndex, const std::string& href, size_t maxBytes = 768,
+                    const char* label = nullptr);
 
-// Small fixed-size per-session cache keyed by href, so flipping back and
-// forth between pages does not rescan the notes file. Bounded: oldest entries
-// are dropped once the cache exceeds capacity.
-std::string extractCached(const Epub& epub, int currentSpineIndex, const std::string& href, size_t maxBytes = 768);
+// Same, with a small fixed-size per-session cache keyed by href, so flipping
+// back and forth between pages does not rescan the notes file. Bounded: the
+// oldest entries are dropped once the cache exceeds capacity.
+std::string extractCached(const Epub& epub, int currentSpineIndex, const std::string& href, size_t maxBytes = 768,
+                          const char* label = nullptr);
+
 void clearCache();
 
 }  // namespace FootnoteTextExtractor

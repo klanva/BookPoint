@@ -3,6 +3,7 @@
 #include <Logging.h>
 
 #include <cctype>
+#include <cstring>
 #include <deque>
 
 namespace {
@@ -76,21 +77,26 @@ void decodeEntities(const std::string& in, std::string& out) {
   }
 }
 
-bool isInlineTagName(const std::string& name) {
-  return name == "a" || name == "span" || name == "b" || name == "i" || name == "em" || name == "strong" ||
-         name == "sup" || name == "sub" || name == "small" || name == "u" || name == "s" || name == "code" ||
-         name == "cite" || name == "q" || name == "font" || name == "big";
+bool isVoidTagName(const std::string& name) {
+  return name == "br" || name == "hr" || name == "img" || name == "input" || name == "meta" || name == "link" ||
+         name == "col" || name == "area" || name == "base" || name == "embed" || name == "source" ||
+         name == "track" || name == "wbr";
 }
 
-// Streams the target item and captures the readable text around the element
-// whose opening tag carries id="<anchor>".
+// Streams the target item and captures everything inside the element whose
+// opening tag carries a matching id/xml:id/name attribute.
 //
-// Real-world notes come in two shapes and both are handled:
-//   <a id="n14">text</a>                 (text inside the anchor)
-//   <p><a id="n14"></a> text ... </p>    (empty anchor, text follows it)
-// Capture runs from the anchor tag until the first block-level tag (paragraph,
-// table cell, heading, div), so one note never bleeds into the next. Inline
-// tags (b, i, sup, span, ...) are stripped but their text is kept.
+// Capture runs until that element's own closing tag (same-name depth
+// counting), so whatever the surrounding markup looks like, the whole note
+// is taken and nothing beyond it. Books structure the note differently and
+// all of these end up correct:
+//   <a id="n14">text</a>                                  (text in the anchor)
+//   <p><a id="n14"></a> text ...</p>                      (empty anchor first)
+//   <span id="id17"><div>14</div><p>text</p></span>       (royallib style:
+//     a leading block that holds just the note number, stripped later by the
+//     caller when it matches the footnote label)
+//
+// Chunk boundaries are bridged internally; capture stops at the byte cap.
 class AnchorScanner : public Print {
  public:
   explicit AnchorScanner(std::string anchor, const size_t maxBytes)
@@ -118,12 +124,35 @@ class AnchorScanner : public Print {
         if (buf_.size() > SEARCH_TAIL) buf_.erase(0, buf_.size() - SEARCH_TAIL);
         return;
       }
-      const size_t tagEnd = buf_.find('>', found);
+      // Extract the anchor element's name and find where its opening tag ends.
+      const size_t nameStart = found + 1;
+      size_t nameEnd = nameStart;
+      while (nameEnd < buf_.size() && !isspace(static_cast<unsigned char>(buf_[nameEnd])) &&
+             buf_[nameEnd] != '>' && buf_[nameEnd] != '/') {
+        nameEnd++;
+      }
+      if (nameEnd >= buf_.size()) {
+        buf_.erase(0, found);  // tag still streaming in
+        return;
+      }
+      tagName_ = buf_.substr(nameStart, nameEnd - nameStart);
+      const size_t tagEnd = buf_.find('>', nameEnd);
       if (tagEnd == std::string::npos) {
         buf_.erase(0, found);  // opening tag still streaming in
         return;
       }
-      state_ = CAPTURING;
+      const bool selfClosing = buf_[tagEnd - 1] == '/';
+      if (selfClosing || isVoidTagName(tagName_)) {
+        // No element body (e.g. <a id="n14"/>): the note lives outside this
+        // tag. depth 0 disables the close-tag check, so capture runs until
+        // the byte cap while skipping over same-name tags.
+        state_ = CAPTURING;
+        depth_ = 0;
+        bodyOnly_ = true;
+      } else {
+        state_ = CAPTURING;
+        depth_ = 1;
+      }
       pos_ = tagEnd + 1;
     }
 
@@ -136,10 +165,10 @@ class AnchorScanner : public Print {
     buf_.shrink_to_fit();
   }
 
-  // Locates the opening tag whose id/xml:id attribute matches the anchor.
-  // Returns the offset of that tag's '<', or npos.
+  // Locates the opening tag whose id/xml:id/name attribute matches the
+  // anchor. Returns the offset of that tag's '<', or npos.
   size_t findAnchorStart() const {
-    static const char* patterns[] = {"id=\"", "id='", "xml:id=\"", "xml:id='"};
+    static const char* patterns[] = {"id=\"", "id='", "xml:id=\"", "xml:id='", "name=\"", "name='"};
     for (const char* pat : patterns) {
       const std::string p = pat;
       size_t pos = 0;
@@ -160,7 +189,14 @@ class AnchorScanner : public Print {
         if (close == std::string::npos) {
           break;  // value still streaming in; retry with more data
         }
-        if (buf_.compare(valueStart, close - valueStart, anchor_) == 0) {
+        size_t vBegin = valueStart;
+        size_t vEnd = close;
+        while (vBegin < vEnd && isspace(static_cast<unsigned char>(buf_[vBegin]))) vBegin++;
+        while (vEnd > vBegin && isspace(static_cast<unsigned char>(buf_[vEnd - 1]))) vEnd--;
+        const bool match = buf_.compare(vBegin, vEnd - vBegin, anchor_) == 0 ||
+                           (anchor_.size() == static_cast<size_t>(vEnd - vBegin) &&
+                            strncasecmp(buf_.c_str() + vBegin, anchor_.c_str(), anchor_.size()) == 0);
+        if (match) {
           const size_t tagStart = buf_.rfind('<', pos);
           if (tagStart != std::string::npos) return tagStart;
         }
@@ -170,8 +206,9 @@ class AnchorScanner : public Print {
     return std::string::npos;
   }
 
-  // Consumes text from pos until a block boundary or the byte cap.
-  // Returns true when finished (done_ set), false when more data is needed.
+  // Consumes text from pos until the anchor element closes or the byte cap
+  // is reached. Returns true when finished (done_ set), false when more
+  // data is needed.
   bool captureFrom(size_t pos) {
     std::string textChunk;
     while (pos < buf_.size()) {
@@ -200,12 +237,17 @@ class AnchorScanner : public Print {
       const std::string name =
           tag.substr(nameOff, nameEnd == std::string::npos ? std::string::npos : nameEnd - nameOff);
 
-      if (!isInlineTagName(name)) {
-        // First block-level tag after the anchor: the note ends here. The
-        // anchor's own container close (</p> and friends) lands here too.
-        flushText(textChunk);
-        finish();
-        return true;
+      if (!bodyOnly_ && !name.empty() && strcasecmp(name.c_str(), tagName_.c_str()) == 0) {
+        if (closing) {
+          depth_--;
+          if (depth_ <= 0) {
+            flushText(textChunk);
+            finish();
+            return true;
+          }
+        } else if (tag.back() != '/' && !isVoidTagName(name)) {
+          depth_++;
+        }
       }
 
       if (out_.size() >= maxBytes_) {
@@ -259,10 +301,38 @@ class AnchorScanner : public Print {
   size_t maxBytes_;
   std::string buf_;
   std::string out_;
+  std::string tagName_;
   enum State : uint8_t { SEEKING, CAPTURING } state_ = SEEKING;
+  int depth_ = 0;
+  bool bodyOnly_ = false;
   size_t pos_ = 0;
   bool done_ = false;
 };
+
+// Strips a leading note number that repeats the reference label, e.g.
+// label "[14]" drops the "14" from "14 Вист — карточная игра.".
+std::string stripLeadingLabel(const std::string& text, const char* label) {
+  if (label == nullptr) return text;
+  std::string digits;
+  for (const char* p = label; *p != '\0'; ++p) {
+    if (*p >= '0' && *p <= '9') digits += *p;
+  }
+  if (digits.empty()) return text;
+
+  size_t pos = 0;
+  while (pos < text.size() && isspace(static_cast<unsigned char>(text[pos]))) pos++;
+  const size_t digitStart = pos;
+  while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9') pos++;
+  if (pos == digitStart) return text;  // no leading number
+  if (text.compare(digitStart, pos - digitStart, digits) != 0) return text;
+  // Optional separators right after the number: ". )" "- " etc.
+  while (pos < text.size() &&
+         (text[pos] == '.' || text[pos] == ')' || text[pos] == '-' || text[pos] == ':' ||
+          isspace(static_cast<unsigned char>(text[pos])))) {
+    pos++;
+  }
+  return text.substr(pos);
+}
 
 }  // namespace
 
@@ -275,7 +345,8 @@ std::deque<std::pair<std::string, std::string>> s_cache;
 
 void clearCache() { s_cache.clear(); }
 
-std::string extract(const Epub& epub, const int currentSpineIndex, const std::string& href, const size_t maxBytes) {
+std::string extract(const Epub& epub, const int currentSpineIndex, const std::string& href, const size_t maxBytes,
+                    const char* label) {
   if (href.empty()) return {};
 
   std::string filePart;
@@ -302,40 +373,21 @@ std::string extract(const Epub& epub, const int currentSpineIndex, const std::st
   const std::string targetItem = epub.getSpineItem(targetSpine).href;
   if (targetItem.empty()) return {};
 
-  // Small chunks keep allocations bounded; allowEarlyStop lets the stream
-  // reader abandon the rest of a huge notes file once we are done.
+  // Small chunks keep allocations bounded; allowEarlyStop never fires (the
+  // scanner consumes the whole stream) but costs nothing.
   AnchorScanner scanner(anchor, maxBytes);
   epub.readItemContentsToStream(targetItem, scanner, 512, /*allowEarlyStop=*/true);
-  if (!scanner.result().empty()) return scanner.result();
-
-  // Some books percent-encode anchors inside hrefs. Retry with the decoded
-  // form when it differs.
-  std::string decoded;
-  for (size_t i = 0; i < anchor.size(); ++i) {
-    if (anchor[i] == '%' && i + 2 < anchor.size() && isxdigit(static_cast<unsigned char>(anchor[i + 1])) &&
-        isxdigit(static_cast<unsigned char>(anchor[i + 2]))) {
-      const auto hexVal = [](const char c) {
-        return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10;
-      };
-      decoded += static_cast<char>(hexVal(anchor[i + 1]) * 16 + hexVal(anchor[i + 2]));
-      i += 2;
-    } else {
-      decoded += anchor[i];
-    }
-  }
-  if (decoded == anchor || decoded.empty()) return scanner.result();
-  AnchorScanner retry(decoded, maxBytes);
-  epub.readItemContentsToStream(targetItem, retry, 512, /*allowEarlyStop=*/true);
-  return retry.result();
+  if (scanner.result().empty()) return std::string();
+  return stripLeadingLabel(scanner.result(), label);
 }
 
 std::string extractCached(const Epub& epub, const int currentSpineIndex, const std::string& href,
-                          const size_t maxBytes) {
+                          const size_t maxBytes, const char* label) {
   for (auto& entry : s_cache) {
     if (entry.first == href) return entry.second;
   }
 
-  const std::string text = extract(epub, currentSpineIndex, href, maxBytes);
+  const std::string text = extract(epub, currentSpineIndex, href, maxBytes, label);
   if (!text.empty()) {
     if (s_cache.size() >= CACHE_CAPACITY) s_cache.pop_back();
     s_cache.emplace_front(href, text);

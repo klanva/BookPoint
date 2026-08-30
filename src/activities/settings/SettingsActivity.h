@@ -25,6 +25,9 @@ enum class SettingAction {
   DownloadFonts,
   TextSettings,
   ReadingStats,
+  ClockUtcOffset,
+  ClockSync,
+  DictionaryDownload,
 };
 
 struct SettingInfo {

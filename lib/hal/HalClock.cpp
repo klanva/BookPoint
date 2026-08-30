@@ -13,7 +13,17 @@ void HalClock::begin() {
 }
 
 bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
-  if (!_available) return false;
+  if (!_available) {
+    // No hardware RTC: read the system clock set by NTP sync (software
+    // clock). Same counter getDateTime() uses, zero power cost.
+    const time_t now = time(nullptr);
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+    if (timeinfo.tm_year + 1900 < 2020) return false;
+    hour = static_cast<uint8_t>(timeinfo.tm_hour);
+    minute = static_cast<uint8_t>(timeinfo.tm_min);
+    return true;
+  }
 
   const unsigned long now = millis();
   if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {

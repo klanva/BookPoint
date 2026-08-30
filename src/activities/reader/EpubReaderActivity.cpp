@@ -1781,36 +1781,44 @@ void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int st
   if (footnoteStripHeight <= 0 || currentPageFootnotes.empty() || !epub || contentWidth <= 40) return;
 
   const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
-  int y = stripTop;
-  renderer.drawLine(contentLeft, y, contentLeft + contentWidth, y, true);
-  y += CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + 2;
-
   const size_t maxEntries = std::min<size_t>(currentPageFootnotes.size(), 3);
   int linesLeft = CrossPointSettings::FOOTNOTE_STRIP_MAX_LINES;
   const int linesPerEntry = std::max(1, static_cast<int>(maxEntries) > 0 ? linesLeft / static_cast<int>(maxEntries)
                                                                          : linesLeft);
 
+  // Resolve and wrap first; the separator is only drawn when at least one
+  // note actually rendered, so a failed extraction never looks like a broken
+  // empty box.
+  std::vector<std::string> drawLines;
+  std::vector<std::string> drawLabels;
   for (size_t i = 0; i < maxEntries && linesLeft > 0; ++i) {
     const auto& fn = currentPageFootnotes[i];
-    const std::string body = FootnoteTextExtractor::extractCached(*epub, currentSpineIndex, fn.href);
+    const std::string body = FootnoteTextExtractor::extractCached(*epub, currentSpineIndex, fn.href, 768, fn.number);
     if (body.empty()) continue;
 
     const int useLines = std::min(linesPerEntry, linesLeft);
     std::vector<std::string> lines = renderer.wrappedText(UI_10_FONT_ID, body.c_str(), contentWidth - 20, useLines);
-    if (lines.empty()) continue;
-
-    std::string label = std::string(fn.number[0] ? fn.number : "*") + " ";
-    renderer.drawText(UI_10_FONT_ID, contentLeft, y, label.c_str());
-
-    int rowY = y;
-    const int textX = contentLeft + 18;
+    bool firstOfEntry = true;
     for (const auto& line : lines) {
       if (linesLeft <= 0) break;
-      renderer.drawText(UI_10_FONT_ID, textX, rowY, line.c_str());
-      rowY += lineHeight;
+      drawLines.push_back(line);
+      drawLabels.push_back(firstOfEntry ? std::string(fn.number[0] ? fn.number : "*") : std::string());
+      firstOfEntry = false;
       linesLeft--;
     }
-    y = rowY;
+  }
+  if (drawLines.empty()) return;
+
+  int y = stripTop;
+  renderer.drawLine(contentLeft, y, contentLeft + contentWidth, y, true);
+  y += CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + 2;
+  const int textX = contentLeft + 18;
+  for (size_t i = 0; i < drawLines.size(); ++i) {
+    if (!drawLabels[i].empty()) {
+      renderer.drawText(UI_10_FONT_ID, contentLeft, y, drawLabels[i].c_str());
+    }
+    renderer.drawText(UI_10_FONT_ID, textX, y, drawLines[i].c_str());
+    y += lineHeight;
   }
 }
 

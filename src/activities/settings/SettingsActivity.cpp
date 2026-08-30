@@ -12,6 +12,9 @@
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
 #include "ReadingStatsActivity.h"
+#include "ClockOffsetActivity.h"
+#include "ClockSyncActivity.h"
+#include "DictionaryDownloadActivity.h"
 #include "CrossPointSettings.h"
 #include "FontDownloadActivity.h"
 #include "KOReaderSettingsActivity.h"
@@ -337,6 +340,15 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::ReadingStats:
         startActivityForResult(std::make_unique<ReadingStatsActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::ClockUtcOffset:
+        startActivityForResult(std::make_unique<ClockOffsetActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::ClockSync:
+        startActivityForResult(std::make_unique<ClockSyncActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::DictionaryDownload:
+        startActivityForResult(std::make_unique<DictionaryDownloadActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::CheckForUpdates:
         startActivityForResult(std::make_unique<OtaUpdateActivity>(renderer, mappedInput), resultHandler);
