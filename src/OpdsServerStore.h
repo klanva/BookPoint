@@ -36,6 +36,11 @@ class OpdsServerStore : public PersistableStore<OpdsServerStore> {
   bool updateServer(size_t index, const OpdsServer& server);
   bool removeServer(size_t index);
 
+  // One-time population with well-known public catalogs (Flibusta mirrors +
+  // Project Gutenberg) on a fresh installation. Runs whenever the saved list
+  // is empty; existing user entries are never touched.
+  void seedDefaults();
+
   const std::vector<OpdsServer>& getServers() const { return servers; }
   const OpdsServer* getServer(size_t index) const;
   size_t getCount() const { return servers.size(); }

@@ -45,6 +45,34 @@ bool OpdsServerStore::fromJson(JsonVariantConst doc) {
   return true;
 }
 
+void OpdsServerStore::seedDefaults() {
+  // Mirrors are included deliberately: availability of the primary domain
+  // varies by ISP, and a working mirror beats a dead default.
+  const OpdsServer defaults[] = {
+      {"Flibusta", "http://flibusta.is/opds", "", ""},
+      {"Flibusta mirror", "http://flibusta.site/opds", "", ""},
+      {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/", "", ""},
+  };
+  bool changed = false;
+  for (const auto& d : defaults) {
+    bool exists = false;
+    for (const auto& s : servers) {
+      if (s.url == d.url) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists && servers.size() < MAX_SERVERS) {
+      servers.push_back(d);
+      changed = true;
+    }
+  }
+  if (changed) {
+    LOG_INF("OPS", "Seeded default OPDS catalogs");
+    saveToFile();
+  }
+}
+
 bool OpdsServerStore::addServer(const OpdsServer& server) {
   if (servers.size() >= MAX_SERVERS) {
     LOG_DBG("OPS", "Cannot add more servers, limit of %zu reached", MAX_SERVERS);
