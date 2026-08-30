@@ -495,6 +495,17 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+  // Power normally turns pages when that is its remapped role, but inside a
+  // footnote returning matters more: the next press goes back to the reading
+  // position instead of paging through the notes (Back still works too).
+  if (footnoteDepth > 0 && SETTINGS.pwrBtnFootnoteBack &&
+      SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN &&
+      mappedInput.wasReleased(MappedInputManager::Button::Power) &&
+      !mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+    restoreSavedPosition();
+    return;
+  }
+
   if (handleBackNavigation()) {
     return;
   }

@@ -76,9 +76,15 @@ bool isVoidElementName(const std::string& name) {
          name == "track" || name == "wbr";
 }
 
-// Streams the target item and captures the text content of the element whose
-// opening tag carries id="<anchor>". Chunk boundaries are bridged by keeping a
-// carry window; capture stops early at the byte cap.
+// Streams the target item and captures the readable text around the element
+// whose opening tag carries id="<anchor>".
+//
+// Real-world notes are authored in two shapes and this handles both:
+//   <a id="n14">text</a>              (text inside the anchor)
+//   <p><a id="n14"></a> text...</p>   (empty anchor, text follows it)
+// Capture runs from the anchor tag until the first block-level boundary
+// (paragraph/table cell/heading/div), so the note never bleeds into the next
+// one. Inline tags (b, i, sup, span...) are stripped but their text is kept.
 class AnchorScanner : public Print {
  public:
   explicit AnchorScanner(std::string anchor, const size_t maxBytes)
@@ -97,81 +103,69 @@ class AnchorScanner : public Print {
   bool done() const { return done_; }
 
  private:
-  static constexpr size_t CARRY = 512;   // bytes kept unprocessed across chunks
-  static constexpr size_t SEARCH_TAIL = 1024;
+  static constexpr size_t SEARCH_TAIL = 1024;  // bytes kept while hunting the anchor
 
   void process() {
-    size_t pos = 0;
-
     if (state_ == SEEKING) {
       const size_t found = findAnchorStart();
       if (found == std::string::npos) {
-        // Keep only the tail: an id attribute split across reads.
         if (buf_.size() > SEARCH_TAIL) buf_.erase(0, buf_.size() - SEARCH_TAIL);
         return;
       }
-      if (!beginCapture(found)) {
-        // Opening tag split across reads — keep from the tag start and retry
-        // with more data.
-        buf_.erase(0, found);
+      const size_t tagEnd = buf_.find('>', found);
+      if (tagEnd == std::string::npos) {
+        buf_.erase(0, found);  // opening tag still streaming in
         return;
       }
-      pos = capturePos_;
+      state_ = CAPTURING;
+      pos_ = tagEnd + 1;
     }
 
-    if (state_ == CAPTURING) {
-      if (!captureFrom(pos)) {
-        // Drop everything already consumed so a long notes file cannot grow
-        // the buffer while we stream toward the anchor element.
-        buf_.erase(0, capturePos_);
-        capturePos_ = 0;
-        return;
-      }
+    if (!captureFrom(pos_)) {
+      buf_.erase(0, pos_);
+      pos_ = 0;
+      return;
     }
-
-    // Only reached when done_.
     buf_.clear();
     buf_.shrink_to_fit();
   }
 
-  // Locates the opening tag whose id attribute matches. Returns the offset of
-  // '<' for that tag, or npos.
+  // Locates the opening tag whose id/xml:id attribute matches the anchor.
+  // Returns the offset of that tag's '<', or npos.
   size_t findAnchorStart() const {
-    static const char* patterns[] = {"id=\"", "id='", "id="};
+    static const char* patterns[] = {"id=\"",
+                                     "id='",
+                                     "id=",
+                                     "xml:id=\"",
+                                     "xml:id='"};
     size_t best = std::string::npos;
     for (const char* pat : patterns) {
-      size_t pos = 0;
       const std::string p = pat;
+      size_t pos = 0;
       while ((pos = buf_.find(p, pos)) != std::string::npos) {
-        // Attribute position sanity: preceded by whitespace or tag start.
         const bool boundaryOk = pos == 0 || isspace(static_cast<unsigned char>(buf_[pos - 1])) || buf_[pos - 1] == '<';
         const size_t valueStart = pos + p.size();
-        if (boundaryOk && valueStart < buf_.size()) {
-          const char quote = buf_[valueStart];
-          const bool quoted = quote == '"' || quote == '\'';
-          size_t valueEnd;
-          if (quoted) {
-            const size_t close = buf_.find(quote, valueStart + 1);
-            if (close == std::string::npos) {
-              pos = valueStart;
-              continue;  // value still streaming; retry next chunk
-            }
-            valueEnd = close;
-          } else {
-            valueEnd = buf_.find_first_of(" \t\r\n>", valueStart);
-            if (valueEnd == std::string::npos) {
-              pos = valueStart;
-              continue;
-            }
-          }
-          if (buf_.compare(valueStart, valueEnd - valueStart, anchor_) == 0) {
-            // Walk back to the '<' that opens this tag.
-            const size_t tagStart = buf_.rfind('<', pos);
-            if (tagStart != std::string::npos && (best == std::string::npos || tagStart < best)) best = tagStart;
-            break;
-          }
+        if (!boundaryOk || valueStart >= buf_.size()) {
           pos = valueStart;
           continue;
+        }
+        const char quote = buf_[valueStart];
+        const bool quoted = quote == '"' || quote == ''';
+        size_t valueEnd;
+        if (quoted) {
+          const size_t close = buf_.find(quote, valueStart + 1);
+          if (close == std::string::npos) {
+            break;  // value still streaming; retry with more data
+          }
+          valueEnd = close;
+        } else {
+          valueEnd = buf_.find_first_of(" 	
+>", valueStart);
+          if (valueEnd == std::string::npos) break;
+        }
+        if (buf_.compare(valueStart, valueEnd - valueStart, anchor_) == 0) {
+          const size_t tagStart = buf_.rfind('<', pos);
+          if (tagStart != std::string::npos) return tagStart;
         }
         pos = valueStart;
       }
@@ -179,36 +173,14 @@ class AnchorScanner : public Print {
     return best;
   }
 
-  // Sets up the capture state from the anchor tag start. Returns false when
-  // the opening tag has not fully arrived yet.
-  bool beginCapture(const size_t tagStart) {
-    const size_t nameStart = tagStart + 1;
-    if (nameStart >= buf_.size()) return false;
-    size_t nameEnd = nameStart;
-    while (nameEnd < buf_.size() && !isspace(static_cast<unsigned char>(buf_[nameEnd])) && buf_[nameEnd] != '>' &&
-           buf_[nameEnd] != '/') {
-      nameEnd++;
-    }
-    if (nameEnd >= buf_.size()) return false;
-    tagName_ = buf_.substr(nameStart, nameEnd - nameStart);
-
-    const size_t tagEnd = buf_.find('>', nameEnd);
-    if (tagEnd == std::string::npos) return false;
-
-    // Self-closing or void elements have no text body to capture; treat as
-    // immediately done with empty text (caller falls back to the list view).
-    const bool selfClosing = buf_[tagEnd - 1] == '/';
-    if (selfClosing || isVoidElementName(tagName_)) {
-      done_ = true;
-      return true;
-    }
-
-    depth_ = 1;
-    state_ = CAPTURING;
-    capturePos_ = tagEnd + 1;
-    return true;
+  static bool isInlineTagName(const std::string& name) {
+    return name == "a" || name == "span" || name == "b" || name == "i" || name == "em" || name == "strong" ||
+           name == "sup" || name == "sub" || name == "small" || name == "u" || name == "s" || name == "code" ||
+           name == "cite" || name == "q" || name == "font" || name == "big";
   }
 
+  // Consumes text from pos_ until a block boundary or the byte cap.
+  // Returns true when finished (done_ set), false when more data is needed.
   bool captureFrom(size_t pos) {
     std::string textChunk;
     while (pos < buf_.size()) {
@@ -220,32 +192,35 @@ class AnchorScanner : public Print {
       }
       textChunk.append(buf_, pos, lt - pos);
 
-      // Find the end of this tag; wait for it when still streaming.
       const size_t tagEnd = buf_.find('>', lt);
       if (tagEnd == std::string::npos) {
-        pos = lt;
+        pos = lt;  // tag still streaming in
         break;
       }
       const std::string tag = buf_.substr(lt + 1, tagEnd - lt - 1);
-      if (!tag.empty() && tag[0] == '/') {
-        // Closing tag: matching name closes the target element.
-        if (tag.size() > 1 && tag.compare(1, std::string::npos, tagName_) == 0) {
-          depth_--;
-          if (depth_ == 0) {
-            pos = tagEnd + 1;
-            capturePos_ = pos;
-            flushText(textChunk);
-            finish();
-            return true;
-          }
-        }
-      } else if (!tag.empty() && tag.back() != '/') {
-        // Opening tag: same-name tags nest (li, div, section, td...).
-        size_t nameEnd = tag.find_first_of(" \t\r\n");
-        const std::string name = nameEnd == std::string::npos ? tag : tag.substr(0, nameEnd);
-        if (name == tagName_ && !isVoidElementName(name)) {
-          depth_++;
-        }
+      if (tag.empty()) {
+        pos = tagEnd + 1;
+        continue;
+      }
+      // Comment or declaration: skip whole construct once it has arrived.
+      if (tag[0] == '!' || tag[0] == '?') {
+        pos = tagEnd + 1;
+        continue;
+      }
+
+      size_t nameEnd = tag.find_first_of(" 	
+/");
+      const std::string name = nameEnd == std::string::npos ? tag : tag.substr(0, nameEnd);
+      const bool closing = tag[0] == '/';
+      const std::string cleanName = closing ? name : name;
+
+      if (!isInlineTagName(cleanName)) {
+        // First block-level tag after the anchor: the note ends here. The
+        // anchor's own container close (</p> and friends) lands here too.
+        pos = tagEnd + 1;
+        flushText(textChunk);
+        finish();
+        return true;
       }
       pos = tagEnd + 1;
 
@@ -255,7 +230,7 @@ class AnchorScanner : public Print {
         return true;
       }
     }
-    capturePos_ = pos;
+    pos_ = pos;
     flushText(textChunk);
     if (out_.size() >= maxBytes_) {
       finish();
@@ -268,19 +243,19 @@ class AnchorScanner : public Print {
     if (raw.empty()) return;
     decodeEntities(raw, out_);
     if (out_.size() > maxBytes_ + 64) {
-      // Overshoot guard while streaming; final clamp happens in finish().
-      out_.resize(maxBytes_ + 64);
+      out_.resize(maxBytes_ + 64);  // overshoot guard; final clamp in finish()
     }
   }
 
   void finish() {
     done_ = true;
-    // Collapse whitespace runs and trim.
     std::string collapsed;
     collapsed.reserve(out_.size());
     bool inSpace = false;
     for (const char c : out_) {
-      if (c == ' ' || c == '\r' || c == '\n' || c == '\t') {
+      if (c == ' ' || c == '
+' || c == '
+' || c == '	') {
         inSpace = true;
         continue;
       }
@@ -302,10 +277,8 @@ class AnchorScanner : public Print {
   size_t maxBytes_;
   std::string buf_;
   std::string out_;
-  std::string tagName_;
   enum State : uint8_t { SEEKING, CAPTURING } state_ = SEEKING;
-  int depth_ = 0;
-  size_t capturePos_ = 0;
+  size_t pos_ = 0;
   bool done_ = false;
 };
 
@@ -351,7 +324,27 @@ std::string extract(const Epub& epub, const int currentSpineIndex, const std::st
   // Small chunks: bounded allocations, and allowEarlyStop lets the stream
   // reader abandon the rest of a huge notes file once we are done.
   epub.readItemContentsToStream(targetItem, scanner, 512, /*allowEarlyStop=*/true);
-  return scanner.result();
+  if (!scanner.result().empty()) return scanner.result();
+
+  // Some books percent-encode anchors in hrefs (n%311 and friends). Retry
+  // once with the decoded form when it differs.
+  std::string decoded;
+  for (size_t i = 0; i < anchor.size(); ++i) {
+    if (anchor[i] == '%' && i + 2 < anchor.size() && isxdigit(static_cast<unsigned char>(anchor[i + 1])) &&
+        isxdigit(static_cast<unsigned char>(anchor[i + 2]))) {
+      const auto hex = [](const char c) {
+        return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10;
+      };
+      decoded += static_cast<char>(hex(anchor[i + 1]) * 16 + hex(anchor[i + 2]));
+      i += 2;
+    } else {
+      decoded += anchor[i];
+    }
+  }
+  if (decoded == anchor || decoded.empty()) return scanner.result();
+  AnchorScanner scanner2(decoded, maxBytes);
+  epub.readItemContentsToStream(targetItem, scanner2, 512, /*allowEarlyStop=*/true);
+  return scanner2.result();
 }
 
 std::string extractCached(const Epub& epub, const int currentSpineIndex, const std::string& href,

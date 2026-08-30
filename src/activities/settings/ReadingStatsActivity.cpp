@@ -171,26 +171,26 @@ void ReadingStatsActivity::renderBookPage(const int yTop, const int contentWidth
   char buf[96];
   BookReadingStats::formatDuration(bookStats_.totalReadingSeconds, buf, sizeof(buf));
   drawStatRow(y, contentWidth, tr(STR_STATS_TOTAL_TIME), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%u", bookStats_.sessionCount);
   drawStatRow(y, contentWidth, tr(STR_STATS_SESSIONS), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(bookStats_.totalPagesTurned));
   drawStatRow(y, contentWidth, tr(STR_STATS_PAGES_TURNED), buf);
-  y += 24;
+  y += 30;
 
   if (bookStats_.avgSecondsPerForwardPage > 0) {
     snprintf(buf, sizeof(buf), "%u %s", bookStats_.avgSecondsPerForwardPage, tr(STR_STATS_UNIT_SEC_PER_PAGE));
     drawStatRow(y, contentWidth, tr(STR_STATS_PACE), buf);
-    y += 24;
+    y += 30;
   }
 
   if (estimatedSecondsLeft_ > 0 && bookProgressPercent_ >= 0.0f && bookProgressPercent_ < 100.0f) {
     BookReadingStats::formatDuration(estimatedSecondsLeft_, buf, sizeof(buf));
     drawStatRow(y, contentWidth, tr(STR_STATS_TIME_LEFT), buf);
-    y += 24;
+    y += 30;
   }
 
   const auto formatDate = [](const ReadingStatsDate& d) {
@@ -201,12 +201,12 @@ void ReadingStatsActivity::renderBookPage(const int yTop, const int contentWidth
   };
   if (bookStats_.startDate.isValid()) {
     drawStatRow(y, contentWidth, tr(STR_STATS_STARTED), formatDate(bookStats_.startDate));
-    y += 24;
+    y += 30;
   }
   if (bookStats_.isFinished) {
     drawStatRow(y, contentWidth, tr(STR_STATS_FINISHED),
                 bookStats_.finishedDate.isValid() ? formatDate(bookStats_.finishedDate) : std::string("-"));
-    y += 24;
+    y += 30;
   } else if (bookStats_.lastReadEpoch > 0) {
     // Show when the book was last opened (local date, derived from the epoch).
     const time_t epoch = static_cast<time_t>(bookStats_.lastReadEpoch);
@@ -214,7 +214,7 @@ void ReadingStatsActivity::renderBookPage(const int yTop, const int contentWidth
     gmtime_r(&epoch, &tmUtc);
     snprintf(buf, sizeof(buf), "%02u.%02u.%04u", tmUtc.tm_mday, tmUtc.tm_mon + 1, tmUtc.tm_year + 1900);
     drawStatRow(y, contentWidth, tr(STR_STATS_LAST_READ), buf);
-    y += 24;
+    y += 30;
   }
 
   // Toggle hint.
@@ -223,35 +223,33 @@ void ReadingStatsActivity::renderBookPage(const int yTop, const int contentWidth
 }
 
 void ReadingStatsActivity::renderDevicePage(const int yTop, const int contentWidth) {
-  int y = yTop;
-
-  renderer.drawText(UI_12_FONT_ID, 0, y, tr(STR_READING_STATS), true, EpdFontFamily::BOLD);
-  y += 26;
+  // The header already carries the screen title; start with the rows.
+  int y = yTop + 10;
 
   char buf[96];
   BookReadingStats::formatDuration(globalStats_.totalReadingSeconds, buf, sizeof(buf));
   drawStatRow(y, contentWidth, tr(STR_STATS_TOTAL_TIME), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(globalStats_.totalSessions));
   drawStatRow(y, contentWidth, tr(STR_STATS_SESSIONS), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(globalStats_.totalPagesTurned));
   drawStatRow(y, contentWidth, tr(STR_STATS_PAGES_TURNED), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(globalStats_.completedBooks));
   drawStatRow(y, contentWidth, tr(STR_STATS_BOOKS_FINISHED), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%u", globalStats_.currentReadingStreak(todayDayIndex_));
   drawStatRow(y, contentWidth, tr(STR_STATS_CURRENT_STREAK), buf);
-  y += 24;
+  y += 30;
 
   snprintf(buf, sizeof(buf), "%u", globalStats_.displayLongestReadingStreak());
   drawStatRow(y, contentWidth, tr(STR_STATS_LONGEST_STREAK), buf);
-  y += 24;
+  y += 30;
 
   renderer.drawText(UI_10_FONT_ID, 0, y + 8, tr(STR_STATS_EXPORT_HINT));
 }
@@ -260,12 +258,12 @@ void ReadingStatsActivity::renderActivityPage(const int yTop, const int contentW
   int y = yTop;
 
   renderer.drawText(UI_12_FONT_ID, 0, y, tr(STR_STATS_ACTIVITY), true, EpdFontFamily::BOLD);
-  y += 24;
+  y += 30;
 
   // --- 14-day chart ---
   renderer.drawText(UI_10_FONT_ID, 0, y, tr(STR_STATS_LAST_14_DAYS));
-  y += 16;
-  const int chartHeight = 90;
+  y += 20;
+  const int chartHeight = 80;
   const int chartWidth = contentWidth;
   uint16_t days[14];
   for (int i = 0; i < 14; ++i) {
@@ -278,15 +276,15 @@ void ReadingStatsActivity::renderActivityPage(const int yTop, const int contentW
   const std::string lastLabel = formatDay(0, globalStats_.anchorDayIndex);
   renderer.drawText(UI_10_FONT_ID, contentWidth - renderer.getTextAdvanceX(UI_10_FONT_ID, lastLabel.c_str(), EpdFontFamily::REGULAR),
                     y + chartHeight + 6, lastLabel.c_str());
-  y += chartHeight + 30;
+  y += chartHeight + 36;
 
   // --- weekday distribution (Mon..Sun) ---
   renderer.drawText(UI_10_FONT_ID, 0, y, tr(STR_STATS_BY_WEEKDAY));
-  y += 16;
+  y += 20;
   static const StrId dowIds[READING_DAY_OF_WEEK_COUNT] = {
       StrId::STR_STATS_DOW_MON, StrId::STR_STATS_DOW_TUE, StrId::STR_STATS_DOW_WED, StrId::STR_STATS_DOW_THU,
       StrId::STR_STATS_DOW_FRI, StrId::STR_STATS_DOW_SAT, StrId::STR_STATS_DOW_SUN};
-  const int dowChartHeight = 50;
+  const int dowChartHeight = 46;
   uint16_t dow[READING_DAY_OF_WEEK_COUNT];
   for (size_t i = 0; i < READING_DAY_OF_WEEK_COUNT; ++i) dow[i] = globalStats_.dayOfWeekSeconds[i];
   drawBarChart(0, y, contentWidth, dowChartHeight, dow, READING_DAY_OF_WEEK_COUNT, -1);
@@ -297,14 +295,14 @@ void ReadingStatsActivity::renderActivityPage(const int yTop, const int contentW
     const int slotCenter = (contentWidth / READING_DAY_OF_WEEK_COUNT) * i + slotWidth / 2;
     renderer.drawText(UI_10_FONT_ID, slotCenter - labelWidth / 2, y + dowChartHeight + 4, label);
   }
-  y += dowChartHeight + 24;
+  y += dowChartHeight + 32;
 
   // --- time-of-day distribution ---
   renderer.drawText(UI_10_FONT_ID, 0, y, tr(STR_STATS_BY_TIME_OF_DAY));
-  y += 16;
+  y += 20;
   static const StrId todIds[READING_TIME_BUCKET_COUNT] = {StrId::STR_STATS_MORNING, StrId::STR_STATS_AFTERNOON,
                                                          StrId::STR_STATS_EVENING, StrId::STR_STATS_NIGHT};
-  const int todChartHeight = 40;
+  const int todChartHeight = 38;
   uint16_t tod[READING_TIME_BUCKET_COUNT];
   for (size_t i = 0; i < READING_TIME_BUCKET_COUNT; ++i) tod[i] = globalStats_.timeOfDaySeconds[i];
   drawBarChart(0, y, contentWidth, todChartHeight, tod, READING_TIME_BUCKET_COUNT, -1);
@@ -348,11 +346,11 @@ void ReadingStatsActivity::render(RenderLock&&) {
     }
   }
 
-  // Page dots bottom right.
+  // Page dots just above the button hints.
   const int first = hasBookPage() ? 0 : 1;
   for (int i = first; i < static_cast<int>(Page::PAGE_COUNT); ++i) {
     const int dotX = pageWidth - 14 - (static_cast<int>(Page::PAGE_COUNT) - i) * 12;
-    const int dotY = pageHeight - 46;
+    const int dotY = pageHeight - 88;
     if (static_cast<int>(page_) == i) {
       renderer.fillRect(dotX, dotY, 6, 6, true);
     } else {
@@ -373,7 +371,7 @@ void ReadingStatsActivity::render(RenderLock&&) {
       confirmLabel = tr(STR_STATS_EXPORT);
       break;
   }
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_PREV_PAGE), tr(STR_NEXT_PAGE));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   renderer.displayBuffer();
