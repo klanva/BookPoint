@@ -237,11 +237,34 @@ class AnchorScanner : public Print {
       const std::string name =
           tag.substr(nameOff, nameEnd == std::string::npos ? std::string::npos : nameEnd - nameOff);
 
+      // Notes often end with a "back to the text" link. Its label is UI
+      // chrome, not note content: when a link href contains "back", drop the
+      // link text.
+      if (strcasecmp(name.c_str(), "a") == 0) {
+        if (!closing) {
+          if (!skipAnchorText_) {
+            std::string tagLow = tag;
+            for (char& c : tagLow) {
+              if (c >= 'A' && c <= 'Z') c += 32;
+            }
+            if (tagLow.find("href") != std::string::npos && tagLow.find("back") != std::string::npos) {
+              flushText(textChunk);
+              textChunk.clear();
+              skipAnchorText_ = true;
+            }
+          }
+        } else if (skipAnchorText_) {
+          textChunk.clear();
+          skipAnchorText_ = false;
+          continue;
+        }
+      }
+
       if (!bodyOnly_ && !name.empty() && strcasecmp(name.c_str(), tagName_.c_str()) == 0) {
         if (closing) {
           depth_--;
           if (depth_ <= 0) {
-            flushText(textChunk);
+            if (!skipAnchorText_) flushText(textChunk);
             finish();
             return true;
           }
@@ -257,7 +280,7 @@ class AnchorScanner : public Print {
       }
     }
     pos_ = pos;
-    flushText(textChunk);
+    if (!skipAnchorText_) flushText(textChunk);
     if (out_.size() >= maxBytes_) {
       finish();
       return true;
@@ -288,6 +311,26 @@ class AnchorScanner : public Print {
       collapsed += c;
     }
     while (!collapsed.empty() && collapsed.back() == ' ') collapsed.pop_back();
+    // Some books put the back-link label in plain text without an anchor.
+    // "Вернуться" and "назад" in UTF-8, spelled out as bytes to keep the
+    // source encoding-agnostic.
+    static const uint8_t kBackWords[][20] = {
+        {0xD0, 0x92, 0xD0, 0xB5, 0xD1, 0x80, 0xD0, 0xBD, 0xD1, 0x83,
+         0xD1, 0x82, 0xD1, 0x8C, 0xD1, 0x81, 0xD1, 0x8F},              // Вернуться
+        {0xD0, 0xBD, 0xD0, 0xB0, 0xD0, 0xB7, 0xD0, 0xB0, 0xD0, 0xB4},  // назад
+    };
+    for (const auto& word : kBackWords) {
+      size_t wlen = 0;
+      while (wlen < sizeof(word) && word[wlen] != 0) wlen++;
+      if (wlen == 0 || collapsed.size() <= wlen) continue;
+      const char* w = reinterpret_cast<const char*>(word);
+      if (collapsed.compare(collapsed.size() - wlen, wlen, w) != 0) continue;
+      size_t cut = collapsed.size() - wlen;
+      while (cut > 0 && (static_cast<unsigned char>(collapsed[cut - 1]) & 0xC0) == 0x80) cut--;
+      while (cut > 0 && collapsed[cut - 1] == ' ') cut--;
+      collapsed.resize(cut);
+      break;
+    }
     // Clamp at a UTF-8 boundary.
     if (collapsed.size() > maxBytes_) {
       size_t cut = maxBytes_;
@@ -305,6 +348,7 @@ class AnchorScanner : public Print {
   enum State : uint8_t { SEEKING, CAPTURING } state_ = SEEKING;
   int depth_ = 0;
   bool bodyOnly_ = false;
+  bool skipAnchorText_ = false;  // inside a "back to text" link: drop its label
   size_t pos_ = 0;
   bool done_ = false;
 };

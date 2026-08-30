@@ -35,6 +35,7 @@ class ReadingStatsActivity final : public Activity {
   void renderBookPage(int yTop, int contentWidth);
   void renderDevicePage(int yTop, int contentWidth);
   void renderActivityPage(int yTop, int contentWidth);
+  int lineHeightGuess() const;
   void drawBarChart(int x, int y, int width, int height, const uint16_t* values, int count,
                     int highlightIndex) const;
   void drawStatRow(int y, int contentWidth, const char* label, const std::string& value) const;

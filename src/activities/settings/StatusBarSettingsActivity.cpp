@@ -93,10 +93,10 @@ StatusBarSettingsActivity::StatusBarSettingsActivity(GfxRenderer& renderer, Mapp
 void StatusBarSettingsActivity::onEnter() {
   UiListActivity::onEnter();
 
-  // Clock items work on both device classes now: X3 has the DS3231 RTC,
-  // X4 uses the NTP-set software clock. Hide them only when neither source
-  // has ever been set.
-  visibleItemCount = (halClock.isAvailable() || halClock.hasUsableTime()) ? FULL_MENU_ITEMS : BASE_MENU_ITEMS;
+  // Clock items work on both device classes now: X3 has the DS3231 RTC, X4
+  // uses the NTP-set software clock. They are always offered; until a first
+  // NTP sync the clock row simply shows nothing.
+  visibleItemCount = FULL_MENU_ITEMS;
 
   // Clamp statusBarProgressBar and statusBarTitle in case of corrupt/migrated data
   if (SETTINGS.statusBarProgressBar >= PROGRESS_BAR_ITEMS) {

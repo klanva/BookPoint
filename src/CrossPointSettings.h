@@ -247,7 +247,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t hyphenationEnabled = 0;
 
   // Reader screen margin settings
-  static constexpr uint8_t SCREEN_MARGIN_MIN = 5;
+  static constexpr uint8_t SCREEN_MARGIN_MIN = 0;
   static constexpr uint8_t SCREEN_MARGIN_MAX = 40;
   static constexpr uint8_t SCREEN_MARGIN_STEP = 5;
   uint8_t screenMargin = SCREEN_MARGIN_MIN;
