@@ -245,6 +245,8 @@ CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   spec.progressBarHeightPx =
       statusBarProgressBar != HIDE_PROGRESS ? static_cast<uint8_t>((statusBarProgressBarThickness + 1) * 2) : 0;
   spec.xtcMode = xtcStatusBarMode;
+  spec.hidden = statusBarHidden != 0;
+  spec.atTop = statusBarPosition == POSITION_TOP;
   return spec;
 }
 
@@ -334,8 +336,9 @@ int CrossPointSettings::getRefreshFrequency() const {
 
 void CrossPointSettings::clearSdFontFamily() {
   sdFontFamilyName[0] = '\0';
+  const bool sans = fontFamily == NOTOSANS;
   fontPointSize =
-      snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
+      snapToNearestPointSize(builtinReaderPointSizes(sans), builtinReaderPointSizeCount(sans), fontPointSize);
   saveToFile();
 }
 
@@ -347,20 +350,23 @@ int CrossPointSettings::getReaderFontId() const {
     // Fall through to built-in if SD font not found
   }
 
-  // A built-in family only exists at BUILTIN_READER_POINT_SIZES, so a size
-  // carried over from an SD family may not be one of them. ensureLoaded()
-  // normally persists the snap; snap again here (without allocating — this runs
-  // in the page render loop) so rendering is correct even before it has run.
-  const uint8_t pt =
-      snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
+  // A built-in family only exists at its own point sizes, so a size carried
+  // over from an SD family may not be one of them. ensureLoaded() normally
+  // persists the snap; snap again here (without allocating — this runs in the
+  // page render loop) so rendering is correct even before it has run.
   const bool sans = (fontFamily == NOTOSANS);
+  const uint8_t pt =
+      snapToNearestPointSize(builtinReaderPointSizes(sans), builtinReaderPointSizeCount(sans), fontPointSize);
   switch (pt) {
-    case 12:
-      return sans ? NOTOSANS_12_FONT_ID : NOTOSERIF_12_FONT_ID;
+    case 8:
+      // The 8pt Noto Sans face doubles as the small UI font.
+      return SMALL_FONT_ID;
     case 16:
       return sans ? NOTOSANS_16_FONT_ID : NOTOSERIF_16_FONT_ID;
     case 18:
       return sans ? NOTOSANS_18_FONT_ID : NOTOSERIF_18_FONT_ID;
+    case 12:
+      return sans ? NOTOSANS_12_FONT_ID : NOTOSERIF_12_FONT_ID;
     case 14:
     default:
       return sans ? NOTOSANS_14_FONT_ID : NOTOSERIF_14_FONT_ID;

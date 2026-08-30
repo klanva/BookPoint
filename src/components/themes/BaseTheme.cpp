@@ -887,11 +887,16 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
   const auto sb = SETTINGS.statusBarSpec();
-  const bool showStatusBarTextLane = sb.textLaneVisible(halClock.isAvailable());
+  if (sb.hidden) return;
+  // The lane is reserved whenever any element can appear in it; the clock
+  // itself only draws once the software clock has a time.
+  const bool showStatusBarTextLane = sb.textLaneVisible(true);
 
   // Draw Progress Text
   const auto screenHeight = renderer.getScreenHeight();
-  auto textY = screenHeight - UITheme::getInstance().getStatusBarHeight() - orientedMarginBottom - paddingBottom - 4;
+  auto textY = sb.atTop ? orientedMarginTop + paddingBottom + 2
+                        : screenHeight - UITheme::getInstance().getStatusBarHeight() - orientedMarginBottom -
+                              paddingBottom - 4;
 
   const int leftClusterX = metrics.statusBarHorizontalMargin + orientedMarginLeft + 1;
   const int rightClusterX = renderer.getScreenWidth() - metrics.statusBarHorizontalMargin - orientedMarginRight;
@@ -925,8 +930,9 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
     const int barMarginLeft = fillMargin ? 0 : orientedMarginLeft;
     const int barMarginRight = fillMargin ? 0 : orientedMarginRight;
     const int progressBarMaxWidth = renderer.getScreenWidth() - barMarginLeft - barMarginRight;
-    const int progressBarY = renderer.getScreenHeight() - orientedMarginBottom - sb.progressBarHeightPx -
-                             paddingBottom + (fillMargin ? 1 : 0);
+    const int progressBarY = sb.atTop ? (fillMargin ? 0 : orientedMarginTop)
+                                      : renderer.getScreenHeight() - orientedMarginBottom -
+                                            sb.progressBarHeightPx - paddingBottom + (fillMargin ? 1 : 0);
     size_t progress;
     if (sb.progressBarMode == CrossPointSettings::STATUS_BAR_PROGRESS_BAR::BOOK_PROGRESS) {
       progress = static_cast<size_t>(bookProgress);
@@ -935,7 +941,7 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
       progress = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) * 100 : 0;
     }
     const int barWidth = progressBarMaxWidth * progress / 100;
-    const int barHeight = sb.progressBarHeightPx + (fillMargin ? orientedMarginBottom - 1 : 0);
+    const int barHeight = sb.progressBarHeightPx + (fillMargin ? (sb.atTop ? orientedMarginTop : orientedMarginBottom) - 1 : 0);
     renderer.fillRect(barMarginLeft, progressBarY, barWidth, barHeight, true);
   }
 
@@ -958,8 +964,9 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
     leftClusterWidth += batteryWidth;
   }
 
-  // Draw Clock (X3 only — DS3231 RTC)
-  if (sb.showsClock() && halClock.isAvailable()) {
+  // Draw Clock (software clock on X4, RTC on X3; nothing drawn until a time
+  // is available)
+  if (sb.showsClock()) {
     char timeBuf[9];
     if (halClock.formatTime(timeBuf, sizeof(timeBuf), sb.clockUtcOffsetQ, sb.clock12h)) {
       int clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, timeBuf);
@@ -971,6 +978,8 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
       } else if (sb.clockMode == CrossPointSettings::STATUS_BAR_CLOCK_RIGHT) {
         clockX = rightClusterX - rightClusterWidth - (rightClusterWidth > 0 ? 10 : 0) - clockTextWidth;
         rightClusterWidth += clockTextWidth + 10;
+      } else if (sb.clockMode == CrossPointSettings::STATUS_BAR_CLOCK_CENTER) {
+        clockX = (renderer.getScreenWidth() - clockTextWidth) / 2;
       }
       renderer.drawText(SMALL_FONT_ID, clockX, textY, timeBuf);
     }

@@ -104,7 +104,8 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
 inline SettingInfo buildFontSizeSetting(const SdCardFontRegistry* registry) {
   // Captured by copy: getSettingsList() returns by value and the lambdas outlive
   // this call, so they must not reference the registry.
-  const std::vector<uint8_t> sizes = readerFontPointSizes(registry, SETTINGS.sdFontFamilyName);
+  const std::vector<uint8_t> sizes = readerFontPointSizes(registry, SETTINGS.sdFontFamilyName,
+                                                           SETTINGS.fontFamily == SETTINGS.NOTOSANS);
 
   // "pt" is deliberately not translated — see the matching note in
   // TextSettingsActivity::rebuildSizeList().
@@ -214,6 +215,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     statusBarClockValues[CrossPointSettings::STATUS_BAR_CLOCK_HIDE] = StrId::STR_HIDE;
     statusBarClockValues[CrossPointSettings::STATUS_BAR_CLOCK_RIGHT] = StrId::STR_DIR_RIGHT;
     statusBarClockValues[CrossPointSettings::STATUS_BAR_CLOCK_LEFT] = StrId::STR_DIR_LEFT;
+    statusBarClockValues[CrossPointSettings::STATUS_BAR_CLOCK_CENTER] = StrId::STR_CLOCK_CENTER;
 
     std::vector<SettingInfo> v = {
         // --- Display ---
@@ -446,6 +448,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           StrId::STR_CUSTOMISE_STATUS_BAR),
         SettingInfo::Toggle(StrId::STR_BATTERY, &CrossPointSettings::statusBarBattery, "statusBarBattery",
                             StrId::STR_CUSTOMISE_STATUS_BAR),
+        SettingInfo::Enum(StrId::STR_STATUS_BAR_POSITION, &CrossPointSettings::statusBarPosition,
+                          {StrId::STR_BOTTOM, StrId::STR_TOP}, "statusBarPosition",
+                          StrId::STR_CUSTOMISE_STATUS_BAR),
+        SettingInfo::Toggle(StrId::STR_STATUS_BAR_HIDDEN, &CrossPointSettings::statusBarHidden,
+                            "statusBarHidden", StrId::STR_CUSTOMISE_STATUS_BAR),
         SettingInfo::Enum(StrId::STR_XTC_STATUS_BAR, &CrossPointSettings::xtcStatusBarMode,
                           {StrId::STR_HIDE, StrId::STR_BOTTOM, StrId::STR_TOP}, "xtcStatusBarMode",
                           StrId::STR_CUSTOMISE_STATUS_BAR),

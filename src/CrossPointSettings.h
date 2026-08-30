@@ -55,8 +55,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     STATUS_BAR_CLOCK_HIDE = 0,
     STATUS_BAR_CLOCK_RIGHT = 1,
     STATUS_BAR_CLOCK_LEFT = 2,
+    STATUS_BAR_CLOCK_CENTER = 3,  // appended: stored 0..2 keep their meaning
     STATUS_BAR_CLOCK_MODE_COUNT
   };
+
+  // Reader status bar position (EPUB/TXT; XTC has its own mode).
+  enum STATUS_BAR_POSITION { POSITION_BOTTOM = 0, POSITION_TOP = 1, STATUS_BAR_POSITION_COUNT };
 
   enum ORIENTATION {
     PORTRAIT = 0,       // 480x800 logical coordinates (current default)
@@ -202,6 +206,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t statusBarProgressBarThickness = PROGRESS_BAR_NORMAL;
   uint8_t statusBarTitle = CHAPTER_TITLE;
   uint8_t statusBarBattery = 1;
+  // Reader status bar (EPUB/TXT): hide entirely, or draw at the top.
+  uint8_t statusBarHidden = 0;
+  uint8_t statusBarPosition = POSITION_BOTTOM;
   uint8_t xtcStatusBarMode = XTC_STATUS_BAR_HIDE;
   // Clock display in status bar (X3 only, requires DS3231 RTC)
   uint8_t statusBarClock = STATUS_BAR_CLOCK_HIDE;
@@ -378,6 +385,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     uint8_t progressBarMode = HIDE_PROGRESS;  // STATUS_BAR_PROGRESS_BAR
     uint8_t progressBarHeightPx = 0;          // (thickness+1)*2; 0 when the bar is hidden
     uint8_t xtcMode = XTC_STATUS_BAR_HIDE;    // XTC_STATUS_BAR_MODE
+    bool hidden = false;                      // whole status bar suppressed
+    bool atTop = false;                       // drawn at the top margin instead of the bottom
 
     bool showsProgressBar() const { return progressBarMode != HIDE_PROGRESS; }
     bool showsTitle() const { return titleMode != HIDE_TITLE; }

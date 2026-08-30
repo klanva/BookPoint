@@ -26,6 +26,8 @@ enum MenuItem {
   ITEM_PROGRESS_BAR_THICKNESS,
   ITEM_TITLE,
   ITEM_BATTERY,
+  ITEM_STATUS_BAR_POSITION,
+  ITEM_STATUS_BAR_HIDDEN,
   ITEM_XTC_STATUS_BAR,
   ITEM_CLOCK,             // X3 only
   ITEM_CLOCK_FORMAT,      // X3 only
@@ -46,6 +48,8 @@ const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_PROGRESS_BAR_THICKNESS,
     StrId::STR_TITLE,
     StrId::STR_BATTERY,
+    StrId::STR_STATUS_BAR_POSITION,
+    StrId::STR_STATUS_BAR_HIDDEN,
     StrId::STR_XTC_STATUS_BAR,
     StrId::STR_CLOCK,
     StrId::STR_CLOCK_FORMAT,
@@ -82,7 +86,11 @@ constexpr int XTC_STATUS_BAR_ITEMS = 3;
 const StrId xtcStatusBarNames[XTC_STATUS_BAR_ITEMS] = {StrId::STR_HIDE, StrId::STR_BOTTOM, StrId::STR_TOP};
 
 constexpr int STATUS_BAR_CLOCK_ITEMS = CrossPointSettings::STATUS_BAR_CLOCK_MODE_COUNT;
-const StrId statusBarClockNames[STATUS_BAR_CLOCK_ITEMS] = {StrId::STR_HIDE, StrId::STR_DIR_RIGHT, StrId::STR_DIR_LEFT};
+const StrId statusBarClockNames[STATUS_BAR_CLOCK_ITEMS] = {StrId::STR_HIDE, StrId::STR_DIR_RIGHT,
+                                                           StrId::STR_DIR_LEFT, StrId::STR_CLOCK_CENTER};
+
+constexpr int STATUS_BAR_POSITION_ITEMS = CrossPointSettings::STATUS_BAR_POSITION_COUNT;
+const StrId statusBarPositionNames[STATUS_BAR_POSITION_ITEMS] = {StrId::STR_BOTTOM, StrId::STR_TOP};
 
 const int verticalPreviewTextPadding = 40;
 }  // namespace
@@ -180,6 +188,17 @@ void StatusBarSettingsActivity::handleSelection() {
     case ITEM_BATTERY:
       SETTINGS.statusBarBattery = (SETTINGS.statusBarBattery + 1) % 2;
       break;
+    case ITEM_STATUS_BAR_POSITION:
+      optionPopup.show(StrId::STR_STATUS_BAR_POSITION, statusBarPositionNames, STATUS_BAR_POSITION_ITEMS,
+                       SETTINGS.statusBarPosition,
+                       [this](int idx) {
+                         SETTINGS.statusBarPosition = idx;
+                         SETTINGS.saveToFile();
+                       });
+      return;
+    case ITEM_STATUS_BAR_HIDDEN:
+      SETTINGS.statusBarHidden = (SETTINGS.statusBarHidden + 1) % 2;
+      break;
     case ITEM_XTC_STATUS_BAR:
       optionPopup.show(StrId::STR_XTC_STATUS_BAR, xtcStatusBarNames, XTC_STATUS_BAR_ITEMS, SETTINGS.xtcStatusBarMode,
                        [this](int idx) {
@@ -220,6 +239,10 @@ std::string StatusBarSettingsActivity::rowValueText(const int index) {
       return I18N.get(titleNames[SETTINGS.statusBarTitle]);
     case ITEM_BATTERY:
       return SETTINGS.statusBarBattery ? tr(STR_SHOW) : tr(STR_HIDE);
+    case ITEM_STATUS_BAR_POSITION:
+      return I18N.get(statusBarPositionNames[SETTINGS.statusBarPosition]);
+    case ITEM_STATUS_BAR_HIDDEN:
+      return SETTINGS.statusBarHidden ? tr(STR_HIDE) : tr(STR_SHOW);
     case ITEM_XTC_STATUS_BAR:
       return I18N.get(xtcStatusBarNames[SETTINGS.xtcStatusBarMode]);
     case ITEM_CLOCK:
