@@ -416,9 +416,10 @@ void setup() {
   RECENT_BOOKS.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   KOREADER_STORE.loadFromFile();
-  if (!OPDS_STORE.loadFromFile() || OPDS_STORE.getCount() == 0) {
-    OPDS_STORE.seedDefaults();
-  }
+  OPDS_STORE.loadFromFile();
+  // Defaults are appended on every boot when missing, even if the user
+  // already keeps their own servers. Duplicates are skipped by URL.
+  OPDS_STORE.seedDefaults();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
 

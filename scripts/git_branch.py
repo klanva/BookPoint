@@ -86,8 +86,8 @@ def inject_version(env):
     base_version = get_base_version(project_dir)
     branch = get_git_branch(project_dir)
     short_sha = get_git_short_sha(project_dir)
-    # BookPoint builds: short branded version, e.g. 1.6.0-bookpoint-3b66bd0
-    version_string = f'{base_version}-bookpoint-{short_sha}'
+    # BookPoint builds: short branded version, e.g. 1.6.0-bookpoint
+    version_string = f'{base_version}-bookpoint'
 
     env.Append(CPPDEFINES=[('CROSSPOINT_VERSION', f'\\"{version_string}\\"')])
     print(f'CrossPoint build version: {version_string}')
