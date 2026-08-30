@@ -24,6 +24,12 @@
 #include "EpubReaderBookmarksActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderFootnotesActivity.h"
+
+#include <time.h>
+
+#include "activities/settings/ReadingStatsActivity.h"
+#include "stats/StatsStore.h"
+#include "util/FootnoteTextExtractor.h"
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
 #include "KOReaderCredentialStore.h"
@@ -141,6 +147,9 @@ void moveFinishedBookToReadFolder(const std::string& srcPath, const std::string&
 EpubReaderActivity::~EpubReaderActivity() {
   ImageBlock::setExtractor(nullptr, nullptr);
 
+  commitReadingStats();
+  FootnoteTextExtractor::clearCache();
+
   if (footnoteDepth > 0 && epub) {
     const SavedPosition& origin = savedPositions[0];
     saveProgress(origin.spineIndex, origin.pageNumber, 0);
@@ -190,6 +199,12 @@ bool EpubReaderActivity::loadBook() {
 
   epub->setupCacheDir();
 
+  if (SETTINGS.trackReadingStats) {
+    bookStats = StatsStore::loadBookStats(epub->getPath(), epub->getTitle(), epub->getAuthor());
+    readingTracker.begin();
+    statsActive = true;
+  }
+
   HalFile f;
   if (Storage.openFileForRead("ERS", epub->getCachePath() + "/progress.bin", f)) {
     uint8_t data[10];
@@ -228,6 +243,7 @@ bool EpubReaderActivity::loadBook() {
 
 void EpubReaderActivity::openReaderMenu() {
   pendingManualTurn = 0;
+  noteReadingDwell();
   const int currentPage = section ? section->currentPage + 1 : 0;
   const int totalPages = section ? section->estimatedTotalPages() : 0;
   float bookProgress = 0.0f;
@@ -708,6 +724,10 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
           });
       break;
     }
+    case EpubReaderMenuActivity::MenuAction::STATISTICS: {
+      openStats();
+      return;
+    }
     case EpubReaderMenuActivity::MenuAction::FOOTNOTES: {
       startActivityForResult(std::make_unique<EpubReaderFootnotesActivity>(renderer, mappedInput, currentPageFootnotes),
                              [this](const ActivityResult& result) {
@@ -830,6 +850,12 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
 bool EpubReaderActivity::launchKOReaderSync() {
   if (!KOREADER_STORE.hasCredentials()) return false;
 
+  if (footnoteDepth > 0) {
+    // Syncing while inside a footnote would push the notes position to the
+    // server. Restore the real reading position first (the Kindle trap).
+    restoreSavedPosition();
+  }
+
   const int currentPage = section ? section->currentPage : nextPageNumber;
   const int totalPages = section ? section->estimatedTotalPages() : cachedChapterTotalPageCount;
   std::optional<uint16_t> paragraphIndex;
@@ -916,6 +942,7 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 
 bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
   if (!section) return false;
+  noteReadingDwell();
   {
     RenderLock lock;
     clearDeferredReposition();
@@ -1031,6 +1058,17 @@ void EpubReaderActivity::renderBook() {
                  static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
   } else {
     orientedMarginBottom += std::max(SETTINGS.screenMargin, statusBarHeight);
+  }
+
+  // Paper-style footnote strip: reserve a fixed band above the status bar for
+  // the current page's footnotes. Reserving it in the viewport keeps pagination
+  // deterministic (the strip is simply empty on pages without footnotes).
+  footnoteStripHeight = 0;
+  if (SETTINGS.footnoteDisplay == CrossPointSettings::FOOTNOTE_BOTTOM) {
+    footnoteStripHeight = CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX +
+                          CrossPointSettings::FOOTNOTE_STRIP_MAX_LINES * renderer.getLineHeight(UI_10_FONT_ID) +
+                          CrossPointSettings::FOOTNOTE_STRIP_PAD_PX;
+    orientedMarginBottom += footnoteStripHeight;
   }
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
@@ -1273,8 +1311,21 @@ void EpubReaderActivity::renderBook() {
     lastRenderCompleteMs = millis();
   }
 
-  if (currentSpineIndex != lastSavedSpineIndex || section->currentPage != lastSavedPage ||
-      section->pageCount != lastSavedPageCount) {
+  if (footnoteDepth > 0) {
+    // While reading a footnote, keep the saved progress pinned to the page the
+    // footnote was opened from: the note itself is never "where the user is".
+    // This is what keeps sleep/crash/sync from stranding the reader in the
+    // notes section (and the KOReader server from recording it as progress).
+    const SavedPosition& origin = savedPositions[0];
+    if (origin.spineIndex != lastSavedSpineIndex || origin.pageNumber != lastSavedPage) {
+      if (saveProgress(origin.spineIndex, origin.pageNumber, 0)) {
+        lastSavedSpineIndex = origin.spineIndex;
+        lastSavedPage = origin.pageNumber;
+        lastSavedPageCount = -1;
+      }
+    }
+  } else if (currentSpineIndex != lastSavedSpineIndex || section->currentPage != lastSavedPage ||
+             section->pageCount != lastSavedPageCount) {
     if (saveProgress(currentSpineIndex, section->currentPage, section->estimatedTotalPages())) {
       lastSavedSpineIndex = currentSpineIndex;
       lastSavedPage = section->currentPage;
@@ -1299,6 +1350,9 @@ void EpubReaderActivity::renderBook() {
 }
 
 void EpubReaderActivity::onEndOfBookRendered() {
+  if (statsActive && !bookStats.isFinished) {
+    bookStats.isFinished = true;
+  }
   automaticPageTurnActive = false;
   if (pendingSyncSaveError) {
     pendingSyncSaveError = false;
@@ -1410,6 +1464,8 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
   renderStatusBar();
+  renderFootnoteStrip(orientedMarginLeft, orientedMarginTop + buildViewportHeight,
+                      renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight);
   const auto tBwRender = millis();
 
   if (pageHasImages) {
@@ -1609,6 +1665,7 @@ void EpubReaderActivity::renderStatusBar() const {
 
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {
   if (!epub) return;
+  noteReadingDwell();
 
   if (savePosition && section && footnoteDepth < MAX_FOOTNOTE_DEPTH) {
     savedPositions[footnoteDepth] = {currentSpineIndex, section->currentPage};
@@ -1641,6 +1698,142 @@ void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool s
   }
   requestUpdate();
   LOG_DBG("ERS", "Navigated to spine %d for href: %s", targetSpineIndex, hrefStr.c_str());
+}
+
+void EpubReaderActivity::commitReadingStats() {
+  if (!statsActive) return;
+  statsActive = false;
+
+  const auto commit = readingTracker.endSession();
+
+  if (commit.countTime) {
+    bookStats.totalReadingSeconds += commit.seconds;
+    if (commit.countSession) bookStats.sessionCount++;
+
+    uint16_t sessionPace = 0;
+    if (readingTracker.sessionPaceAverage(sessionPace)) {
+      bookStats.recordForwardPageRead(sessionPace);
+    }
+
+    if (commit.hasStart) {
+      bookStats.recordReadingSpan(commit.start, commit.seconds);
+      if (!bookStats.startDateManual && !bookStats.startDate.isValid()) {
+        bookStats.startDate = commit.start.date;
+      }
+    }
+    bookStats.lastReadEpoch = static_cast<uint32_t>(time(nullptr));
+  }
+
+  // Fold a finished flag into the device-wide counter exactly once. Re-check
+  // the on-disk flag: the stats screen may have marked it during this session.
+  GlobalReadingStats global = StatsStore::loadGlobalStats();
+  if (bookStats.isFinished && !bookStats.completedCounted) {
+    BookReadingStats disk;
+    if (StatsStore::loadBookStatsInto(bookStats.bookPath, disk)) {
+      if (disk.completedCounted) {
+        bookStats.completedCounted = true;
+      } else {
+        global.completedBooks++;
+        bookStats.completedCounted = true;
+      }
+    } else {
+      global.completedBooks++;
+      bookStats.completedCounted = true;
+    }
+  }
+
+  if (commit.countTime) {
+    global.totalReadingSeconds = (global.totalReadingSeconds > UINT32_MAX - commit.seconds)
+                                     ? UINT32_MAX
+                                     : global.totalReadingSeconds + commit.seconds;
+    if (commit.countSession) global.totalSessions++;
+    if (commit.hasStart) {
+      global.recordReadingSpan(commit.start, commit.seconds);
+    }
+    if (bookStats.lastReadEpoch > 0) {
+      // Bump the device "last activity" implicitly via the day ring above.
+    }
+  }
+  global.totalPagesTurned = bookStats.totalPagesTurned > UINT32_MAX - global.totalPagesTurned
+                                ? UINT32_MAX
+                                : global.totalPagesTurned + (bookStats.totalPagesTurned - lastCommittedPagesTurned);
+  lastCommittedPagesTurned = bookStats.totalPagesTurned;
+
+  StatsStore::saveGlobalStats(global);
+  StatsStore::saveBookStats(bookStats);
+  // CSV snapshot after every session: the data is then readable from a PC even
+  // if the firmware is replaced or the binary files are lost.
+  StatsStore::exportCsv();
+}
+
+void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int stripTop, const int contentWidth) {
+  if (footnoteStripHeight <= 0 || currentPageFootnotes.empty() || !epub || contentWidth <= 40) return;
+
+  const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+  int y = stripTop;
+  renderer.drawLine(contentLeft, y, contentLeft + contentWidth, y, true);
+  y += CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + 2;
+
+  const size_t maxEntries = std::min<size_t>(currentPageFootnotes.size(), 3);
+  int linesLeft = CrossPointSettings::FOOTNOTE_STRIP_MAX_LINES;
+  const int linesPerEntry = std::max(1, static_cast<int>(maxEntries) > 0 ? linesLeft / static_cast<int>(maxEntries)
+                                                                         : linesLeft);
+
+  for (size_t i = 0; i < maxEntries && linesLeft > 0; ++i) {
+    const auto& fn = currentPageFootnotes[i];
+    const std::string body = FootnoteTextExtractor::extractCached(*epub, currentSpineIndex, fn.href);
+    if (body.empty()) continue;
+
+    const int useLines = std::min(linesPerEntry, linesLeft);
+    std::vector<std::string> lines = renderer.wrappedText(UI_10_FONT_ID, body.c_str(), contentWidth - 20, useLines);
+    if (lines.empty()) continue;
+
+    std::string label = std::string(fn.number[0] ? fn.number : "*") + " ";
+    renderer.drawText(UI_10_FONT_ID, contentLeft, y, label.c_str());
+
+    int rowY = y;
+    const int textX = contentLeft + 18;
+    for (const auto& line : lines) {
+      if (linesLeft <= 0) break;
+      renderer.drawText(UI_10_FONT_ID, textX, rowY, line.c_str());
+      rowY += lineHeight;
+      linesLeft--;
+    }
+    y = rowY;
+  }
+}
+
+void EpubReaderActivity::openStats() {
+  if (!epub) return;
+  noteReadingDwell();
+
+  const float chapterProgress =
+      section && section->estimatedTotalPages() > 0
+          ? static_cast<float>(section->currentPage) / static_cast<float>(section->estimatedTotalPages())
+          : 0.0f;
+  const float progress = epub->calculateProgress(currentSpineIndex, chapterProgress);
+  statsProgressPercent = progress * 100.0f;
+
+  statsEstimatedSecondsLeft = 0;
+  if (bookStats.avgSecondsPerForwardPage > 0 && progress < 1.0f && epub->getBookSize() > 0 && section &&
+      section->estimatedTotalPages() > 0) {
+    const size_t cumulativeHere = epub->getCumulativeSpineItemSize(currentSpineIndex);
+    const size_t cumulativePrev = currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0;
+    const size_t spineBytes = cumulativeHere > cumulativePrev ? cumulativeHere - cumulativePrev : 0;
+    if (spineBytes > 0) {
+      const float bytesPerPage = static_cast<float>(spineBytes) / static_cast<float>(section->estimatedTotalPages());
+      if (bytesPerPage > 0) {
+        const float remainingPages = static_cast<float>(epub->getBookSize()) * (1.0f - progress) / bytesPerPage;
+        statsEstimatedSecondsLeft =
+            static_cast<uint32_t>(remainingPages * static_cast<float>(bookStats.avgSecondsPerForwardPage));
+      }
+    }
+  }
+
+  startActivityForResult(std::make_unique<ReadingStatsActivity>(renderer, mappedInput, epub->getPath(),
+                                                                epub->getTitle(), epub->getAuthor(),
+                                                                statsProgressPercent, statsEstimatedSecondsLeft),
+                         [this](const ActivityResult&) { requestUpdate(); });
 }
 
 void EpubReaderActivity::restoreSavedPosition() {

@@ -9,6 +9,9 @@
 #include <optional>
 #include <vector>
 
+#include "../../stats/BookReadingStats.h"
+#include "../../stats/ReadingTracker.h"
+
 #include "BookmarkEntry.h"
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
@@ -62,6 +65,20 @@ class EpubReaderActivity final : public ReaderActivity {
 
   uint16_t buildViewportWidth = 0;
   uint16_t buildViewportHeight = 0;
+
+  // Reading statistics session (see stats/ReadingTracker.h).
+  ReadingTracker readingTracker;
+  BookReadingStats bookStats;
+  bool statsActive = false;
+  uint32_t lastCommittedPagesTurned = 0;
+  float statsProgressPercent = -1.0f;
+  uint32_t statsEstimatedSecondsLeft = 0;
+
+  // Bottom-of-page footnote strip (paper-style footnotes).
+  int footnoteStripHeight = 0;
+  void renderFootnoteStrip(int contentLeft, int stripTop, int contentWidth);
+  void commitReadingStats();
+  void openStats();
   bool partialRebuildStartFailed = false;
 
   int lastSavedSpineIndex = -1;
@@ -98,6 +115,12 @@ class EpubReaderActivity final : public ReaderActivity {
 
   void navigateToHref(const std::string& href, bool savePosition = false);
   void restoreSavedPosition();
+  void noteReadingDwell() {
+    if (statsActive) {
+      const uint32_t dwell = readingTracker.closePage();
+      if (dwell > 0) bookStats.totalPagesTurned++;
+    }
+  }
 
   void renderContents(std::unique_ptr<Page> page, int orientedMarginTop, int orientedMarginRight,
                       int orientedMarginBottom, int orientedMarginLeft);

@@ -296,6 +296,21 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // Reader category, since it does not affect the rest of the UI.
         SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
                             StrId::STR_CAT_READER),
+        // Footnotes: render at the bottom of the page like a paper book, or
+        // jump to the footnote's location (Back/Power returns from there).
+        SettingInfo::Enum(StrId::STR_FOOTNOTE_DISPLAY, &CrossPointSettings::footnoteDisplay,
+                          {StrId::STR_FOOTNOTE_DISPLAY_BOTTOM, StrId::STR_FOOTNOTE_DISPLAY_JUMP},
+                          "footnoteDisplay", StrId::STR_CAT_READER),
+        // Reading statistics tracking. The accumulated data lives on the SD
+        // card and is never deleted by this toggle or by cache clears.
+        SettingInfo::Toggle(StrId::STR_TRACK_READING_STATS, &CrossPointSettings::trackReadingStats,
+                            "trackReadingStats", StrId::STR_CAT_READER),
+        // Radio is the top battery consumer: shut it down after N idle
+        // minutes on network screens (0 = keep on until the user leaves).
+        SettingInfo::Value(StrId::STR_WIFI_AUTO_OFF, &CrossPointSettings::wifiAutoOffMinutes, {0, 30, 1},
+                           "wifiAutoOffMinutes", StrId::STR_CAT_SYSTEM),
+        SettingInfo::Toggle(StrId::STR_BATTERY_LOG, &CrossPointSettings::batteryLogEnabled, "batteryLogEnabled",
+                            StrId::STR_CAT_SYSTEM),
         // --- Controls ---
         SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
                           {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED}, "sideButtonLayout",

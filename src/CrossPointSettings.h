@@ -310,6 +310,32 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
 
+  // Reading statistics tracking (1 = on, 0 = off). Statistics live on the SD
+  // card and survive firmware updates independently of this toggle.
+  uint8_t trackReadingStats = 1;
+
+  // Wi-Fi idle auto-off in minutes (0 = never). The radio costs ~50-100 mA,
+  // so network screens shut it down after this much inactivity.
+  uint8_t wifiAutoOffMinutes = 3;
+
+  // Append boot/sleep rows with battery % to /.crosspoint/battery_log.csv
+  // (0 = off). Diagnostic tool for overnight drain reports.
+  uint8_t batteryLogEnabled = 0;
+
+  // Footnote display in the EPUB reader.
+  enum FOOTNOTE_DISPLAY {
+    FOOTNOTE_BOTTOM = 0,  // footnote text rendered at the bottom of the page (paper-style)
+    FOOTNOTE_JUMP = 1,    // classic jump: open the footnote's location, Back/Power returns
+    FOOTNOTE_DISPLAY_COUNT
+  };
+  uint8_t footnoteDisplay = FOOTNOTE_BOTTOM;
+  // Layout constants for the bottom-of-page footnote strip (EPUB reader).
+  // The reserve height is computed at render time from the real UI font's
+  // line height: separator + N wrapped lines + padding.
+  static constexpr uint8_t FOOTNOTE_STRIP_SEPARATOR_PX = 2;
+  static constexpr uint8_t FOOTNOTE_STRIP_MAX_LINES = 3;
+  static constexpr uint8_t FOOTNOTE_STRIP_PAD_PX = 5;
+
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
   static constexpr uint8_t MAX_SLEEP_TIMEOUT_MINUTES = SLEEP_TIMEOUT_NEVER_MINUTES;
