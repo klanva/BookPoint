@@ -1,60 +1,39 @@
-# Troubleshooting
+# Решение проблем
 
-This document shows common issues and possible solutions while using the device features.
+## Ридер не видно в сети
 
-- [Troubleshooting](#troubleshooting)
-    - [Cannot See the Device on the Network](#cannot-see-the-device-on-the-network)
-    - [Connection Drops or Times Out](#connection-drops-or-times-out)
-    - [Upload Fails](#upload-fails)
-    - [Saved Password Not Working](#saved-password-not-working)
+Браузер пишет «не удается получить доступ к сайту»:
 
-### Cannot See the Device on the Network
+1. Проверьте, что телефон или компьютер и ридер в одной сети Wi-Fi
+   (режим «Подключиться к сети») или подключены к точке доступа ридера
+   (режим «Создать точку доступа»).
+2. Проверьте IP-адрес на экране ридера, адрес вводится с `http://`.
+   Если `crosspoint.local` не открывается, вводите IP напрямую.
+3. Отключите VPN.
+4. В некоторых сетях включена изоляция клиентов, поможет режим точки
+   доступа.
 
-**Problem:** Browser shows "Cannot connect" or "Site can't be reached"
+## Соединение рвется
 
-**Solutions:**
+1. Подойдите ближе к роутеру или используйте точку доступа.
+2. Посмотрите уровень сигнала на экране ридера.
+3. Помехи дают другие устройства, попробуйте другой канал или сеть.
 
-1. Verify both devices are on the correct network
-   - Check your computer/phone Wi-Fi settings
-   - In **Join Network** mode, your computer/phone and CrossPoint Reader must be on the same Wi-Fi network
-   - In **Create Hotspot** mode, your computer/phone must be connected to the `CrossPoint-Reader` hotspot
-2. Double-check the IP address
-   - Make sure you typed it correctly
-   - Include `http://` at the beginning
-   - Try the displayed IP address if `http://crosspoint.local/` does not resolve
-3. Try disabling VPN if you're using one
-4. Some networks have "client isolation" enabled - use Create Hotspot mode or check with your network administrator
+## Загрузка файла не проходит
 
-### Connection Drops or Times Out
+1. Проверьте свободное место на SD-карте.
+2. Проверьте имя файла (недопустимые символы).
+3. Попробуйте маленький файл для проверки.
+4. Обновите страницу и повторите.
 
-**Problem:** Wi-Fi connection is unstable
+## Сохраненный пароль Wi-Fi не подходит
 
-**Solutions:**
+При неудачном подключении ридер предложит «Забыть сеть». Согласитесь,
+затем подключитесь заново и введите пароль еще раз.
 
-1. Move closer to the Wi-Fi router, or use Create Hotspot mode for a direct connection
-2. Check signal strength on the device (should be at least `||` or better)
-3. Avoid interference from other devices
-4. Try a different Wi-Fi network if available
+## Быстро садится батарея
 
-### Upload Fails
-
-**Problem:** File upload doesn't complete or shows an error
-
-**Solutions:**
-
-1. Check that the SD card has enough free space
-2. Check that the filename is valid for the SD card filesystem
-3. Try uploading a smaller file first to test
-4. Refresh the browser page and try again
-5. If WebSocket upload fails repeatedly, refresh the page and retry with the HTTP fallback path
-
-### Saved Password Not Working
-
-**Problem:** Device fails to connect with saved credentials
-
-**Solutions:**
-
-1. When connection fails, you'll be prompted to "Forget Network"
-2. Select **Yes** to remove the saved password
-3. Reconnect and enter the password again
-4. Choose to save the new password
+Включите Настройки, Система, «Лог батареи», оставьте на ночь и посмотрите
+`/.crosspoint/battery_log.csv`. Ночные строки `boot` означают, что ридер
+просыпался. Если строк нет, а заряд уходит, дело в железе, кабеле или
+зарядке.

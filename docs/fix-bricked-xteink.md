@@ -1,131 +1,85 @@
-# Recovering a Bricked Xteink
+# Восстановление окирпиченного Xteink
 
-![proceed at your own risk](./images/spiflash/fix_bricked.jpg)
+![осторожно](./images/spiflash/fix_bricked.jpg)
 
-This guide covers installing CrossPoint on an Xteink that's bricked, or stuck on firmware with no path to flash a replacement. It works by writing firmware directly to the SPI flash chip with an external programmer, bypassing the ESP32-C3 entirely.
+Если ридер не включается, зависает на чужой прошивке и не прошивается по
+USB, микропрошивку можно записать напрямую в SPI-flash чип внешним
+программатором, минуя ESP32-C3.
 
-If your device isn't USB-locked, flash it over USB instead — it's safer and much less invasive. What follows should only be a last resort.
+Если устройство не заблокировано по USB, прошивайте обычным способом:
+это безопасно. Способ ниже — крайняя мера.
 
-*Example: a device stuck on Biscuit firmware, unresponsive to a normal USB flash.*
+## Понадобится
 
-![biscuit](./images/spiflash/stuck_on_biscuit.jpg)
+- Ацетон или жидкость для снятия лака.
+- Программатор SPI-flash. В примере CH341a, подойдет и Bus Pirate,
+  Raspberry Pi/Pico.
+- Программа flashrom (есть на всех ОС).
+- esptool.py, только если хотите снять дамп с другого ридера.
 
-## Required Tools
+## Перед началом
 
-- Acetone or another nail polish remover.
-- A SPI flash programmer. On this guide we use a CH341a; A Bus Pirate, Raspberry Pi/Pico or suitable Arduino, also works.
-- Programmer software. flashrom (with libftdi) work on all OSs.
-- esptool.py, but only if you intend to dump firmware from another device to use as your source image.
-  
-## Before You Start
+- Литий опасен, не замыкайте и не прокалывайте батарею.
+- Экран хрупкий, не гните его, не применяйте силу к шлейфу.
+- Ошибетесь с подключением, можете добить устройство. Всё делаете на свой
+  страх и риск.
 
-- Lithium batteries are dangerous, do not short or puncture. Be careful.
-- The display is fragile, don't bend or flex it. do not force the ZIF connector.
-- There is no undo here. A mis-wired clip or a short circuit can turn a bricked device into a dead one. Proceed at your own risk.
+## Порядок
 
+### 1. Образ прошивки
 
-## Procedure
+Варианты:
 
-### 1. Obtain a Firmware Image
-
-Two options:
-
-- Use the backup provided by @Uri-Tauber at `crosspoint-reader/docs/images/spiflash/crosspoint_spiflash_backup.tar.xz`, and extract the `.bin` file.
-- Dump one yourself from a working, unlocked device over USB:
-    - Turn the device on, connect the USB cable and do:
-    ```bash
-    ~$ pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32c3 -p /dev/ttyACM0 -b 921600 read_flash 0x000000     0x1000000 crosspoint_backup.bin
-     # or
-    ~$ esptool.py --chip esp32c3 -p /dev/ttyACM0 -b 921600 read_flash 0x000000 0x1000000 crosspoint_backup.bin
-    ```
-
-### 2. Disconnect Power Sources and Accessories
-
-- Remove and set the SD card aside for reinsertion later.
-- Remove any USB cable.
-- Confirm nothing else is supplying power to the board.
-
-### 3. Remove the Screen
-
-Ordinary nail polish remover softens the adhesive under the screen's edges — it takes some patience, and there's no clean way around that.
-
-- In a well ventilated space, free of any ignition source, apply acetone or nail polish remover to the borders of the screen.
-- Check it from time to time, make sure the borders of the screen stay wet for around 2 hours.
-- Start to pry open from a lower corner, and move around.
-- If necessary, use a non-conductive tool to help you.
-- Flip open the ZIF connector to release the screen from the board.
-
-![screen](./images/spiflash/remove_screen.jpg)
-![inside](./images/spiflash/inside.jpg)
-
-### 4. Disconnect the Battery
-
-Cut a single battery wire close to the board, then cover the cut end with tape to prevent shorting.
-
-![battery](./images/spiflash/disconnect_battery_and_sd_card.jpg)
-
-### 5. Hold the Reset Button Down
-
-Keeping reset held prevents the ESP32-C3 from interfering with SPI communication during the read/write. A piece of pointed plastic works well as a holder.
-
-![reset](./images/spiflash/press_and_hold_reset.jpg)
-
-### 6. Attach the Test Clip
-
-Connect the test clip to the flash chip before connecting the programmer to USB. Notes:
-
-- The clip's red wire aligns with pin 1, marked with a dot on both the chip and the board silkscreen.
-- Confirm each lead is making contact with a chip pin and not the epoxy body.
-- If the programmer has a voltage selector, set it to 3.3V.
-- Verify no other power source is connected — use a multimeter if there's any doubt.
-  
-![chip](./images/spiflash/spi_flash_chip.jpg)
-![connect](./images/spiflash/connect_clip_to_spiflash_chip.jpg)
-
-### 7. Connect the Programmer to the PC
-
-![ready](./images/spiflash/ready.jpg)
-
-### 8. Verify the Connection by Reading Twice
-
-Read the chip twice and compare hashes. If they don't match, something in the clip connection is off — fix that before writing anything to the chip.
+- Взять дамп от @Uri-Tauber из репозитория crosspoint-reader
+  (docs/images/spiflash/crosspoint_spiflash_backup.tar.xz).
+- Снять свой дамп с рабочего разлоченного ридера по USB:
 
 ```bash
-~$ sudo flashrom --programmer ch341a_spi -r backup_0.bin
-    [...]
-    Reading flash... done.
-~$ sudo flashrom --programmer ch341a_spi -r backup_1.bin
-    [...]
-    Reading flash... done.
-    # lets compare the hashes from the back ups
-~$ md5sum backup_0.bin
-    211522e56616ea46ac9bcf82d3451eb2  backup_0.bin
-~$ md5sum backup_1.bin
-    211522e56616ea46ac9bcf82d3451eb2  backup_1.bin
+esptool.py --chip esp32c3 -p /dev/ttyACM0 -b 921600 read_flash 0x000000 0x1000000 backup.bin
 ```
 
-### 9. Flash the Chip
+### 2. Обесточить
+
+Выньте SD-карту и кабели. Отрежьте один провод батареи у платы и
+заизолируйте конец.
+
+### 3. Снять экран
+
+Ацетоном смочите края экрана, подождите около двух часов, поддерживая
+влажность. Аккуратно подденьте с нижнего угла, откиньте шлейф ZIF.
+
+### 4. Прижать Reset
+
+Держите Reset нажатым весь процесс, чтобы ESP32 не мешал обмену по SPI.
+Удобно фиксировать пластиковой палочкой.
+
+### 5. Прищепка на чип
+
+Прищепку надевайте на flash-чип до подключения программатора к USB.
+Красный провод прищепки совпадает с точкой-меткой первого вывода чипа.
+Проверьте, что щупы касаются выводов, а не корпуса. Напряжение
+программатора 3.3 В. Убедитесь, что других источников питания нет.
+
+### 6. Проверка: прочитать дважды
 
 ```bash
-~$ sudo flashrom --programmer ch341a_spi -w crosspoint_backup.bin
-    [...]
-    Reading old flash chip contents... done.
-    Erasing and writing flash chip... Erase/write done.
-    Verifying flash... VERIFIED.
+sudo flashrom --programmer ch341a_spi -r backup_0.bin
+sudo flashrom --programmer ch341a_spi -r backup_1.bin
+md5sum backup_0.bin backup_1.bin
 ```
 
-### 10. Power and Test The Device
+Хеши должны совпасть. Не совпали — чините контакт, ничего не пишите.
 
-- Disconnect the programmer from the USB port.
-- Remove the test clip.
-- Release the reset button.
-- Reinsert the SD card.
-- Reconnect the screen.
-- Power the device via USB cable, no need to solder the battery yet.
-- Press the power button for a couple seconds.
+### 7. Запись
 
-![success 0](./images/spiflash/success_0.jpg)
-![success 1](./images/spiflash/success_1.jpg)
+```bash
+sudo flashrom --programmer ch341a_spi -w backup.bin
+```
 
-If CrossPoint boots successfully, the device can be fully reassembled.
+Ждите `VERIFIED`.
 
+### 8. Сборка и проверка
+
+Отключите программатор, снимите прищепку, отпустите Reset, вставьте
+SD-карту, подключите экран, подайте питание по USB и держите Power пару
+секунд. Если ридер загрузился, собирайте его полностью.

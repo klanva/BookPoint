@@ -1,153 +1,60 @@
-# Web Server Guide
+# Веб-интерфейс
 
-This guide explains how to use CrossPoint Reader's built-in web server for file
-transfer, device settings, Wi-Fi/OPDS management, and SD-card font management.
+Пока ридер в режиме «Передача файлов» или «Calibre Wireless», он
+поднимает веб-сервер. Через него с компьютера или телефона можно:
 
-## Overview
+- заливать, скачивать, переименовывать и удалять файлы на SD-карте
+- создавать папки
+- менять часть настроек устройства из браузера
+- управлять сохраненными сетями Wi-Fi и OPDS-серверами
+- загружать и удалять шрифты `.cpfont`
+- принимать файлы по WebDAV и из Calibre
 
-The web server is available while the device is in **File Transfer** or
-**Calibre Wireless** mode. It can:
+Авторизации нет, поэтому пользуйтесь только в доверенной домашней сети
+или в режиме точки доступа.
 
-- Upload, download, rename, move, and delete files on the SD card
-- Create folders
-- Edit many device settings from a browser
-- Manage saved Wi-Fi networks and OPDS servers
-- Upload and delete `.cpfont` SD-card font families
-- Accept WebDAV clients and Calibre wireless uploads
+## Запуск
 
-The server does not require authentication. Use it only on trusted private
-networks or in hotspot mode when you control who is connected.
+Главный экран, «Передача файлов», затем режим:
 
-## Starting File Transfer
+| Режим | Когда использовать |
+|-------|--------------------|
+| **Подключиться к сети** | Ридер подключается к вашему Wi-Fi |
+| **Calibre Wireless** | Отправка книг из Calibre |
+| **Создать точку доступа** | Ридер поднимает свою сеть `CrossPoint-Reader` |
 
-1. From the Home screen, select **File Transfer**.
-2. Choose one of the available modes:
+После подключения на экране: имя сети, QR-код, прямой адрес вида
+`http://192.168.1.102/` и адрес `http://crosspoint.local/`. Открывайте
+любой из них в браузере устройства в той же сети.
 
-| Mode | Use when |
-|------|----------|
-| **Join Network** | You want the reader to join an existing Wi-Fi network. |
-| **Calibre Wireless** | You want to receive books from the CrossPoint Calibre plugin workflow. |
-| **Create Hotspot** | You want the reader to create its own open Wi-Fi network. |
+При бездействии Wi-Fi выключится сам: настройка «Автооткл. Wi-Fi (мин)»
+в Системе, по умолчанию 3 минуты. Очередное обращение из браузера
+таймер сбрасывает.
 
-## Join Network Mode
+## Что где находится в интерфейсе
 
-1. Select **Join Network**.
-2. If you have saved Wi-Fi credentials, CrossPoint first tries the last
-   connected network, then other visible saved networks in signal-strength
-   order. Press **Back** to cancel or **Confirm** to stop auto-connect and show
-   the network list.
-3. If the network list is shown, pick a 2.4 GHz Wi-Fi network from the scan
-   results.
-4. Enter the password if prompted.
-5. Save credentials if you want the reader to reconnect automatically next time.
+- **Файлы**: браузер SD-карты, загрузка (с оптимизацией EPUB на выбор),
+  скачивание, переименование, удаление, создание папок.
+- **Шрифты**: загрузка `.cpfont`, конвертация TTF/OTF прямо в браузере.
+- **Настройки**: карточки сетей Wi-Fi и OPDS-серверов. Пароли после
+  сохранения не показываются, пустое поле пароля оставляет старый.
+- **EPUB Optimizer**: чистка и пересборка EPUB для лучшей совместимости.
 
-After connection, the reader shows:
+Управление из консоли возможно через curl, полный список адресов:
+[webserver-endpoints.md](webserver-endpoints.md) (англ.).
 
-- The connected SSID
-- A QR code for the web URL
-- The direct IP URL, for example `http://192.168.1.102/`
-- The mDNS fallback URL, usually `http://crosspoint.local/`
+## Примеры
 
-Use either URL from a phone, tablet, or computer on the same network.
+Загрузить книгу:
 
-## Create Hotspot Mode
+    curl -F "file=@book.epub" http://192.168.1.102/upload
 
-1. Select **Create Hotspot**.
-2. Connect your phone or computer to the open Wi-Fi network:
+Скачать файл с ридера:
 
-```text
-CrossPoint-Reader
-```
+    curl -O http://192.168.1.102/files/book.epub
 
-3. Open the URL shown on the reader. `http://crosspoint.local/` is preferred
-   when supported; the fallback IP is typically `http://192.168.4.1/`.
+## WebDAV
 
-The reader displays one QR code for joining the hotspot and another QR code for
-opening the web interface.
-
-## Calibre Wireless Mode
-
-Calibre Wireless starts the same web server in station mode, then displays setup
-instructions and upload progress on the reader. Use this mode with the
-CrossPoint Calibre plugin or other clients that speak the documented WebSocket
-upload protocol.
-
-For Calibre OPDS browsing, add `/opds` to the catalog URL when configuring an
-OPDS server.
-
-## Web Interface
-
-The browser UI has four primary pages.
-
-### Home
-
-The Home page shows firmware status, network mode, IP address, device type,
-uptime, and free heap.
-
-### File Manager
-
-The File Manager page can:
-
-- Browse SD-card folders
-- Upload files, using WebSocket upload when available and HTTP upload as a fallback
-- Create folders
-- Download files
-- Rename files
-- Move files into existing folders
-- Delete one or more selected files or empty folders
-
-Existing files with the same name are overwritten by uploads. When EPUB files
-are overwritten, moved, renamed, or deleted through the web server, the matching
-book cache is cleared so stale metadata is not reused.
-
-### Settings
-
-The Settings page exposes many firmware settings in the browser. It also has
-cards for:
-
-- Saved Wi-Fi networks
-- OPDS servers
-
-Passwords are accepted when adding or editing entries, but saved passwords are
-not returned by the API.
-
-### Fonts
-
-The Fonts page lists installed SD-card font families and lets you upload
-`.cpfont` files. Upload files from one font family at a time. The server validates
-the font family name, filename, and `.cpfont` magic bytes before accepting the
-upload.
-
-Installed fonts appear in **Settings > Reader > Font Family** after the font
-registry refreshes.
-
-## Command Line Use
-
-Power users can use `curl`, WebDAV clients, or WebSocket clients while the web
-server is running.
-
-Endpoint details are documented in [webserver-endpoints.md](./webserver-endpoints.md).
-
-## Security Notes
-
-- The HTTP server runs on port 80.
-- The WebSocket upload server runs on port 81.
-- There is no authentication.
-- Anyone on the same network can access the web interface while it is running.
-- The server stops when you exit File Transfer or Calibre Wireless mode.
-- Hotspot mode creates an open network for connectivity fallback; disconnect when done.
-
-## Tips
-
-1. Use **Create Hotspot** when no trusted network is available.
-2. Prefer `crosspoint.local` when available, but keep the displayed IP address as a fallback.
-3. Move closer to the router if upload progress stalls in Join Network mode.
-4. Upload custom fonts through the Fonts page or copy them to `/.fonts/` or `/fonts/` on the SD card.
-5. Exit File Transfer mode when finished to conserve battery.
-
-## Related Documentation
-
-- [User Guide](../USER_GUIDE.md)
-- [Webserver Endpoints](./webserver-endpoints.md)
-- [SD Card Fonts](./sd-card-fonts.md)
-- [Troubleshooting](./troubleshooting.md)
+Ридер монтируется как сетевой диск: в проводнике Windows подключите
+сетевой диск на адрес `http://192.168.1.102/`, в macOS Finder —
+«Подключиться к серверу». Работают копирование, перемещение и удаление.
