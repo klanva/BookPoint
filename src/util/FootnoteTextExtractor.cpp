@@ -167,10 +167,15 @@ class AnchorScanner : public Print {
 
   // Locates the opening tag whose id/xml:id/name attribute matches the
   // anchor. Returns the offset of that tag's '<', or npos.
+  //
+  // Every pattern already ends with its closing quote character ("id=\"" etc),
+  // so valueStart is the first character of the value and the value runs up to
+  // the next occurrence of that same quote.
   size_t findAnchorStart() const {
     static const char* patterns[] = {"id=\"", "id='", "xml:id=\"", "xml:id='", "name=\"", "name='"};
     for (const char* pat : patterns) {
       const std::string p = pat;
+      const char quote = p.back();  // the closing quote of this pattern
       size_t pos = 0;
       while ((pos = buf_.find(p, pos)) != std::string::npos) {
         const bool boundaryOk =
@@ -180,22 +185,12 @@ class AnchorScanner : public Print {
           pos = valueStart;
           continue;
         }
-        const char quote = buf_[valueStart];
-        if (quote != '"' && quote != '\'') {
-          pos = valueStart;
-          continue;
-        }
-        const size_t close = buf_.find(quote, valueStart + 1);
+        const size_t close = buf_.find(quote, valueStart);
         if (close == std::string::npos) {
           break;  // value still streaming in; retry with more data
         }
-        size_t vBegin = valueStart;
-        size_t vEnd = close;
-        while (vBegin < vEnd && isspace(static_cast<unsigned char>(buf_[vBegin]))) vBegin++;
-        while (vEnd > vBegin && isspace(static_cast<unsigned char>(buf_[vEnd - 1]))) vEnd--;
-        const bool match = buf_.compare(vBegin, vEnd - vBegin, anchor_) == 0 ||
-                           (anchor_.size() == static_cast<size_t>(vEnd - vBegin) &&
-                            strncasecmp(buf_.c_str() + vBegin, anchor_.c_str(), anchor_.size()) == 0);
+        const bool match = close - valueStart == anchor_.size() &&
+                           buf_.compare(valueStart, anchor_.size(), anchor_) == 0;
         if (match) {
           const size_t tagStart = buf_.rfind('<', pos);
           if (tagStart != std::string::npos) return tagStart;
