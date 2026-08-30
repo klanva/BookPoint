@@ -1,5 +1,7 @@
 #include "CrossPointWebServerActivity.h"
 
+#include "util/WifiActivity.h"
+
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <FontCacheManager.h>
@@ -287,6 +289,17 @@ void CrossPointWebServerActivity::startWebServer() {
 void CrossPointWebServerActivity::loop() {
   // Handle different states
   if (state == WebServerActivityState::SERVER_RUNNING) {
+    // Idle auto-off: the radio is the biggest battery consumer, so when no
+    // client requests or transfers happen for SETTINGS.wifiAutoOffMinutes,
+    // tear the connection down and return home (same path as Back).
+    if (SETTINGS.wifiAutoOffMinutes != 0 &&
+        WifiActivity::idleExceeded(SETTINGS.wifiAutoOffMinutes * 60UL)) {
+      LOG_INF("WEBACT", "Wi-Fi idle for %u min, auto-off", SETTINGS.wifiAutoOffMinutes);
+      state = WebServerActivityState::SHUTTING_DOWN;
+      onGoHome();
+      return;
+    }
+
     // Handle DNS requests for captive portal (AP mode only)
     if (isApMode && dnsServer) {
       dnsServer->processNextRequest();

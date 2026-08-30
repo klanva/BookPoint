@@ -1,5 +1,7 @@
 #include "OpdsBookBrowserActivity.h"
 
+#include "util/WifiActivity.h"
+
 #include <Arduino.h>
 #include <FreeInkUIIcon.h>
 #include <GfxRenderer.h>
@@ -109,6 +111,13 @@ void OpdsBookBrowserActivity::onCancelEvent(const fui::ActionEvent&, void* user)
 }
 
 void OpdsBookBrowserActivity::loop() {
+  // Idle auto-off (see CrossPointWebServerActivity): OPDS browsing keeps the
+  // radio up; without traffic for the configured timeout, go home.
+  if (SETTINGS.wifiAutoOffMinutes != 0 && WifiActivity::idleExceeded(SETTINGS.wifiAutoOffMinutes * 60UL)) {
+    LOG_INF("OPDS", "Wi-Fi idle for %u min, auto-off", SETTINGS.wifiAutoOffMinutes);
+    finish();
+    return;
+  }
   if (state == BrowserState::WIFI_SELECTION || state == BrowserState::SEARCH_INPUT) {
     return;
   }

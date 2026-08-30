@@ -11,6 +11,8 @@
 #if defined(FREEINK_NET_WOLFSSL)
 #include <SecureHttpClient.h>
 
+#include "util/WifiActivity.h"
+
 extern "C" void wolfSSL_Arduino_Serial_Print(const char* const msg) { LOG_DBG("WOLFSSL", "%s", msg); }
 #else
 #include <esp_crt_bundle.h>
@@ -222,6 +224,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
 // WiFiClient inside runGetWolf, so this is safe for non-TLS targets too.
 HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::string& username,
                                            const std::string& password, Sink& sink) {
+  WifiActivity::touch();
 #if defined(FREEINK_NET_WOLFSSL)
   return runGetWolf(url, username, password, sink);
 #else

@@ -1,5 +1,7 @@
 #include "CrossPointWebServer.h"
 
+#include "util/WifiActivity.h"
+
 #include <ArduinoJson.h>
 #include <BoardConfig.h>
 #include <FsHelpers.h>
@@ -286,6 +288,7 @@ void CrossPointWebServer::stop() {
 }
 
 void CrossPointWebServer::handleClient() {
+  WifiActivity::touch();
   static unsigned long lastDebugPrint = 0;
 
   // Check running flag FIRST before accessing server
