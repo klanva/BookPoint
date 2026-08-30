@@ -23,6 +23,10 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
   bool showBootScreen = true;
+  // Last known wall-clock time (UTC epoch), refreshed whenever the state is
+  // saved. Used at boot to restore the software clock on devices without a
+  // hardware RTC so dated statistics survive deep sleep.
+  uint32_t lastKnownEpoch = 0;
 
   static const char* getFilePath() { return "/.crosspoint/state.json"; }
   void toJson(JsonDocument& doc) const;

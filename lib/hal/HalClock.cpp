@@ -66,9 +66,42 @@ bool HalClock::formatTime(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHou
   return true;
 }
 
-bool HalClock::syncFromNTP() {
-  if (!_available) return false;
+bool HalClock::getDateTime(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute) const {
+  if (_available) {
+    Rtc::DateTime dt;
+    if (_sdkRtc.now(dt)) {
+      year = dt.year;
+      month = dt.month;
+      day = dt.day;
+      hour = dt.hour;
+      minute = dt.minute;
+      return dt.year >= 2020;
+    }
+  }
 
+  // Software clock fallback (X4): the ESP32 system time, set by NTP sync and
+  // restored from the persisted last-known epoch at boot. Costs nothing to
+  // read — it is a plain counter, no radio, no timers.
+  const time_t now = time(nullptr);
+  struct tm timeinfo;
+  gmtime_r(&now, &timeinfo);
+  if (timeinfo.tm_year + 1900 < 2020) return false;
+
+  year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+  month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
+  day = static_cast<uint8_t>(timeinfo.tm_mday);
+  hour = static_cast<uint8_t>(timeinfo.tm_hour);
+  minute = static_cast<uint8_t>(timeinfo.tm_min);
+  return true;
+}
+
+bool HalClock::hasUsableTime() const {
+  uint16_t year;
+  uint8_t month, day, hour, minute;
+  return getDateTime(year, month, day, hour, minute);
+}
+
+bool HalClock::syncFromNTP() {
   if (WiFi.status() != WL_CONNECTED) {
     LOG_ERR("CLK", "WiFi not connected, cannot sync NTP");
     return false;
@@ -85,8 +118,19 @@ bool HalClock::syncFromNTP() {
       struct tm timeinfo;
       gmtime_r(&now, &timeinfo);
 
+      const uint16_t year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+
+      if (!_available) {
+        // No hardware RTC (X4): the SNTP update already set the system
+        // clock, which getDateTime() reads back. Nothing else to do — the
+        // software clock costs no power and survives light sleep.
+        LOG_INF("CLK", "System clock set to %04u-%02u-%02u %02u:%02u UTC", year, timeinfo.tm_mon + 1,
+                timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min);
+        return year >= 2020;
+      }
+
       Rtc::DateTime dt;
-      dt.year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+      dt.year = year;
       dt.month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
       dt.day = static_cast<uint8_t>(timeinfo.tm_mday);
       dt.hour = static_cast<uint8_t>(timeinfo.tm_hour);

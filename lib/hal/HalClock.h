@@ -27,6 +27,16 @@ class HalClock {
   // Returns false if RTC is not available.
   bool getTime(uint8_t& hour, uint8_t& minute) const;
 
+  // Full date and time (UTC). Prefers the hardware RTC; on devices without
+  // one (X4) falls back to the ESP32 system clock, which is set by NTP sync
+  // and survives light sleep. Returns false when neither source has a
+  // plausible time (never synced).
+  bool getDateTime(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute) const;
+
+  // True when either the hardware RTC or the system clock carries a plausible
+  // time (year >= 2020).
+  bool hasUsableTime() const;
+
   // Format time into a caller-provided buffer.
   // 24h mode produces "HH:MM" (needs >=6 bytes); 12h mode produces "H:MM AM"/"HH:MM PM" (needs >=9 bytes).
   // utcOffsetQuarterHoursBiased: biased quarter-hour offset (48 = UTC+0, 0 = UTC-12, 104 = UTC+14).
@@ -34,9 +44,11 @@ class HalClock {
   // Returns false if RTC is not available.
   bool formatTime(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHoursBiased = 48, bool use12Hour = false) const;
 
-  // Sync the RTC from an NTP server. Requires WiFi to be connected.
+  // Sync the clock from an NTP server. Requires WiFi to be connected.
   // Blocks for up to ~5s while waiting for SNTP response.
-  // Returns true if the RTC was successfully updated.
+  // Works on devices without a hardware RTC too: the ESP32 system clock is
+  // set as a software clock (no battery cost — it is just a counter).
+  // Returns true if a usable time was obtained.
   //
   // Debouncing (skip if already synced once) is enforced by the caller, not here,
   // so the HAL stays free of any app-layer settings dependency.

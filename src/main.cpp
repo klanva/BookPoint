@@ -18,6 +18,7 @@
 #include <WiFi.h>
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
+#include <sys/time.h>
 #if FREEINK_CAP_TOUCH
 #include <esp_sntp.h>
 #endif
@@ -25,6 +26,7 @@
 #include <cstring>
 
 #include "CrossPointSettings.h"
+#include "util/BatteryLog.h"
 #include "CrossPointState.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
@@ -285,6 +287,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   display.deepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+  BatteryLog::logEvent("sleep");
   powerManager.startDeepSleep(gpio);
 }
 
@@ -413,9 +416,27 @@ void setup() {
   RECENT_BOOKS.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   KOREADER_STORE.loadFromFile();
-  OPDS_STORE.loadFromFile();
+  if (!OPDS_STORE.loadFromFile() || OPDS_STORE.getCount() == 0) {
+    OPDS_STORE.seedDefaults();
+  }
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
+
+  BatteryLog::logEvent("boot");
+
+  // Restore the software clock on devices without a hardware RTC (X4). Deep
+  // sleep resets the ESP32 system time, so seed it with the last epoch saved
+  // to state.json. Offline boots get a time that may lag (the sleep gap is
+  // unknown) but keeps the reading statistics' dates sane until the next NTP
+  // sync. Costs nothing: a single settimeofday call, no timers, no radio.
+  if (APP_STATE.lastKnownEpoch > 1600000000) {
+    const time_t now = time(nullptr);
+    if (now < static_cast<time_t>(APP_STATE.lastKnownEpoch)) {
+      struct timeval tv = {static_cast<time_t>(APP_STATE.lastKnownEpoch), 0};
+      settimeofday(&tv, nullptr);
+      LOG_INF("MAIN", "Restored software clock from lastKnownEpoch");
+    }
+  }
 
   // Brightness and warmth are always restored. A normal wake starts with the
   // light off unless Restore Light on Wake is enabled; silent maintenance
