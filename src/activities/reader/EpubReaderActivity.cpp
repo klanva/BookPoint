@@ -1847,8 +1847,7 @@ void EpubReaderActivity::openStats() {
   statsProgressPercent = progress * 100.0f;
 
   statsEstimatedSecondsLeft = 0;
-  if (bookStats.avgSecondsPerForwardPage > 0 && progress < 1.0f && epub->getBookSize() > 0 && section &&
-      section->estimatedTotalPages() > 0) {
+  if (progress < 1.0f && epub->getBookSize() > 0 && section && section->estimatedTotalPages() > 0) {
     const size_t cumulativeHere = epub->getCumulativeSpineItemSize(currentSpineIndex);
     const size_t cumulativePrev = currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0;
     const size_t spineBytes = cumulativeHere > cumulativePrev ? cumulativeHere - cumulativePrev : 0;
@@ -1856,8 +1855,22 @@ void EpubReaderActivity::openStats() {
       const float bytesPerPage = static_cast<float>(spineBytes) / static_cast<float>(section->estimatedTotalPages());
       if (bytesPerPage > 0) {
         const float remainingPages = static_cast<float>(epub->getBookSize()) * (1.0f - progress) / bytesPerPage;
-        statsEstimatedSecondsLeft =
-            static_cast<uint32_t>(remainingPages * static_cast<float>(bookStats.avgSecondsPerForwardPage));
+        // Prefer this book's measured pace; otherwise fall back to the reader's
+        // lifetime pace (total reading seconds / total pages turned across all
+        // books). This mirrors inkMOD's fallbackEstimatedTimeLeft so a fresh book
+        // still shows a sensible "time left" instead of nothing.
+        uint32_t pacePerPage = bookStats.avgSecondsPerForwardPage;
+        if (pacePerPage == 0 && bookStats.totalPagesTurned > 0) {
+          pacePerPage = static_cast<uint32_t>(bookStats.totalReadingSeconds / bookStats.totalPagesTurned);
+        }
+        if (pacePerPage > 0) {
+          statsEstimatedSecondsLeft = static_cast<uint32_t>(remainingPages * static_cast<float>(pacePerPage));
+        } else if (progress > 0 && bookStats.totalReadingSeconds > 0) {
+          // No per-page pace anywhere: estimate from lifetime reading time and
+          // current progress (inkMOD's time-based fallback).
+          statsEstimatedSecondsLeft =
+              static_cast<uint32_t>(static_cast<float>(bookStats.totalReadingSeconds) * (1.0f - progress) / progress);
+        }
       }
     }
   }

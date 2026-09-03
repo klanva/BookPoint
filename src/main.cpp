@@ -427,14 +427,12 @@ void setup() {
 
   // Restore the software clock on devices without a hardware RTC (X4). Deep
   // sleep resets the ESP32 system time, so seed it with the last epoch saved
-  // to state.json. Offline boots get a time that may lag (the sleep gap is
-  // unknown) but keeps the reading statistics' dates sane until the next NTP
-  // sync. Costs nothing: a single settimeofday call, no timers, no radio.
+  // to state.json when no fresh time is available this boot. Offline boots get
+  // a time that may lag (the sleep gap is unknown) but keeps the reading
+  // statistics' dates sane until the next NTP sync. Costs nothing: a single
+  // settimeofday call inside the HAL, no timers, no radio.
   if (APP_STATE.lastKnownEpoch > 1600000000) {
-    const time_t now = time(nullptr);
-    if (now < static_cast<time_t>(APP_STATE.lastKnownEpoch)) {
-      struct timeval tv = {static_cast<time_t>(APP_STATE.lastKnownEpoch), 0};
-      settimeofday(&tv, nullptr);
+    if (halClock.seedFallbackTime(static_cast<time_t>(APP_STATE.lastKnownEpoch))) {
       LOG_INF("MAIN", "Restored software clock from lastKnownEpoch");
     }
   }

@@ -518,13 +518,13 @@ void WifiSelectionActivity::checkConnectionStatus() {
             WiFi.RSSI());
 #endif
 
-    // Sync the clock from NTP on the first successful WiFi connection only.
-    // Works on both device classes: X3 writes the DS3231 RTC; X4 (no RTC
-    // hardware) sets the ESP32 system clock, which the software clock reads
-    // back — no extra battery cost. The DS3231 drifts ~2 ppm so one sync is
-    // enough; users can force a re-sync from
-    // Settings > Customise Status Bar > Sync clock now.
-    if (!SETTINGS.clockHasBeenSynced) {
+    // Keep the clock accurate. X3 has a real DS3231-class RTC (~2 ppm), so one
+    // sync is enough. X4 has no hardware RTC — its software clock is backed by
+    // the ESP32's internal RC oscillator, which drifts minutes per day — so it
+    // must re-sync from NTP on every (re)connect. Both paths set the system
+    // clock; X3 additionally writes the DS3231. No extra battery cost: this only
+    // fires while WiFi is already connected (e.g. to sync books / browse OPDS).
+    if (!SETTINGS.clockHasBeenSynced || halClock.needsPeriodicNTPSync()) {
       if (halClock.syncFromNTP()) {
         SETTINGS.clockHasBeenSynced = 1;
         SETTINGS.saveToFile();

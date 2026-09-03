@@ -80,6 +80,9 @@ void ClockSyncActivity::runSync() {
   if (halClock.formatTime(buf, sizeof(buf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
     snprintf(syncedTime, sizeof(syncedTime), "%s", buf);
   }
+  if (halClock.formatDate(syncedDate, sizeof(syncedDate), SETTINGS.clockUtcOffsetQ)) {
+    // already null-terminated by formatDate on success
+  }
   state = SUCCESS;
   requestUpdate();
 }
@@ -124,6 +127,10 @@ void ClockSyncActivity::render(RenderLock&&) {
         char line[64];
         snprintf(line, sizeof(line), "%s %s", tr(STR_CURRENT_TIME), syncedTime);
         renderer.drawCenteredText(UI_10_FONT_ID, midY + 10, line);
+      }
+      if (syncedDate[0] != '\0') {
+        // Local date, formatted by HalClock::formatDate as "Mon D, YYYY".
+        renderer.drawCenteredText(UI_10_FONT_ID, midY + 35, syncedDate);
       }
       break;
     }
