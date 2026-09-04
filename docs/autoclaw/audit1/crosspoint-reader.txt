@@ -1,0 +1,487 @@
+﻿########## REPO: crosspoint-reader ##########
+
+===== FILE: README.md =====
+# CrossPoint Reader
+
+[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
+
+CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
+
+**Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
+
+![CrossPoint Reader running on Xteink device](./docs/images/cover.jpg)
+
+> If you're planning to buy an Xteink device, consider purchasing an **X3/X4 Developer Edition** through https://crosspointreader.com. CrossPoint receives a small share of each sale, helping fund development costs.
+
+## What can CrossPoint do?
+
+- **Reader engine**: EPUB 2/3 rendering with embedded-style option, image handling, hyphenation, kerning, chapter navigation, footnotes, bookmarks, dictionary lookups ([StarDict](docs/dictionary.md)), go-to-percent, auto page turn, orientation control, focus reading, KOReader progress sync and more. 
+
+- **Various formats**: native handling for `.epub`, `.xtc/.xtch`, `.txt`, and `.bmp`.
+
+- **Screenshots.**
+
+- **Custom fonts**: install your favorite fonts on the SD card.
+
+- **Tilt page turn (X3 only)**.
+
+- **Library workflow**: folder browser, hidden-file toggle, long-press delete, recent books, SD-cache management.
+
+- **Wireless workflows**:
+  
+  - File transfer web UI
+  - EPUB Optimizer
+  - Web settings UI/API (edit many device settings from browser)
+  - WebSocket fast uploads
+  - WebDAV handler
+  - AP mode (hotspot) and STA mode (join existing Wi-Fi), both with QR helpers
+  - Calibre wireless connect flow
+  - OPDS browser with saved servers (up to 8), search, pagination, and direct download
+  - OTA update checks and installs from GitHub releases
+
+- **Customization**: multiple themes (Classic, Lyra, Lyra Extended, RoundedRaff), sleep screen modes including transparent overlays, front/side button remapping, status bar controls, power-button behavior, refresh cadence, and more.
+
+- **Localization**: 24 UI languages and counting. RTL support.
+
+### Coming soon:
+
+- More themes.
+
+- Much more! stay tuned.
+
+---
+
+## USB-locked devices (Xteink Unlocker)
+
+Some Xteink units purchased from third-party stores (e.g. AliExpress) ship with USB flashing locked from the factory.
+If your device is locked, you will need to use the **Xteink Unlocker** tool available at
+https://crosspointreader.com/#unlock-tool before you can flash CrossPoint.
+
+**You do not need this tool if you bought your device directly from xteink.com.** Those units are not locked.
+
+**Not sure if your device is locked?** Power it on, connect the USB-C cable, and try flashing via the web flasher first (see
+[Install firmware](#install-firmware) below). If the browser's serial device picker does not show your device, try a different
+USB port or browser before assuming the device is locked. Only reach for the unlocker if the device still doesn't appear.
+
+> ### ⚠️ WARNING: READ THIS BEFORE USING THE UNLOCKER ⚠️
+> 
+> **The only officially supported firmwares in the unlock tool are CrossPoint and CrossInk.**
+> 
+> Flashing any other firmware on a USB-locked device may **permanently brick the device** or leave it **permanently
+> stuck on that firmware with no recovery path**. Once USB flashing is re-locked, your only way back is via OTA, and if
+> the firmware you flashed doesn't support OTA, **there is no way out**.
+
+## Install firmware
+
+### Web installer (recommended)
+
+1. Connect your device to your computer via USB-C and wake/unlock the device
+2. Go to https://crosspointreader.com/#flash-tools, select device (X3 or X4), and choose an official CrossPoint release.
+
+### Web installer (specific version)
+
+1. Connect your device to your computer via USB-C and wake/unlock the device
+2. Download a `firmware.bin` from [Releases](https://github.com/crosspoint-reader/crosspoint-reader/releases), local build, or continuous integration artifact.
+3. Go to https://crosspointreader.com/#flash-tools, select device (X3 or X4), click "Custom .bin" and upload a `firmware.bin`.
+
+### Revert to Official Firmware
+
+To revert to the official firmware, you can also flash the latest official firmware using https://crosspointreader.com/#flash-tools.
+
+### Command line
+
+1. Install [`esptool`](https://github.com/espressif/esptool):
+
+```bash
+pip install esptool
+```
+
+2. Download `firmware.bin` from the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases).
+3. Connect your device via USB-C.
+4. Find the device port. On Linux, run `dmesg` after connecting. On macOS:
+
+```bash
+log stream --predicate 'subsystem == "com.apple.iokit"' --info
+```
+
+5. Flash:
+
+```bash
+esptool.py --chip esp32c3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
+```
+
+Adjust `/dev/ttyACM0` to match your system.
+
+### Manual
+
+See [Development quick start](#development-quick-start) below.
+
+---
+
+## Custom SD-card fonts
+
+Convert your own TTF/OTF files into `.cpfont` files that load from the SD card. No firmware reflash is needed.
+
+1. Go to https://crosspointreader.com/fonts and open the "SD-card font builder" form.
+2. Upload up to four styles (regular, bold, italic, bold-italic), set the family name, point sizes, and Unicode range.
+3. Download the generated `.cpfont` files.
+4. Copy them to your SD card under `/fonts/YourFont/` (or `/.fonts/YourFont/` to hide the folder).
+5. Select the font on the device from the font settings.
+
+Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` script unmodified, so output matches a local host build.
+
+---
+
+## Documentation
+
+- [User Guide](./USER_GUIDE.md)
+- [Web server usage](./docs/webserver.md)
+- [Web server endpoints](./docs/webserver-endpoints.md)
+- [Project scope](./SCOPE.md)
+- [Contributing docs](./docs/contributing/README.md)
+- [Touch and UI development](./docs/contributing/touch-and-ui.md) - how to build new screens on the FreeInkUI activity bases (UiListActivity and friends), plus build envs for the non-Xteink touch devices
+
+---
+
+## Development quick start
+
+### Prerequisites
+
+- [pioarduino PlatformIO Core](https://github.com/pioarduino/platformio-core) or [VS Code + pioarduino IDE](https://github.com/pioarduino/pioarduino-vscode-ide)
+- Python 3.8+
+- `clang-format` 21
+- USB-C cable supporting data transfer
+
+### Setup
+
+```bash
+git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
+cd crosspoint-reader
+
+# if cloned without --recursive:
+git submodule update --init --recursive
+```
+
+### Nix/NixOS
+
+Nix/NixOS users can enter the development shell with either `nix develop` (flakes) or `nix-shell`:
+
+```bash
+nix develop -f nix
+# or
+nix-shell nix
+```
+
+To flash a connected ESP32-C3 device, enable PlatformIO's udev rules in your NixOS configuration:
+
+```nix
+services.udev.packages = with pkgs; [ platformio-core.udev ];
+```
+
+After rebuilding the system configuration, reconnect the device or reload udev rules.
+
+### Build / flash / monitor
+
+```bash
+pio run --target upload
+```
+
+### Contributor pre-PR checks
+
+```bash
+./bin/clang-format-fix
+pio check -e default
+pio run -e default
+```
+
+### Debugging
+
+After flashing the new features, it’s recommended to capture detailed logs from the serial port.
+
+First, make sure all required Python packages are installed:
+
+```python
+python3 -m pip install pyserial colorama matplotlib
+```
+
+After that run the script:
+
+```sh
+# For Linux
+# This was tested on Debian and should work on most Linux systems.
+python3 scripts/debugging_monitor.py
+
+# For macOS
+python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
+```
+
+Minor adjustments may be required for Windows.
+
+---
+
+## Internals
+
+
+===== FILE: USER_GUIDE.md =====
+# CrossPoint User Guide
+
+Welcome to the **CrossPoint** firmware. This guide outlines the hardware controls, navigation, and reading features of the device.
+
+- [CrossPoint User Guide](#crosspoint-user-guide)
+  - [1. Hardware Overview](#1-hardware-overview)
+    - [Button Layout](#button-layout)
+    - [Taking a Screenshot](#taking-a-screenshot)
+    - [Frontlight (X4 Pro only)](#frontlight-x4-pro-only)
+  - [2. Power \& Startup](#2-power--startup)
+    - [Power On / Off](#power-on--off)
+    - [First Launch](#first-launch)
+  - [3. Screens](#3-screens)
+    - [3.1 Home Screen](#31-home-screen)
+    - [3.2 Reading Mode](#32-reading-mode)
+    - [3.3 Browse Files Screen](#33-browse-files-screen)
+    - [3.4 Recent Books Screen](#34-recent-books-screen)
+    - [3.5 File Transfer Screen](#35-file-transfer-screen)
+    - [3.5.1 Calibre Wireless Transfers](#351-calibre-wireless-transfers)
+      - [Installing the Plugin in Calibre](#installing-the-plugin-in-calibre)
+      - [Configuring the CrossPoint Plugin in Calibre](#configuring-the-crosspoint-plugin-in-calibre)
+      - [Uploading Books](#uploading-books)
+      - [Removing a Book](#removing-a-book)
+    - [3.6 Settings](#36-settings)
+      - [3.6.1 Display](#361-display)
+      - [3.6.2 Reader](#362-reader)
+      - [3.6.3 Controls](#363-controls)
+      - [3.6.4 System](#364-system)
+      - [3.6.5 OPDS Servers (Multiple Libraries)](#365-opds-servers-multiple-libraries)
+      - [3.6.6 Web Settings (Wi-Fi + OPDS)](#366-web-settings-wi-fi--opds)
+      - [3.6.7 KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)
+        - [Option A: CrossPoint Sync Server (`sync.crosspointreader.com`, default)](#option-a-crosspoint-sync-server-synccrosspointreadercom-default)
+        - [Option B: Legacy Public KOReader Server (`sync.koreader.rocks`)](#option-b-legacy-public-koreader-server-synckoreaderrocks)
+        - [Option C: Self-Hosted Server (Docker Compose)](#option-c-self-hosted-server-docker-compose)
+        - [Syncing While Reading](#syncing-while-reading)
+    - [3.7 Sleep Screen](#37-sleep-screen)
+      - [Cover settings](#cover-settings)
+      - [Custom images](#custom-images)
+    - [3.8 Custom Fonts (SD Card)](#38-custom-fonts-sd-card)
+  - [4. Reading Mode](#4-reading-mode)
+    - [Page Turning](#page-turning)
+    - [Chapter Navigation](#chapter-navigation)
+    - [Auto Page Turn](#auto-page-turn)
+    - [Tilt Page Turn (X3 only)](#tilt-page-turn-x3-only)
+    - [Footnote Navigation](#footnote-navigation)
+    - [Dictionary Lookup](#dictionary-lookup)
+    - [System Navigation](#system-navigation)
+    - [Supported Languages](#supported-languages)
+  - [5. Reader Menu](#5-reader-menu)
+    - [5.1 Chapter Selection](#51-chapter-selection)
+    - [5.2 Bookmarks](#52-bookmarks)
+  - [6. Current Limitations \& Roadmap](#6-current-limitations--roadmap)
+  - [7. Troubleshooting Issues \& Escaping Bootloop](#7-troubleshooting-issues--escaping-bootloop)
+
+## 1. Hardware Overview
+
+The device utilises the standard buttons on the Xteink X4 (in the same layout as the manufacturer firmware, by default):
+
+### Button Layout
+
+| Location        | Buttons                                              |
+| --------------- | ---------------------------------------------------- |
+| **Bottom Edge** | **Back**, **Confirm**, **Left**, **Right**           |
+| **Right Side**  | **Power**, **Side Up**, **Side Down**, **Reset** |
+
+Button layout can be customized in the **[Controls Settings](#363-controls)**.
+
+### Taking a Screenshot
+
+When the Power button and the lower side button (Side Down) are pressed at the same time, it will take a screenshot and save it in the folder `screenshots/`.
+
+Alternatively, while reading a book, press the **Confirm** button to open the reader menu and select **Take screenshot**.
+
+### Frontlight (X4 Pro only)
+
+The X4 Pro has a built-in frontlight with adjustable brightness and warmth. It is controlled from a swipe panel rather than the Settings menu:
+
+* **Open the frontlight panel:** Swipe down from the top edge of the screen, from almost any screen (Home, Browse Files, Reading Mode, etc.). Drag the brightness and warmth sliders to adjust the light live, or tap the sun icon to turn it on or off.
+* **Quick toggle:** Double-click the **Power** button to turn the frontlight on or off instantly, without opening the panel.
+
+> [!NOTE]
+> Frontlight brightness and warmth are intentionally not listed in **[Display Settings](#361-display)** — the swipe panel is the only place to adjust them. The on/off state can also be toggled with the Power-button double-click above.
+
+If the frontlight doesn't come back on after the device wakes from sleep, check **Restore Light on Wake** in **[Display Settings](#361-display)** (on by default). Turning it off is intentional if you'd rather have the light stay off on wake and switch it on yourself each time — but it's easy to forget you changed it.
+
+---
+
+## 2. Power & Startup
+
+### Power On / Off
+
+To turn the device on or off, **press and hold the Power button for approximately half a second**.
+In the **[Controls Settings](#363-controls)** you can configure the power button to turn the device off with a short press instead of a long one.
+
+To reboot the device (for example after a firmware update or if it's frozen), press and release the Reset button, and then quickly press and hold the Power button for a few seconds.
+
+### First Launch
+
+Upon turning the device on for the first time, you will be placed on the **[Home](#31-home-screen)** screen.
+
+> [!NOTE]
+> On subsequent restarts, the firmware will automatically reopen the last book you were reading.
+
+---
+
+## 3. Screens
+
+### 3.1 Home Screen
+
+The Home screen is the main entry point to the firmware. From here you can navigate to **[Reading Mode](#4-reading-mode)** with the most recently read book, the **[Browse Files](#33-browse-files-screen)** screen, the **[Recent Books](#34-recent-books-screen)** screen, the **[File Transfer](#35-file-transfer-screen)** screen, or **[Settings](#36-settings)**.
+
+### 3.2 Reading Mode
+
+See [Reading Mode](#4-reading-mode) below for more information.
+
+### 3.3 Browse Files Screen
+
+The Browse Files screen acts as a file and folder browser. The full path to the current directory is shown at the top of the screen. File extensions are displayed alongside each filename, and directories are shown with brackets (e.g. `[folder-name]`). Hidden directories (those beginning with `.`) are also visible.
+
+* **Navigate List:** Use **Left** (or **Side Up**), or **Right** (or **Side Down**) to move the selection cursor up and down through folders and books. You can also long-press these buttons to scroll a full page up or down.
+* **Open Selection:** Press **Confirm** to open a folder or start reading a selected book. Selecting a `.bmp` file will open the image viewer.
+* **Delete Files or Folders:** Hold and release **Confirm** to delete the selected file or folder. You will be given an option to either confirm or cancel. Multiple files can be selected for deletion in a single operation.
+* **Rename or Move:** Files can be renamed or moved to a different folder from within the browse screen.
+
+### 3.4 Recent Books Screen
+
+The Recent Books screen lists the most recently opened books in a chronological view, displaying title and author.
+
+### 3.5 File Transfer Screen
+
+The File Transfer screen allows you to upload and manage files on the device. When you enter the screen, choose **Join a Network**, **Calibre Wireless**, or **Create Hotspot**. The reader then starts the web server for the selected mode.
+
+See the [web server docs](./docs/webserver.md) for more information on how to connect to the web server and upload files.
+
+The web interface also supports **WebDAV**, allowing you to mount the device as a network drive and manage files directly from your computer's file manager.
+
+Download links for files already on the device are available in the web interface, so you can retrieve books or screenshots over Wi-Fi without connecting a cable.
+
+A **Wi-Fi signal strength indicator** (dBm) is displayed on-screen during joined-network web server sessions.
+
+> [!TIP]
+> Advanced users can also manage files programmatically or via the command line using `curl`. See the [web server docs](./docs/webserver.md) for details.
+> [!TIP]
+> If your EPUBs have compatibility issues, you can run the built-in **EPUB Optimizer** directly from the device to clean up and reprocess books for better rendering.
+
+### 3.5.1 Calibre Wireless Transfers
+
+CrossPoint supports sending books from Calibre using the CrossPoint Reader device plugin.
+
+#### Installing the Plugin in Calibre
+
+If you don't already have the plugin installed:
+
+1. Head to https://github.com/crosspoint-reader/calibre-plugins/releases to download the latest version of the crosspoint_reader plugin.
+2. Download the zip file.
+3. Open Calibre → Preferences → Plugins → Load plugin from file → Select the zip file.
+4. Restart Calibre.
+
+#### Configuring the CrossPoint Plugin in Calibre
+1. In Calibre select Preferences.
+2. In the Preferences dialog select Plugins.
+3. In Plugins search for "crosspoint".
+4. Click on "Customize plugin".
+5. Update the value for "Host" to match the IP for your device.
+6. Leave the other settings as they are.
+7. [optional] Modify the "Upload path" to point to a subfolder other than the root "/" folder. Enter this as a path relative to the root folder. Example: `/mybooks`
+8. Restart Calibre.
+
+<img width="420" height="385" alt="Image" src="https://github.com/user-attachments/assets/01fc7e33-a9a7-48ba-9e26-2e68d1f9daec" />
+
+#### Uploading Books
+
+To upload a book using the CrossPoint plugin in Calibre:
+
+1. On the device: File Transfer -> Calibre Wireless, then join a network.
+2. Select one or more books.
+3. Right-click on that selection.
+4. Select "Send to Device" > "Send to main memory"
+
+The CrossPoint plugin will connect to your device, create a folder for the book's author in the root folder (or the folder you configured for the plugin), then copy the book into that folder.
+
+<img width="783" height="310" alt="Image" src="https://github.com/user-attachments/assets/741b0909-2e1d-4f16-8af0-2c43fbda5ce6" />
+
+#### Removing a Book
+
+Books cannot be removed from your device through Calibre. Use the web interface instead.
+
+### 3.6 Settings
+
+The Settings screen allows you to configure the device's behavior. There are a few settings you can adjust:
+
+#### 3.6.1 Display
+
+- **Sleep Screen**: Which sleep screen to display when the device sleeps:
+  
+  - "Dark" (default) - The default dark Crosspoint logo sleep screen
+  - "Light" - The same default sleep screen, on a white background
+  - "Custom" - Custom images from the SD card; see [Sleep Screen](#37-sleep-screen) below for more information
+  - "Cover" - The book cover image (Note: this is experimental and may not work as expected)
+  - "None" - A blank screen
+  - "Cover + Custom" - The book cover image while actively reading, falls back to "Custom" behavior otherwise
+  - "Quick resume" - The text of the last page read will be displayed on the sleep screen and a moon icon is shown on the edge of the screen. Waking up the device will return to the same page of the opened book. This is useful for quickly resuming reading without waiting for the device to fully wake up and load the book.
+  - "Transparent" - A transparent overlay image drawn over the current screen; see [Sleep Screen](#37-sleep-screen) below for more information
+- **Sleep Screen Cover Mode**: How to display the book cover when "Cover" sleep screen is selected:
+  
+  - "Fit" (default) - Scale the image down to fit centered on the screen, padding with white borders as necessary
+  - "Crop" - Scale the image down and crop as necessary to try to fill the screen (Note: this is experimental and may not work as expected)
+
+- **Sleep Screen Cover Filter**: What filter will be applied to the book cover when "Cover" sleep screen is selected:
+  
+  - "None" (default) - The cover image will be converted to a grayscale image and displayed as it is
+  - "Contrast" - The image will be displayed as a black & white image without grayscale conversion
+  - "Inverted" - The image will be inverted as in white & black and will be displayed without grayscale conversion
+
+- **Quick Resume on Timeout**: Whether to enable the "Quick Resume" sleep screen when the device goes to sleep due to inactivity (System > Time to Sleep). This is useful for quickly resuming reading without waiting for the device to fully wake up and load the book. This overwrites the Sleep Screen Cover Mode when enabled.
+
+- **Status Bar**: Configure the status bar displayed while reading:
+  
+  - "None" - No status bar
+  - "No Progress" - Show status bar without reading progress
+
+===== docs/ listing =====
+\docs\activity-manager.md
+\docs\comparison.md
+\docs\dictionary.md
+\docs\file-formats.md
+\docs\fix-bricked-xteink.md
+\docs\focus-reading.md
+\docs\hyphenation-trie-format.md
+\docs\i18n.md
+\docs\sd-card-fonts.md
+\docs\translators.md
+\docs\troubleshooting.md
+\docs\webserver-endpoints.md
+\docs\webserver.md
+\docs\contributing\architecture.md
+\docs\contributing\development-workflow.md
+\docs\contributing\getting-started.md
+\docs\contributing\README.md
+\docs\contributing\testing-debugging.md
+\docs\contributing\touch-and-ui.md
+\docs\images\cover.jpg
+\docs\images\comparison\chapter-menu.jpg
+\docs\images\comparison\menu.jpg
+\docs\images\comparison\reading-1.jpg
+\docs\images\comparison\reading-2.jpg
+\docs\images\comparison\reading-3.jpg
+\docs\images\focus-reading\focus-reading-atkinson.jpg
+\docs\images\focus-reading\focus-reading-merriweather.jpg
+\docs\images\focus-reading\focus-reading-notoserif.jpg
+\docs\images\focus-reading\focus-reading.jpg
+\docs\images\spiflash\connect_clip_to_spiflash_chip.jpg
+\docs\images\spiflash\crosspoint_spiflash_backup.tar.xz
+\docs\images\spiflash\disconnect_battery_and_sd_card.jpg
+\docs\images\spiflash\fix_bricked.jpg
+\docs\images\spiflash\inside.jpg
+\docs\images\spiflash\press_and_hold_reset.jpg
+\docs\images\spiflash\ready.jpg
+\docs\images\spiflash\remove_screen.jpg
+\docs\images\spiflash\spi_flash_chip.jpg
+\docs\images\spiflash\stuck_on_biscuit.jpg
+\docs\images\spiflash\success_0.jpg

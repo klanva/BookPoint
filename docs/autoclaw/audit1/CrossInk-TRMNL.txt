@@ -1,0 +1,884 @@
+﻿########## REPO: CrossInk-TRMNL ##########
+
+===== FILE: README.md =====
+# CrossXT - Yet Another Crosspoint Fork
+
+> [Fork based on CrossInk](https://github.com/yazdipour/CrossXT/tree/development)
+> [Fork based on CPR-vCodex](https://github.com/yazdipour/CrossXT/tree/main-vcodex)
+  - Karakeep Read Later App
+  - TRMNL Lock Screen (I used https://github.com/yazdipour/byos_next as Server)
+  - How to install CrossXT? Grab the latest release from [Releases](https://github.com/yazdipour/CrossXT/releases)
+
+![CrossXT with TRMNL Lock Screen](https://github.com/yazdipour/byos_next/raw/main/docs/screenshots/xteink-x4.jpg)
+
+---
+
+> **This is a personal fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)** with a focus on improved fonts and minimal reading stats.
+
+### Supported Devices
+
+- Xteink X3
+- Xteink X4
+- Seeed Studio Sticky
+
+## What's different in this fork
+
+My goal with this fork was to maintain the core Crosspoint firmware while integrating my preferred typography and some lightweight reading statistics. I’ve focused on keeping the underlying system stable while layering in a few "nice-to-have" features and UI refinements along the way.
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="./docs/images/bitter-small-15-margin.jpg" alt="Font: Bitter, Size: 12 pt, Margin: 15" /><br/>
+      <em>Font: Bitter, Size: 12 pt, Margin: 15</em>
+    </td>
+    <td align="center">
+      <img src="./docs/images/reading-stats.jpg" alt="Reading Stats with custom front button mapping shown" /><br/>
+      <em>Reading Stats with custom front button mapping shown</em>
+    </td>
+  </tr>
+</table>
+
+### Highlights
+
+- New reader fonts: Lexend Deca and Bitter.
+- Unicode emoji and miscellaneous symbols support (a limited subset).
+- Reader font sizes: 10 pt, 12 pt, 14 pt, and 16 pt.
+- Added ~~strikethrough~~ support.
+- Made <u>underlines</u> thicker for better visibility.
+- Added a custom `Minimal` theme and sleep screen option for the minimalists out there.
+- Added a custom `Dashboard` theme and sleep screen option for reading stats enthusiasts.
+- Added support for `<hr>` section breaks.
+- Added support for "redaction" style rendering.
+- Added improved support for tables with simple markup.
+- Added ability to add bookmarks.
+- Added ability to remap front buttons that only applies in the reader.
+- Added Bionic Reading and Guide Dots as optional reader modes.
+- Added Force Paragraph Indents for books that render as one giant wall of text.
+- Added ability to pin a sleep image as a favorite. The favorited image will always be displayed when your sleep settings are set to `Custom` or `Cover + Custom` (when no cover is available).
+- Added more in-reader control remapping options for side buttons, short power button clicks, and long-press menu actions.
+- Added ability to mark a book as finished from the in-book menu. A pop-up will also display once 99% of the book is reached. This status allows tracking of total books read.
+- Added ability to move finished books to "Read" folder.
+- In-book menu to quickly adjust reader options without having to exit the book.
+- Reading stats: total books read, total reading time, number of sessions, pages turned, average session time, pages turned per minute. You can also set your reading stats as your sleep screen.
+- All-time reading stats [syncing](./docs/reading-stats-sync.md) between two CrossInk devices.
+- Reading [progress sync](./docs/nearby-position-sync.md) between two CrossInk devices.
+- Added customizable Auto Page Turn Interval (anything between 5-120 seconds).
+- Added ability to view Recent Books as a 3x3 grid view.
+- To view a more detailed list for each version, visit the [releases](https://github.com/uxjulia/CrossInk/releases) page to read release notes.
+
+---
+
+### Reader Fonts
+
+The default fonts have been replaced with Lexend Deca and Bitter. These fonts have been chosen specifically to improve reading fluency and e-ink performance. These 'sturdier' typefaces feature uniform stroke weights and open geometries, allowing the X4/X3 to render crisp, high-contrast text with font-aliasing on while significantly reducing ghosting and artifacts.
+
+- [Lexend Deca](https://fonts.google.com/specimen/Lexend+Deca) - A research-backed sans-serif typeface designed to improve reading fluency. Lexend was engineered based on the theory that reading issues are often a design problem (visual crowding) rather than a cognitive one.
+- [Bitter](https://fonts.google.com/specimen/Bitter) - A "contemporary" slab serif typeface for text, it is specially designed for comfortably reading on digital screens. The consistent stroke weight of Bitter helps it render particularly well on e-ink devices. The medium weight has been chosen specifically for improved rendering on the X4/X3.
+
+The UI now uses [Inter](https://fonts.google.com/specimen/Inter) as the display font which has improved readability at smaller sizes.
+
+### Emojis and Misc Glyphs
+
+- Support for a limited set of Unicode [Emoticons](https://unicode-explorer.com/b/1F600) and [Miscellaneous Symbols](https://unicode-explorer.com/b/2600) using [Noto Emoji](https://fonts.google.com/noto/specimen/Noto+Emoji) and [Noto Sans Symbols](https://fonts.google.com/noto/specimen/Noto+Sans+Symbols) font.
+
+---
+
+### Font Sizes
+
+CrossInk includes 10 pt, 12 pt, 14 pt, and 16 pt built-in reader font sizes.
+
+See [SD Card Fonts](./docs/sd-card-fonts.md) for installing additional font families and size ranges.
+
+---
+
+### Reader features
+
+Reader Options, Bionic Reading, Guide Dots, Force Paragraph Indents, reading stats, and finished-book behavior are documented in [Reader Features](./docs/reader-features.md).
+
+### Custom button actions
+
+CrossInk adds configurable button shortcuts.
+
+See [Controls](./docs/controls.md) for the full action list and defaults.
+
+---
+
+## Tips for the best reading experience
+
+CrossInk runs on an ESP32-C3 with limited RAM, so very large folders or complex EPUBs can be slower than they would be on a phone, tablet, or desktop app.
+
+- Keep folders under about 200 files. For the smoothest browsing, aim for 50-100 files per folder.
+- Having 1000+ books on the SD card is fine if they are split into smaller folders, such as by author, series, genre, or read/unread status.
+- Avoid putting every book in the SD card root. The file browser has to scan and sort the current folder before it can show it.
+- Text-first EPUBs are the best fit. Large image-heavy EPUBs, scanned books, comics, and omnibus files with thousands of sections may load slowly or fail under memory pressure.
+- As a rough target, EPUBs under 20 MB tend to work the best. Files over 50 MB may still work, but they are more likely to be slow or memory-sensitive, especially if they contain many large images.
+- If an EPUB is unusually slow, try [optimizing](./docs/webserver.md#epub-optimization) it with the built-in web optimizer (via File Transfer) before copying it to the SD card: remove unused high-resolution images, split very large omnibus files, and avoid embedding multiple full font families when possible.
+- Use a reliable SD card and leave some free space. CrossInk stores settings, reading progress, cache files, stats, and generated book data on the card.
+
+## Development Device Simulator
+
+The [device simulator](https://github.com/uxjulia/crossink-simulator) renders the e-ink display in an SDL2 window so firmware changes can be sanity-checked without flashing hardware.
+
+See [Simulator](./docs/simulator.md) for setup, platform notes, keyboard controls, and cache tips.
+
+---
+
+## Installation
+
+The fastest way to install Crossink is by using Inky, Crossink's web companion app: https://inky.crossink.dev/#flash-tools
+
+Download a `firmware-*.bin` from the [releases page](https://github.com/uxjulia/CrossInk/releases), then flash it with the web installer or command line.
+
+See [Installation](./docs/installation.md) for step-by-step flashing and revert instructions.
+
+---
+
+## Documentation
+
+- [User Guide](./docs/user-guide.md)
+- [Installation](./docs/installation.md)
+- [SD Card Fonts](./docs/sd-card-fonts.md)
+- [Reader Features](./docs/reader-features.md)
+- [Dictionary](./docs/dictionary.md)
+- [Controls](./docs/controls.md)
+- [Simulator](./docs/simulator.md)
+- [Data Cache](./docs/data-cache.md)
+- [Web server usage](./docs/webserver.md)
+- [Web server endpoints](./docs/webserver-endpoints.md)
+- [Common issues](./docs/troubleshooting.md)
+- [Project scope](./SCOPE.md)
+- [Development docs](./docs/development/README.md)
+
+---
+
+## Development quick start
+
+CrossInk uses PlatformIO for building and flashing firmware.
+
+See [Getting Started](./docs/development/getting-started.md) for prerequisites, clone setup, and validation commands.
+
+### Nix/NixOS
+
+Nix/NixOS users can enter the development shell with either `nix develop` (flakes) or `nix-shell`:
+
+```bash
+nix develop -f nix
+# or
+nix-shell nix
+```
+
+To flash a connected ESP32-C3 device, enable PlatformIO's udev rules in your NixOS configuration:
+
+```nix
+services.udev.packages = with pkgs; [ platformio-core.udev ];
+```
+
+After rebuilding the system configuration, reconnect the device or reload udev rules.
+
+### Build / flash / monitor
+
+Connect your Xteink X4 or X3 via USB-C and run:
+
+```sh
+pio run -e default --target upload
+```
+
+Use `-e sticky` only when building for a Seeed Sticky device. The X3/X4 firmware uses the default environment.
+
+See [Testing and Debugging](./docs/development/testing-debugging.md) for serial logging, simulator checks, static analysis, and bug-report guidance.
+
+---
+
+## Repository layout
+
+- `src/` - app orchestration, settings/state, and activity implementations (home, reader, settings, network, boot/sleep)
+- `lib/` - supporting libraries: EPUB parsing/layout, fonts, i18n, filesystem helpers, HAL wrappers, and more
+- `freeink-sdk/` - hardware SDK submodule for display, input, storage, and battery (docs: https://freeink.org/docs)
+- `web/` - web portal sources (`templates/`, `pages/`, `assets/`); compiled by `scripts/build_web.py` into `src/network/html/*.generated.h`
+- `docs/` - user and developer documentation, published via the `site/` Astro site
+- `site/` - Astro project that builds `docs/` into the CrossInk documentation website
+- `test/` - unit tests and EPUB test fixtures
+- `scripts/` - build, codegen, and release tooling (i18n generation, web asset building, hyphenation tries, release packaging, etc.)
+- `bin/` - helper scripts for formatting (`clang-format-fix`) and CI checks
+- `fs_/` - sample SD card contents (books, sleep images, themes) used by the simulator
+- `nix/` - Nix/NixOS development shell definitions
+- `managed_components/` - ESP-IDF managed component dependencies, fetched automatically during build
+- [`SCOPE.md`](./SCOPE.md), [`GOVERNANCE.md`](./GOVERNANCE.md), [`CHANGELOG.md`](./CHANGELOG.md) - project scope, community principles, and release history
+
+## Internals
+
+The ESP32-C3 has about 380 KB of usable RAM, so CrossInk stores reusable book and device data on the SD card instead of rebuilding everything in memory.
+
+See [Data Cache](./docs/data-cache.md) for the `.crosspoint` layout and [File Formats](./docs/file-formats.md) for binary cache details.
+
+## Notice on Contributions
+
+This repository does not accept pull requests. Feature requests may be opened in [discussions](https://github.com/uxjulia/CrossInk/discussions), but major features requiring ongoing support should be directed upstream to [CrossPoint](https://github.com/crosspoint-reader/crosspoint-reader).
+
+===== FILE: CHANGELOG.md =====
+## [v1.5.0] - 2026-08-08
+
+### Added
+
+- TRMNL sleep-screen wallpaper source with configurable server, API key, device ID, and orientation.
+- EPUB tables now lay out a row at a time in both Incremental and Full Section indexing, keeping regular tables readable without whole-table buffering.
+- Touch support for Seeed Studio Sticky
+- Nearby File Transfer can send EPUB, TXT, XTC, XTCH, PNG, and BMP files directly between two CrossInk devices without a Wi-Fi network.
+- Recent Books and image-file long-press actions can send files directly to a nearby CrossInk device.
+- Dictionary lookup and lookup history
+- EPUB books can use a dedicated SD-card dictionary font while keeping a different reader font.
+- EPUB books can set a dedicated dictionary font size independently of the reader font size.
+- Dictionary font and size defaults can be set globally from Settings > Reader > Font Options, with per-book choices still taking precedence.
+- Reusable dictionary SD-font builder with IPA coverage and per-family ZIP packaging
+- RTC-enabled devices can now choose the date format and numeric separator shown in headers from Settings > System > Device.
+- Karakeep integration can browse saved link and text bookmarks, download extracted article text, and cache it on the SD card for offline reading.
+- The web EPUB optimizer now splits oversized chapters into memory-friendlier sections before sending them to the reader.
+- Reader indexing can now use `Incremental` or `Full Section` mode globally or per book; changing modes keeps the current chapter readable and applies when the next chapter needs indexing.
+- Look Up Word can now be assigned to short- and long-press Power button shortcuts.
+- EPUB readers can now choose from five word-spacing levels, from normal through extra-wide.
+- EPUB inline-image pages on X3 now use the grayscale-aware display base before the image grayscale overlay, reducing the moment where images appear too dark before settling.
+- EPUB publisher small-caps styling now renders ASCII lowercase text as smaller capital letters without needing extra font files.
+- When incremental EPUB indexing runs out of memory at the first unindexed page, the reader now silently restarts once and resumes the book with a fresh heap.
+
+### Changed
+
+- Reader font sizes now persist as actual point sizes, keeping the closest matching size when font families or installed files change.
+- SD-card fonts now include the built-in reader fallback stack for common symbols, emoji, and selected CJK glyphs while retaining Noto Sans fallback coverage.
+- Downloadable SD-card fonts are now rendered with the same darker anti-aliasing as the built-in reading fonts.
+- Full-section EPUB indexing now prepares one-page chapters and direct jumps to a chapter's last page, while avoiding repeated checks after the next chapter is ready.
+- EPUB grayscale rendering now reuses its 8 KB strip buffer across stable pages, reducing repeated heap allocation and release during long reading sessions.
+- Reading progress is now saved in batches during ordinary page turns, immediately after layout changes, and when leaving a book, reducing repeated SD-card writes without carrying stale pagination into the next session.
+- SD-card font discovery now waits until a custom font is selected or font settings are opened, reducing SD-card work during normal startup with built-in fonts.
+- EPUB page turns using SD-card fonts now prepare the next page's glyphs while the reader is idle.
+- Dictionary lookups now reuse open index files for stem matching, reducing repeated SD-card work after a miss.
+- The web file manager now batches directory listings into fewer network packets, improving large-folder response time.
+- Firmware releases now identify the supported device type: X3/X4 or Seeed Sticky.
+- Image-heavy EPUB chapters now index by reading image headers first and extract each full image only when its page is shown.
+- EPUB books with repeated byte-identical stylesheets now parse each unique stylesheet only once when building caches.
+- SD-card fonts now reuse their page-sized glyph buffers, reducing heap fragmentation during long reading sessions.
+- Firmware builds now prioritize usable heap over oversized system timer stacks and maximum WiFi throughput, leaving more memory for reading and network operations.
+- Downloaded-font size range options now show their actual point-size ranges instead of firmware build names.
+- Karakeep articles are now cached in the visible `/karakeep/` folder, and pressing Back while reading one returns to the Karakeep list.
+- KOReader Sync and authentication, OTA updates, and OPDS browsing now restart into a lightweight network mode that leaves reader and Home data unloaded, providing more contiguous memory for WiFi and secure connections.
+- The web file manager can now delete non-empty folders recursively and, when hidden files are shown, remove hidden or system-managed SD card items after confirmation.
+- SD-font, OPDS catalogs, and other unneeded settings now stay out of memory while reading unless their settings are open.
+- EPUB books can now keep more saved clippings without loading every clipping's text into memory while reading.
+
+### Removed
+
+- The font download manager no longer offers a Download All action; fonts can still be downloaded individually or updated together.
+
+### Fixed
+
+- File Transfer now releases the unused SD-font catalog before starting Wi-Fi, preventing the web dashboard and device controls from freezing under low memory.
+- TRMNL remains the selected lock screen when inactivity sleep triggers, even if Quick Resume after timeout is enabled.
+- Book menu tab navigation, popup scrolling, customized Reading Stats hints, and short button presses after low-power mode now work reliably.
+- Sleep screens now honor the current orientation, avoid X4 transition flashes, fall back to a valid wallpaper when needed, and handle low-memory image decoding without rebooting.
+- Choosing Set Cover uses the selected image in place, and Home no longer repeatedly generates missing EPUB covers.
+- Finished-book suggestions are now collected before an EPUB is moved to `/Read`.
+- Manage Fonts now opens and scans large catalogs more safely on X3/X4, reports low-memory failures instead of restarting, and returns to Font Options when cancelled.
+- Network screens refresh cleanly on X4; long errors wrap correctly; saved Wi-Fi networks and KOReader connections recover more reliably after restart or a missing address.
+- Translated Wi-Fi and clock labels no longer truncate text or time values, and clock sync no longer risks a reboot while saving settings on memory-constrained X3/X4 devices.
+- KOReader Sync no longer crashes during time setup, re-triggers while connecting, or loses precise EPUB positions; CrossPoint-only data stays on the official CrossPoint Sync server.
+- Firmware updates reject images for the wrong chip family, and saved Wi-Fi settings safely handle concurrent access and corrupted values.
+- EPUB opening, reflow, and background indexing now handle fragmented memory more safely, retry recoverable work, remain responsive to input and setting changes, and show useful errors instead of rebooting or silently returning Home.
+- Low-memory EPUB grayscale and sleep rendering now fall back safely without leaving stale display content.
+- Full-section indexing preserves more memory for large chapters and cancels speculative work on page turns, keeping the reader responsive.
+- SD-card font and clipping work now release temporary data at the right time, preserving memory for reflow, dictionary use, covers, and thumbnails on X3/X4.
+- EPUBs with book-specific built-in fonts no longer load an unnecessary global SD-card font, and custom fonts retain ligatures.
+- EPUB styling choices apply before style caches load; CSS-heavy books use less temporary memory; and disabling Embedded Style consistently skips unused stylesheet work.
+- EPUB layout now keeps CJK ruby and spaces, Russian paragraph continuations, Bionic Reading, underline/strikethrough runs, and right-to-left text correct.
+- EPUBs with flowing `<br>` elements, image-led or decorative chapter headings, unsupported images, and dense final pages now lay out without excess gaps, clipping, dropped images, or misleading low-memory warnings.
+- EPUB footnote and cross-reference previews now show complete notes, including targets in the middle of a paragraph.
+- Saved EPUB positions, clipping highlights, and selections now stay accurate after font, orientation, or indexing changes; selections also remain readable in dark mode and on memory-tight pages.
+- Dictionary misses can switch dictionaries without leaving the reader, and dictionary read failures now report an error instead of a false “not found.”
+- Reader popups, KOReader Wi-Fi labels, Lyra battery headers, and the sleep message now remain correctly oriented and positioned.
+- Manual refreshes preserve EPUB and TXT text anti-aliasing; XTC and XTCH status bars show the configured time-left estimate.
+- Watchdog resets return to the crash-report flow, and power-button wake timing no longer depends on SD-card startup.
+- The web file manager and uploads now handle simulator/device ports and stalled connections safely; unsupported settings stay hidden, and the optimizer removes empty chapter stubs without breaking table-of-contents links.
+
+## [v1.4.0.1] - 2026-07-28
+
+### Added
+
+- Updates to support Xteink device detection so the correct display panel driver is used.
+
+## [v1.4.0] - 2026-07-10
+
+### Added
+
+- Dashboard UI theme for the Home screen, showing the current book cover and reading stats.
+- Nearby Position Sync for sending or applying the current EPUB position between two CrossInk devices over ESP-NOW.
+- Web EPUB optimizer support for CrossInk location metadata, so optimized EPUBs can keep better progress and stable page numbers.
+- Reading Stats support for XTC and XTCH books, including reader menus, Home and sleep screen stats, mark finished, delete stats, and preserving stats when clearing book caches.
+- Web file manager image previews, so PNG, JPEG, BMP, GIF, and WebP files can be viewed inline before downloading.
+
+### Changed
+
+- Large EPUBs, SD-card font-heavy books, and cover thumbnails now open, index, and generate more reliably under low-memory conditions.
+- Home and sleep screens now load more cover and thumbnail data only when needed, reducing reader startup work and reusing cached cover data where possible.
+- Built-in reader font choices have been reduced to Lexend Deca and Bitter, reducing firmware size while keeping fallback glyph coverage.
+
+### Removed
+
+- Teensy firmware builds are no longer produced for releases or release candidates.
+
+### Fixed
+
+- EPUB render-mode and Safe Mode toast messages now clear reliably, even when the reader is low on memory.
+- EPUB Reading Stats no longer drops unsaved page-turn counts after viewing the stats screen mid-session.
+- KOSync is more reliable with many SD-card fonts installed, reducing low-memory failures during secure sync requests and uploads.
+- Web file manager actions now handle filenames with special characters safely and reject unsafe rename characters before saving.
+- Auto Turn interval settings and related action prompts opened from long-press shortcuts now stay open after releasing the shortcut button.
+- EPUB footnote previews no longer show clipped status-bar labels or misleading reader progress indicators, and clipping selection now works from footnote previews.
+- Font selection no longer reopens the font preview after choosing a font.
+- EPUB chapters with stale publisher style data now rebuild it instead of opening without the book's styling.
+- Large SD-card font EPUBs no longer overlap characters after font or line-spacing changes, and clipping selection can fall back to a built-in UI font when needed.
+- EPUB cover and thumbnail generation is more reliable with custom SD-card fonts selected and optimized books under low-memory conditions.
+- Web EPUB optimizer now preserves more PNG and SVG artwork on-device, including transparent PNGs, dividers, and images in malformed or XML-declared chapters.
+- Unsupported SVG images in EPUB chapters are now skipped silently instead of triggering low-memory image warnings.
+- Nearby Position Sync now silently restarts back into the reader after using ESP-NOW, matching other WiFi sync flows and reducing post-sync memory fragmentation.
+- EPUB page cache loading now uses fewer small heap allocations, reducing fragmentation-related reader failures.
+- EPUB grayscale page turns on X3 now use the grayscale-aware display base, reducing the moment where new text appears too dark before the anti-aliased overlay finishes.
+- EPUB chapters with many inline anchors, footnote links, malformed XHTML, large publisher styles, or SD-card fonts are less likely to fail or get stuck on the indexing screen.
+- EPUB opening and image rendering now recover from more low-memory conditions instead of rebooting, including landscape image pages and books that need lighter render modes.
+- EPUB clipping selection now follows right-to-left line order when selecting Hebrew and other RTL text.
+- Lyra Carousel no longer shows a blank carousel after returning from WiFi-related File Transfer screens and moving between the menu row and book row.
+- Generated SD-card font packages now include the same core glyph coverage as built-in reader fonts.
+- Manage Fonts no longer crashes while loading or reloading large SD-card font lists.
+- Minimal Home no longer swaps to another recent book when returning from Settings when Back button is mapped to the first button.
+- Cancelling a font download now stops on the first Cancel button press instead of needing several presses.
+- The `Inverted` sleep cover filter now keeps book covers unchanged on Minimal and Dashboard sleep screens while switching the background to white.
+- Rare EPUB open or thumbnail crashes during ZIP decompression are fixed.
+
+## [v1.3.4] - 2026-06-24
+
+### Added
+
+- File Browser now indexes large SD-card folders so directories with many books can be browsed without loading every filename into memory at once.
+- EPUB text clipping with saved highlights, clipping lists, and Kindle-style `/My Clippings.txt` export.
+- `Create Clipping` is now available as a reader shortcut for short/long Power, long-press Menu, and long-press Back actions.
+- Per-book EPUB options for font, layout, styling, reading aids, and render modes, including `CrossInk Default`, `Balanced`, and `Light` modes for difficult books.
+- Arena allocator (`lib/Memory/Arena.h`) for burst-then-discard allocation patterns - reduces heap fragmentation during EPUB parsing and page layout over long reading sessions.
+- Optimized EPUBs now store location metadata at `META-INF/x-locations.json`.
+- X3 SD-card writes now use the RTC for file timestamps when the clock is available.
+
+### Changed
+
+- The EPUB reader menu now splits the growing menu into 3 screens, labels per-book settings as `Book Options`, and avoids showing duplicate `Orientation` controls.
+- The `Inverted` sleep cover filter now flips Minimal and Reading Stats sleep screens to black text on a white background.
+
+### Fixed
+
+- Calibre Wireless transfer status no longer stacks the last received-file message on top of the upload percentage.
+- X3 Tilt Direction now labels left/right choices as `Left-Right` and `Right-Left`, with existing left/right preferences migrated to keep the same physical tilt behavior.
+- EPUB layout now honors publisher page-break CSS, avoids stretching justified spaces before closing punctuation, and keeps large CSS rule sets in a smaller disk-backed lookup cache.
+- EPUB first-open conversion now uses more compact OPF manifest lookups and streams cover-wrapper parsing to avoid large temporary heap buffers on books with huge manifests.
+- EPUB chapters that run out of memory now retry with `Balanced`, `Light`, and final `Safe Mode` rendering before showing an error, apply the same fallbacks during next-chapter pre-indexing, and let book action menus reset a book's reader settings if Safe Mode still cannot open it.
+- EPUB reader font-size changes now restore the current chapter position by content instead of jumping far backward after re-indexing.
+- Reading Stats now use the reader's last live book time-left estimate instead of showing a separate fallback estimate.
+- Per-book reading stats now migrate compatible legacy `stats.bin` files into the `stats_v5.bin` flow instead of resetting when only the old filename exists.
+- Lyra Carousel Home menu rendering now avoids extra label allocations that could crash builds under low memory.
+- Lyra Carousel Home cover refresh no longer risks a reboot when memory is tight after returning to or selecting a recent book.
+- EPUB image-heavy chapters no longer risk a reboot while saving their reading cache under low memory.
+- TXT readers now stay open when pressing a page-turn button at the end of the file.
+- Long-press reader shortcuts that open another screen no longer close or confirm it again when releasing the shortcut button.
+- RoundedRaff's header battery icon and percentage now sit lower to avoid clipping at the top edge.
+- Lyra Carousel now keeps the Home header current when rendering the menu or restoring cached carousel frames, preventing stale battery and clock values while navigating between books.
+- Web file manager multi-delete now handles larger selections without failing after a small batch.
+- Portuguese EPUBs now use Portuguese hyphenation rules instead of leaving long words unhyphenated when Hyphenation is enabled.
+- Progressive JPEG EPUB covers now render more smoothly in generated cover and thumbnail BMP assets.
+- EPUB section layout now flushes long text runs earlier when Bionic Reading or Guide Dots are enabled, reducing low-memory failures on difficult books.
+- Footnotes in EPUBs with very large shared notes sections no longer cause long stalls when opened.
+- Firmware updates now follow GitHub asset redirects before streaming the install.
+- Tiled grayscale rendering now serializes display transfers on the shared SPI bus to avoid display glitches during SD activity.
+
+## [v1.3.3] - 2026-06-13
+
+### Added
+
+- `File Browser Display` in `Settings > System > Files & Cache` for choosing one-line or two-line file browser rows across all themes, while preserving Minimal users' existing two-line display on upgrade.
+- `Hide File Extension` in `Settings > System > Files & Cache` for expanding file-browser filenames by hiding the right-side extension label.
+- Device Name in Settings > System > Device for customizing the KOReader Sync and Nearby Stats Sync device label.
+- Additional shortcut options and new ability to add custom shortcuts for Long-press Back Action.
+- Delete Reading Stats actions in the EPUB reader and book action menus for clearing one book's stats without deleting its cache.
+
+### Changed
+
+- CrossInk settings now save to `/.crosspoint/crossink-settings.json`, with a one-time fallback migration from `/.crosspoint/settings.json`, so switching between firmware builds is less likely to reset preferences.
+- The X3 clock visibility setting is now phrased as `Hide Clock`, with existing `Show Clock` preferences migrated to the matching hide behavior.
+
+### Fixed
+
+- RoundedRaff's date shown in settings now sits lower on X3 devices instead of overlapping the battery.
+- Clear Bookmark List now asks for confirmation before deleting a book's bookmarks.
+- Clear Reading Cache now preserves per-book reading stats while continuing to leave all-time reading stats untouched.
+- Moving finished EPUBs to `/Read` now consistently preserves reading progress, per-book stats, bookmarks, and resume state.
+- Book settings option lists now return to the submenu they were opened from when pressing Back.
+- Lyra Carousel now refreshes its cached Home icon row after OPDS, Reading Stats, or Bookmarks icons appear or disappear.
+- KOReader Sync failure screens now wrap long error messages and shut down WiFi cleanly before returning to the book.
+- Sleep Screen > Cover now generates the current book cover on demand instead of falling back to the dark sleep screen when the setting is changed after opening a book.
+- File Browser now previews PNG images instead of trying to open them as EPUBs, and hides common macOS and Windows metadata files.
+- File Browser now refreshes immediately after falling back to the root folder from a stale saved path.
+- File Browser now stops loading oversized folders before low memory can crash the device and shows a memory error instead.
+- TXT reader long-press Power page turns now work when Long Power Button is set to Page Turn.
+- SD-card font read failures no longer risk a reboot while cleaning up the failed file read.
+- Page Overlay sleep screens no longer force EPUB chapters to re-index after waking.
+- Page Overlay sleep screens now use the current screen as the overlay background outside the reader instead of trying to rebuild a stale book page.
+
+## [v1.3.2] - 2026-06-10
+
+### Added
+
+- Current date in the top-right Settings header on X3 devices.
+- Dark Reader Mode for EPUB and TXT reading screens, plus shortcut actions for the power button and front-button long press.
+- File Browser long-press folder action for choosing a custom sleep-image folder instead of only `/.sleep` or `/sleep`.
+- Expanded X3 Reading Stats, including streaks, time charts, editable dates, all-time backups, reset controls, an idle-time threshold, and the `Minimal Stats` sleep screen.
+- `Reset Reading Pace` in the EPUB reader menu when Time Left is enabled, for clearing only the time-left pace estimate while keeping book reading stats.
+- Added TRMNL as a sleep-screen wallpaper source with configurable server, API key, device ID, and orientation.
+
+===== docs/ listing =====
+\docs\activity-manager.md
+\docs\catalog
+\docs\CNAME
+\docs\controls.md
+\docs\data-cache.md
+\docs\dictionary-development.md
+\docs\dictionary.md
+\docs\epub-indexing.md
+\docs\epub-render-modes.md
+\docs\file-formats.md
+\docs\hyphenation-trie-format.md
+\docs\i18n.md
+\docs\index.md
+\docs\installation.md
+\docs\nearby-file-transfer.md
+\docs\nearby-position-sync.md
+\docs\reader-features.md
+\docs\reading-stats-sync.md
+\docs\sd-card-fonts.md
+\docs\simulator.md
+\docs\translators.md
+\docs\troubleshooting.md
+\docs\user-guide.md
+\docs\webserver-endpoints.md
+\docs\webserver.md
+\docs\development\architecture.md
+\docs\development\getting-started.md
+\docs\development\README.md
+\docs\development\testing-debugging.md
+\docs\images\bitter-small-15-margin.jpg
+\docs\images\reading-stats.jpg
+\docs\images\bionic-reading\bionic-reading-atkinson.jpg
+\docs\images\bionic-reading\bionic-reading-merriweather.jpg
+\docs\images\bionic-reading\bionic-reading-notoserif.jpg
+\docs\images\bionic-reading\bionic-reading.jpg
+\docs\images\wifi\webserver_files.png
+\docs\images\wifi\webserver_homepage.png
+\docs\images\wifi\webserver_upload.png
+\docs\images\wifi\wifi_connected.jpeg
+\docs\images\wifi\wifi_networks.jpeg
+
+===== FILE: C:\xteinkx4\firmwares\CrossInk-TRMNL\docs\reader-features.md =====
+---
+title: Reader Features
+nav_order: 5
+---
+
+# Reader Features
+
+This page covers a subset of CrossInk reader features that go beyond basic page turning. It is not a complete list of every reader setting or action. For a more complete list of features as they were released, see the [releases page](https://github.com/uxjulia/CrossInk/releases).
+
+The sections here focus on larger CrossInk-specific reader features. Small fixes, implementation details, and features that only arrived from upstream CrossPoint are intentionally left out.
+
+## In-book Reader Options
+
+Reader settings are available directly from the in-book menu without leaving the book.
+
+Open the reader menu and select **Reader Options** to adjust settings such as:
+
+- Font family
+- Font size
+- Line spacing
+- Word spacing (EPUB)
+- Margins
+- Alignment
+- Image rendering
+- [Publisher Page Numbers](#publisher-page-numbers)
+- [Stable Page Numbers](#stable-page-numbers), when the book includes CrossInk reference metadata
+- [Bionic Reading](#bionic-reading) / Guide Dots
+- Dark Reader Mode
+
+Changes take effect immediately.
+
+For books that are slow to index or fail because of complex publisher styling,
+see [EPUB Indexing Methods](./epub-indexing.md) and
+[EPUB Render Modes](./epub-render-modes.md).
+
+## Bionic Reading
+
+Bionic Reading is a reading aid that bolds the first portion of each word,
+guiding your eyes to natural fixation points and helping you read faster with
+less effort. Some readers, particularly those with ADHD, find it helps them
+stay engaged with the text and reduces mind-wandering.
+
+### Enabling Bionic Reading
+
+1. Open **Settings > Reader**.
+2. Toggle **Bionic Reading** on.
+
+Toggling the setting triggers a re-index of the current book, just like changing
+font settings. Once indexing is complete, page turns proceed as normal. No
+changes are made to the EPUB file.
+
+### Examples
+
+<img src="./images/bionic-reading/bionic-reading.jpg" height="500" alt="Comparison of the same page with and without Bionic Reading enabled" />
+
+_Left: Bionic Reading off. Right: Bionic Reading on. Both using Literata._
+
+<img src="./images/bionic-reading/bionic-reading-notoserif.jpg" height="500" alt="Bionic Reading with Noto Serif font" />
+
+_Bionic Reading with Noto Serif font._
+
+<img src="./images/bionic-reading/bionic-reading-merriweather.jpg" height="500" alt="Bionic Reading with Merriweather font" />
+
+_Bionic Reading with Merriweather font._
+
+<img src="./images/bionic-reading/bionic-reading-atkinson.jpg" height="500" alt="Bionic Reading with Atkinson Hyperlegible Next font" />
+
+_Bionic Reading with Atkinson Hyperlegible Next font._
+
+### Notes
+
+Bionic Reading only applies to regular body text. Already-bold text, including
+headings and emphasis, is left unchanged.
+
+## Font Sizes And Downloadable Font Ranges
+
+CrossInk adds a wider range of reader font-sizes, including smaller and larger point sizes for users who want denser pages or much larger text.
+
+The reader can also use SD-card font packs with selectable font-size ranges. This lets you keep the installed firmware smaller while still using extra sizes or custom fonts from the SD card.
+
+Related docs:
+
+- [SD Card Fonts](./sd-card-fonts.md)
+
+## Dark Reader Mode
+
+Dark Reader Mode reverses the reader colors so text is shown light-on-dark.
+
+Toggle it from **Reader settings**.
+
+Dark Reader Mode can also be assigned to shortcut actions, so it can be switched without opening the full settings menu.
+
+## Line Spacing
+
+CrossInk supports adjustable reader line spacing from compact to wide spacing.
+
+Use this when a book feels visually cramped, or when larger fonts need more vertical room to stay comfortable.
+
+## Word Spacing
+
+EPUB readers can choose from five word-spacing levels: **Normal** and levels
+**1** through **4**. Higher levels add more space between words, which can make
+text easier to scan without changing the font size or line height.
+
+Open the reader menu, then select **Reader Options > Font Options > Word
+Spacing**. The current EPUB is laid out again when you change this setting, so
+the number and positions of pages may change. Word Spacing is not available for
+TXT books.
+
+## Publisher Page Numbers
+
+Publisher Page Numbers show page labels supplied by the EPUB, such as the
+printed page numbers from a physical edition. When the book includes labeled
+page-break markers, CrossInk displays those labels in the reader margin beside
+the matching content.
+
+To enable them, open the reader menu and select **Reader Options > Publisher
+Page Numbers**. If an EPUB does not contain labeled page-break markers, there
+are no publisher page numbers for CrossInk to display.
+
+Publisher page markers are preserved by **CrossInk Default** and **Balanced**
+render modes. **Light** and **Safe Mode** omit them when simplifying a difficult
+book's layout.
+
+## Stable Page Numbers
+
+Stable Page Numbers show a consistent reference page number in the reader's
+status bar, such as `120/540`. They are calculated from fixed reference-page
+metadata in the EPUB instead of the current screen layout, so they remain
+consistent when you change fonts, spacing, orientation, or indexing mode.
+
+To enable them:
+
+1. Open the reader menu and select **Reader Options**.
+2. Select **Customize Status Bar**.
+3. Toggle **Stable Page Numbers** on.
+
+The option appears only when the current EPUB contains valid CrossInk reference
+metadata. To create that metadata, optimize the EPUB in the CrossInk web
+interface or with [Inky](https://inky.crossink.dev) before uploading it to the reader.
+In the optimizer's settings, the **Characters per Page** controls the reference-page size; the default
+is 1,500 characters. Lower values create more reference pages, while higher
+values create fewer.
+
+Stable Page Numbers are not publisher or printed-edition page numbers. Use
+[Publisher Page Numbers](#publisher-page-numbers) when you want the page labels
+provided by the book itself.
+
+## Guide Dots
+
+Guide Dots adds small dots between words. The idea comes from speed-reading guidance where focusing on the space between words can help peripheral vision pick up more of the surrounding text.
+
+Toggle it from **Reader settings**.
+
+## Force Paragraph Indents
+
+Some books do not define paragraph indents in a way the firmware understands, which can make the page look like one large wall of text.
+
+Force Paragraph Indents adds an indent at each new paragraph regardless of how the book is formatted.
+
+This works when **Reader Paragraph Alignment** is set to:
+
+- Left
+- Justify
+- Book's Style
+
+Toggle it from **Reader settings**.
+
+## Auto Page Turn
+
+Auto Page Turn can advance pages on a timer while reading.
+
+CrossInk adds a custom interval picker, so the interval is not limited to the built-in presets. The reader can also remember a different Auto Page Turn interval per book.
+
+Open the reader menu and select **Auto Page Turn** to configure it.
+
+## Time Left
+
+CrossInk can show estimated time left in the current chapter or book.
+
+The estimate is based on your recent forward-page reading pace. Non-linear jumps such as chapter skips, bookmark jumps, and footnote navigation are handled separately so they do not immediately distort the normal reading estimate.
+
+Use **Reset Reading Pace** if the estimate was trained by unusual reading behavior and you want it to learn again from fresh page turns.
+
+## Bookmarks
+
+CrossInk supports EPUB bookmarks from the reader.
+
+You can:
+
+- Add a bookmark while reading
+- See bookmark indicators in the reader
+- Open a bookmark list
+- Jump back to saved locations
+- Delete individual bookmarks
+
+## Clippings And Highlights
+
+CrossInk supports EPUB text clippings from the reader. Use **Create Clipping**
+from the reader menu or a configured shortcut, select text, and save it.
+
+===== FILE: C:\xteinkx4\firmwares\CrossInk-TRMNL\docs\user-guide.md =====
+---
+title: User Guide
+nav_order: 1.5
+---
+
+# CrossInk User Guide
+
+Welcome to the **CrossInk** firmware. This guide covers day-to-day device use.
+For focused reference material, see [Reader Features](./reader-features.md),
+[Controls](./controls.md), [SD Card Fonts](./sd-card-fonts.md),
+[File Transfer](./webserver.md), and [Troubleshooting](./troubleshooting.md).
+
+- [CrossInk User Guide](#crossink-user-guide)
+  - [1. Hardware Overview](#1-hardware-overview)
+    - [Button Layout](#button-layout)
+    - [Taking a Screenshot](#taking-a-screenshot)
+  - [2. Power \& Startup](#2-power--startup)
+    - [Power On / Off](#power-on--off)
+    - [First Launch](#first-launch)
+  - [3. Screens](#3-screens)
+    - [3.1 Home Screen](#31-home-screen)
+    - [3.2 Reading Mode](#32-reading-mode)
+    - [3.3 Browse Files Screen](#33-browse-files-screen)
+    - [3.4 Recent Books Screen](#34-recent-books-screen)
+    - [3.5 File Transfer Screen](#35-file-transfer-screen)
+    - [3.5.1 Calibre Wireless Transfers](#351-calibre-wireless-transfers)
+    - [3.6 Settings](#36-settings)
+      - [3.6.1 Display](#361-display)
+      - [3.6.2 Reader](#362-reader)
+      - [3.6.3 Controls](#363-controls)
+      - [3.6.4 System](#364-system)
+      - [3.6.5 OPDS Servers (Multiple Libraries)](#365-opds-servers-multiple-libraries)
+      - [3.6.6 Web Settings (Wi-Fi + OPDS)](#366-web-settings-wi-fi--opds)
+      - [3.6.7 KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)
+        - [Option A: CrossPoint Sync Server (`sync.crosspointreader.com`, default)](#option-a-crosspoint-sync-server-synccrosspointreadercom-default)
+        - [Option B: Legacy Public KOReader Server (`sync.koreader.rocks`)](#option-b-legacy-public-koreader-server-synckoreaderrocks)
+        - [Option C: Self-Hosted Server (Docker Compose)](#option-c-self-hosted-server-docker-compose)
+    - [3.7 Sleep Screen](#37-sleep-screen)
+      - [Cover settings](#cover-settings)
+      - [Custom images](#custom-images)
+    - [3.8 Custom Fonts (SD Card)](#38-custom-fonts-sd-card)
+  - [4. Reading Mode](#4-reading-mode)
+    - [Page Turning](#page-turning)
+    - [Chapter Navigation](#chapter-navigation)
+    - [Auto Page Turn](#auto-page-turn)
+    - [Tilt Page Turn (X3 and Sticky)](#tilt-page-turn-x3-and-sticky)
+    - [Touch Reader Controls](#touch-reader-controls)
+    - [Footnote Navigation](#footnote-navigation)
+    - [System Navigation](#system-navigation)
+    - [Supported Languages](#supported-languages)
+  - [5. Reader Menu](#5-reader-menu)
+    - [5.1 Chapter Selection](#51-chapter-selection)
+    - [5.2 Bookmarks](#52-bookmarks)
+  - [6. Current Limitations & Roadmap](#6-current-limitations--roadmap)
+  - [7. Troubleshooting Issues & Escaping Bootloop](#7-troubleshooting-issues--escaping-bootloop)
+
+## 1. Hardware Overview
+
+The device utilises the standard buttons on the Xteink X4 (in the same layout as the manufacturer firmware, by default):
+
+### Button Layout
+
+| Location        | Buttons                                              |
+| --------------- | ---------------------------------------------------- |
+| **Bottom Edge** | **Back**, **Confirm**, **Left**, **Right**           |
+| **Right Side**  | **Power**, **Volume Up**, **Volume Down**, **Reset** |
+
+Button layout can be customized in **Settings > Controls**.
+
+### Taking a Screenshot
+
+When the Power Button and Volume Down button are pressed at the same time, it will take a screenshot and save it in the folder `screenshots/`.
+
+Alternatively, while reading a book, press the **Confirm** button to open the reader menu and select **Take screenshot**.
+
+---
+
+## 2. Power & Startup
+
+### Power On / Off
+
+To turn the device on or off, **press and hold the Power button for approximately half a second**.
+In **Settings > Controls > Power Button** you can configure the power button to turn the device off with a short press instead of a long one.
+
+To reboot the device (for example after a firmware update or if it's frozen), press and release the Reset button, and then quickly press and hold the Power button for a few seconds.
+
+### First Launch
+
+Upon turning the device on for the first time, you will be placed on the **[Home](#31-home-screen)** screen.
+
+> [!NOTE]
+> On subsequent restarts, the firmware will automatically reopen the last book you were reading.
+
+---
+
+## 3. Screens
+
+### 3.1 Home Screen
+
+The Home screen is the main entry point to the firmware. From here you can navigate to **[Reading Mode](#4-reading-mode)** with the most recently read book, the **[Browse Files](#33-browse-files-screen)** screen, the **[Recent Books](#34-recent-books-screen)** screen, the **[File Transfer](#35-file-transfer-screen)** screen, or **[Settings](#36-settings)**.
+
+### 3.2 Reading Mode
+
+See [Reading Mode](#4-reading-mode) below for more information.
+
+### 3.3 Browse Files Screen
+
+The Browse Files screen acts as a file and folder browser. The full path to the current directory is shown at the top of the screen. File extensions are displayed alongside each filename, and directories are shown with brackets (e.g. `[folder-name]`). Hidden directories can be shown from settings.
+
+- **Navigate List:** Use **Left** (or **Volume Up**), or **Right** (or **Volume Down**) to move the selection cursor up and down through folders and books. You can also long-press these buttons to scroll a full page up or down.
+- **Open Selection:** Press **Confirm** to open a folder or start reading a selected book. Selecting a `.bmp` file will open the image viewer.
+- **Delete Files or Folders:** Hold and release **Confirm** to open the selected file or folder action menu, then choose **Delete**. You will be given an option to either confirm or cancel. Folder deletion is limited to empty folders.
+- **Book Actions:** EPUB and XTC files can also show options such as **Delete Cache** or **Mark Finished** from the same action menu.
+
+### 3.4 Recent Books Screen
+
+The Recent Books screen lists the most recently opened books in a chronological view, displaying title and author.
+
+### 3.5 File Transfer Screen
+
+The File Transfer screen allows you to upload and manage files on the device.
+Choose **Join a Network**, **Calibre Wireless**, or **Create Hotspot** to start
+the web server for the selected mode.
+
+See the [File Transfer guide](./webserver.md) for connection and upload details.
+
+The web file manager can upload, download, rename, move, and delete files on the device.
+
+The web interface also supports **WebDAV**, allowing you to mount the device as a network drive and manage files directly from your computer's file manager.
+
+Download links for files already on the device are available in the web interface, so you can retrieve books or screenshots over Wi-Fi without connecting a cable.
+
+A **Wi-Fi signal strength indicator** (dBm) is displayed on-screen during joined-network web server sessions.
+
+The same screen also has **Receive File**, which receives a supported
+book or image directly from another nearby CrossInk reader without joining a
+Wi-Fi network. See [Nearby File Transfer](./nearby-file-transfer.md) for the
+complete sender and receiver workflow.
+
+> [!TIP]
+> Advanced users can manage files programmatically with the same HTTP endpoints
+> used by the web interface. The browser interface is the supported path for
+> normal file management.
+
+### 3.5.1 Calibre Wireless Transfers
+
+CrossInk supports sending books from Calibre using the CrossPoint Reader device plugin.
+
+1. Download the current `crosspoint_reader` plugin ZIP from the
+   [CrossPoint Reader plugin releases](https://github.com/crosspoint-reader/calibre-plugins/releases).
+2. In Calibre, open **Preferences > Plugins > Load plugin from file** and select
+   that ZIP. Restart Calibre if it asks you to.
+3. On the device, open **File Transfer > Calibre Wireless** and join the same
+   2.4 GHz Wi-Fi network as the computer.
+4. Keep the Calibre Wireless screen open, then use Calibre's **Send to device**
+   action. The device screen shows the transfer progress and completion notice.
+
+### 3.6 Settings
+
+The Settings screen groups options by purpose. The exact choices can vary by
+device model and build.
+
+#### 3.6.1 Display
+
+- **Sleep Screen**: Which sleep screen to display when the device sleeps:
+  - "Dark" (default) - The default dark CrossInk logo sleep screen
+  - "Light" - The same default sleep screen, on a white background
+  - "Custom" - Custom images from the SD card; see [Sleep Screen](#37-sleep-screen) below for more information
+  - "Cover" - The book cover image (Note: this is experimental and may not work as expected)
+  - "None" - A blank screen
+  - "Cover + Custom" - The book cover image while actively reading, falls back to "Custom" behavior otherwise
+  - "Page Overlay" - A sleep overlay on top of the current page
+  - "Reading Stats" - Recent reading stats on the sleep screen
+  - "Minimal" - A minimal sleep screen
+  - "Minimal Stats" - A minimal stats sleep screen on supported devices
+  - "Dashboard" - A dashboard-style sleep screen based on the Dashboard theme
+  - "Quick Resume" - Keeps the current content visible while sleeping
+
+- **Sleep Screen Cover Mode**: How to display the book cover when "Cover" sleep screen is selected:
+  - "Fit" (default) - Scale the image down to fit centered on the screen, padding with white borders as necessary
+  - "Crop" - Scale the image down and crop as necessary to try to fill the screen (Note: this is experimental and may not work as expected)
+
+- **Sleep Screen Cover Filter**: What filter will be applied to the book cover when "Cover" sleep screen is selected:
+  - "None" (default) - The cover image will be converted to a grayscale image and displayed as it is
+  - "Contrast" - The image will be displayed as a black & white image without grayscale conversion
+  - "Inverted" - The image will be inverted as in white & black and will be displayed without grayscale conversion
+
+- **Quick Resume on Timeout**: Whether to enable the "Quick Resume" sleep screen when the device goes to sleep due to inactivity (System > Time to Sleep). This is useful for quickly resuming reading without waiting for the device to fully wake up and load the book. This overwrites the Sleep Screen Cover Mode when enabled.
+
+- **Hide Battery %**: Configure where to suppress the battery percentage display in the status bar; the battery icon will still be shown:
+  - "Never" (default) - Always show battery percentage
+  - "In Reader" - Show battery percentage everywhere except in reading mode
+  - "Always" - Always hide battery percentage
+
+- **Hide Clock**: On devices with a real-time clock, choose whether the clock is
+  shown everywhere, hidden only in the reader, or always hidden.
+
+- **Refresh Frequency**: Set how often the screen does a full refresh while reading to reduce ghosting; options are every 1, 5, 10, 15, or 30 pages.
+
+- **UI Theme**: Set which UI theme to use:

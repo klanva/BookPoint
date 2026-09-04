@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n="home.title">SUMI — E-Ink Reader Platform</title>
+<script src="./lang.js" defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--ink:#111;--paper:#f5f0e8;--paper-dark:#e8e0d0;--accent:#8b4513;--border:#ccc;--muted:#777;
+  --font:'Cormorant Garamond',Georgia,serif;--mono:'JetBrains Mono',monospace}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--paper);color:var(--ink);line-height:1.6}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-repeat:repeat;opacity:0.6}
+
+header{text-align:center;padding:40px 20px 24px;border-bottom:1px solid var(--border)}
+.logo{font-size:48px;font-weight:700;letter-spacing:-1px}
+.tagline{font-style:italic;color:var(--muted);font-size:16px;margin-top:4px}
+
+nav{display:flex;justify-content:center;gap:24px;padding:12px 20px;background:var(--paper);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+nav a{font-family:var(--mono);font-size:11px;text-decoration:none;color:var(--ink);letter-spacing:1px;text-transform:uppercase;transition:color .15s}
+nav a:hover{color:var(--accent)}
+@media(max-width:600px){nav{gap:16px;flex-wrap:wrap}nav a{font-size:10px}}
+
+section{max-width:1000px;margin:0 auto;padding:40px 24px}
+h2{font-size:28px;font-weight:700;margin-bottom:4px;letter-spacing:-0.5px}
+.subtitle{font-style:italic;color:var(--muted);margin-bottom:24px;font-size:15px}
+
+.tool-row{margin-bottom:32px}
+.tool-row h3{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+
+.tool{border:1px solid var(--border);padding:16px 18px;text-decoration:none;color:inherit;display:block;transition:all .15s}
+.tool:hover{border-color:var(--ink);background:rgba(0,0,0,.02)}
+.tool h4{font-size:16px;font-weight:600;margin-bottom:4px}
+.tool p{font-size:12px;color:var(--muted);line-height:1.4}
+.tool.featured{border-width:2px;border-color:var(--ink)}
+
+.about-strip{background:var(--paper-dark);padding:32px 24px;margin:32px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.about-inner{max-width:800px;margin:0 auto;text-align:center}
+.about-inner p{font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:16px}
+.about-features{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-top:20px}
+.about-feat{text-align:center}
+.about-feat svg{width:28px;height:28px;margin-bottom:6px;opacity:0.7}
+.about-feat span{display:block;font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+
+.formats{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:20px 0}
+.formats span{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--border);padding:3px 8px;color:var(--muted)}
+
+footer{text-align:center;padding:40px 20px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)}
+footer a{color:var(--ink);text-decoration:none;margin:0 8px}
+footer a:hover{color:var(--accent)}
+</style>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<meta name="description" content="Open-source e-ink reader firmware for Xteink X4/X3. Browser tools to convert PDFs, EPUBs, comics, dictionaries, fonts, and images for the device — everything runs locally.">
+<meta property="og:title" content="SUMI">
+<meta property="og:description" content="Open-source e-ink reader firmware for Xteink X4/X3. Browser tools to convert PDFs, EPUBs, comics, dictionaries, fonts, and images for the device — everything runs locally.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+</head>
+<body>
+
+<header>
+  <h1 class="logo">SUMI</h1>
+  <p class="tagline" data-i18n="brand.tagline">Open-source e-ink firmware for SUMI &amp; Folio &middot; Browser tools for content conversion</p>
+</header>
+
+<nav>
+  <a href="#converters" data-i18n="nav.converters">Converters</a>
+  <a href="#creators" data-i18n="nav.creators">Creators</a>
+  <a href="#utilities" data-i18n="nav.utilities">Utilities</a>
+  <a href="./transfer/" data-i18n="nav.transfer">Transfer</a>
+  <a href="#about" data-i18n="nav.about">About</a>
+  <a href="https://github.com/psychoplath9450/SUMI" target="_blank" data-i18n="nav.github" rel="noopener">GitHub</a>
+  <span data-sumi-lang-picker></span>
+</nav>
+
+<section id="tools">
+  <h2 data-i18n="home.h2_tools">Online Tools</h2>
+  <p class="subtitle" data-i18n="home.subtitle">Everything runs in your browser with one-click transfer to your device</p>
+
+  <div class="tool-row" id="converters">
+    <h3 data-i18n="home.converters.title">Converters</h3>
+    <div class="tool-grid">
+      <a href="./convert/" class="tool featured">
+        <h4 data-i18n="home.t_convert.h">Universal Converter</h4>
+        <p data-i18n="home.t_convert.p">PDF, DOCX, CBZ, FB2, RTF, Markdown, HTML, EPUB, images. Auto-detects format, classifies PDFs, preserves inline images, handles manga. Existing EPUBs get full optimization — image resizing, grayscale, CSS cleanup, encoding fixes.</p>
+      </a>
+      <a href="./clipper/" class="tool">
+        <h4 data-i18n="home.t_clipper.h">Web Clipper</h4>
+        <p data-i18n="home.t_clipper.p">Paste any URL, extract article text with Readability parsing, strip ads, preserve images. Queue multiple URLs or combine into chapters.</p>
+      </a>
+      <a href="./images/" class="tool">
+        <h4 data-i18n="home.t_images.h">Image Converter</h4>
+        <p data-i18n="home.t_images.p">Photos and artwork to 1-bit dithered BMPs. Floyd-Steinberg, Bayer, Atkinson at native 480×800.</p>
+      </a>
+      <a href="./fonts/" class="tool">
+        <h4 data-i18n="home.t_fonts.h">Font Converter</h4>
+        <p data-i18n="home.t_fonts.p">TTF &amp; OTF to .bin format. Live e-ink preview, adjustable boldness and spacing, character set selection.</p>
+      </a>
+      <a href="./dictionary/" class="tool">
+        <h4 data-i18n="home.t_dict.h">Dictionary Packager</h4>
+        <p data-i18n="home.t_dict.p">Clean up and optimize StarDict dictionaries for SUMI. Pre-builds the offset cache so first lookup is instant. Strips macOS resource forks. Drop .ifo/.idx/.dict or a .zip.</p>
+      </a>
+    </div>
+  </div>
+
+  <div class="tool-row" id="creators">
+    <h3 data-i18n="home.creators.title">Creators</h3>
+    <div class="tool-grid">
+      <a href="./newspaper/" class="tool featured">
+        <h4 data-i18n="home.t_news.h">Newspaper Builder</h4>
+        <p data-i18n="home.t_news.p">Build a newspaper from live RSS feeds. Full article text and images via Readability extraction. 15 preset feeds or custom URLs. Cover art and TOC.</p>
+      </a>
+      <a href="./flashcards/" class="tool">
+        <h4 data-i18n="home.t_flash.h">Flashcard Creator</h4>
+        <p data-i18n="home.t_flash.p">Visual editor, 100+ premade decks, AI assistant. Import from AnkiWeb or Quizlet. SM-2 spaced repetition output.</p>
+      </a>
+      <a href="./plugins/" class="tool">
+        <h4 data-i18n="home.t_plugin.h">Plugin Creator</h4>
+        <p data-i18n="home.t_plugin.p">Build games and apps with Lua. AI-assisted prompt builder, live e-ink preview, full API reference. Scripts run directly from the SD card.</p>
+      </a>
+      <a href="./bridge/" class="tool">
+        <h4 data-i18n="home.t_bridge.h">Plugin Bridge</h4>
+        <p data-i18n="home.t_bridge.p">Connect to your device over Bluetooth and exchange live events. Build BLE-enabled plugins with any AI, run them here — doorbells, text-pushers, whatever.</p>
+      </a>
+      <a href="./themes/" class="tool">
+        <h4 data-i18n="home.t_theme.h">Theme Creator</h4>
+        <p data-i18n="home.t_theme.p">Custom home screen backgrounds. AI prompts for any style, drag-and-drop converter, e-ink dithering preview.</p>
+      </a>
+    </div>
+  </div>
+
+  <div class="tool-row" id="utilities">
+    <h3 data-i18n="home.utilities.title">Utilities</h3>
+    <div class="tool-grid">
+      <a href="./transfer/" class="tool featured">
+        <h4 data-i18n="home.t_transfer.h">File Transfer</h4>
+        <p data-i18n="home.t_transfer.p">Send any file directly to your SUMI over Bluetooth. Pick the destination folder, drop files, transfer. Warns about formats that need conversion.</p>
+      </a>
+      <a href="./flasher/" class="tool">
+        <h4 data-i18n="home.t_flasher.h">Web Flasher</h4>
+        <p data-i18n="home.t_flasher.p">Flash firmware via Chrome WebSerial. One click, no drivers. Supports dual-boot.</p>
+      </a>
+      <a href="./process/" class="tool">
+        <h4 data-i18n="home.t_process.h">Content Processor</h4>
+        <p data-i18n="home.t_process.p">Pre-cache your library into the device-native binary format for instant-on reading. Run once, copy to SD card.</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="about-strip" id="about">
+  <div class="about-inner">
+    <p data-i18n-html="home.about.body">
+      <strong>SUMI</strong> is open-source e-ink firmware for the Xteink X4 and X3 (ESP32-C3, 380KB RAM).
+      It includes an EPUB reader with real inline images and tables, games, notes, flashcards, and maps.
+      This site provides browser-based tools that prepare content for the device's constraints.
+    </p>
+    <p data-i18n-html="home.about.folio" class="about-folio">
+      <strong>Folio</strong> is a sister firmware focused on the four headline reading apps &mdash;
+      <em>reader</em>, <em>dictionary</em>, <em>writer</em>, and <em>chess</em>.
+      Every tool on this site works with both firmwares: custom main pages, Lua plugins, and
+      device formats are shared. They just aren't headline features on Folio.
+    </p>
+    <div class="formats">
+      <span>PDF</span><span>EPUB</span><span>DOCX</span><span>CBZ</span>
+      <span>FB2</span><span>RTF</span><span>Markdown</span><span>HTML</span><span>TXT</span>
+      <span>JPG</span><span>PNG</span><span>WebP</span><span>TIFF</span><span>BMP</span>
+    </div>
+    <div class="about-features">
+      <div class="about-feat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="14" y2="13"/></svg>
+        <span data-i18n="home.feat.images">Inline Images</span>
+      </div>
+      <div class="about-feat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span data-i18n="home.feat.tables">Tables</span>
+      </div>
+      <div class="about-feat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="15" y2="15"/></svg>
+        <span data-i18n="home.feat.games">Games &amp; Apps</span>
+      </div>
+      <div class="about-feat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2 L2 7 L12 12 L22 7 Z"/><path d="M2 17 L12 22 L22 17"/><path d="M2 12 L12 17 L22 12"/></svg>
+        <span data-i18n="home.feat.offline">Offline-Ready</span>
+      </div>
+      <div class="about-feat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2 L3 14 H12 L11 22 L21 10 H12 Z"/></svg>
+        <span data-i18n="home.feat.ble">BLE Transfer</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span data-i18n="footer.license">SUMI is open source under the MIT license</span> &middot;
+  <a href="https://github.com/psychoplath9450/SUMI" target="_blank" data-i18n="nav.github" rel="noopener">GitHub</a>
+  <a href="./convert/" data-i18n="home.t_convert.h">Converter</a>
+  <a href="./newspaper/" data-i18n="home.t_news.h">SUMI Post</a>
+  <a href="./clipper/" data-i18n="home.t_clipper.h">Clipper</a>
+  <a href="./fonts/" data-i18n="home.t_fonts.h">Fonts</a>
+  <a href="./dictionary/" data-i18n="home.t_dict.h">Dictionary</a>
+  <a href="./images/" data-i18n="home.t_images.h">Images</a>
+  <a href="./flashcards/" data-i18n="home.t_flash.h">Flashcards</a>
+  <a href="./plugins/" data-i18n="home.t_plugin.h">Plugins</a>
+  <a href="./bridge/" data-i18n="home.t_bridge.h">Bridge</a>
+  <a href="./themes/" data-i18n="home.t_theme.h">Themes</a>
+  <a href="./transfer/" data-i18n="home.t_transfer.h">Transfer</a>
+  <a href="./flasher/" data-i18n="home.t_flasher.h">Flasher</a>
+</footer>
+<script>
+// Register service worker for offline shell caching. Best-effort; non-fatal
+// if unsupported (older Safari, file:// origins). The SW is scoped to the
+// site root so all sub-pages benefit from the same cache.
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>

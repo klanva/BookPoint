@@ -9,6 +9,7 @@
 
 #include "stats/StatsStore.h"
 #include "stats/ReadingStatsTypes.h"
+#include "stats/ReadingStatsUtils.h"
 #include "../../util/BookCacheUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -226,6 +227,25 @@ void ReadingStatsActivity::renderBookPage(const int yTop, const int contentWidth
     renderer.drawText(UI_10_FONT_ID, 0, y, tr(STR_STATS_TIME_LEFT));
     renderer.drawText(UI_12_FONT_ID, 0, y + 16, left.c_str(), true, EpdFontFamily::BOLD);
     y += 52;
+  }
+
+  // Finish-date estimate (inkMOD estimateFinishDateFromDailyPace): the book's
+  // average reading seconds per calendar day projected onto the remaining time.
+  if (!bookStats_.isFinished && bookProgressPercent_ >= 0.0f && bookProgressPercent_ < 100.0f) {
+    uint32_t estimateSeconds = estimatedSecondsLeft_;
+    if (estimateSeconds == 0) {
+      fallbackEstimatedTimeLeft(bookStats_, bookProgressPercent_, estimateSeconds);
+    }
+    ReadingStatsDateTime now;
+    ReadingStatsDate finishDate;
+    if (estimateSeconds > 0 && getCurrentLocalReadingStatsDateTime(now) &&
+        estimateFinishDateFromDailyPace(bookStats_, now, estimateSeconds, finishDate)) {
+      char dateBuf[24];
+      formatFinishDate(finishDate, dateBuf, sizeof(dateBuf));
+      renderer.drawText(UI_10_FONT_ID, 0, y, tr(STR_STATS_FINISH_ESTIMATE));
+      renderer.drawText(UI_12_FONT_ID, 0, y + 16, dateBuf, true, EpdFontFamily::BOLD);
+      y += 52;
+    }
   }
 
   const auto formatDate = [](const ReadingStatsDate& d) {

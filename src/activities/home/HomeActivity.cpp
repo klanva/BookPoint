@@ -20,6 +20,8 @@
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "stats/GlobalReadingStats.h"
+#include "stats/StatsStore.h"
 
 int HomeActivity::getMenuItemCount() const {
   int count = 4;  // File Browser, Recents, File transfer, Settings
@@ -113,6 +115,24 @@ void HomeActivity::onEnter() {
   Activity::onEnter();
 
   hasOpdsServers = OPDS_STORE.hasServers();
+
+  // Current reading streak, cached once for the small "Streak: N days" line
+  // under the cover card. Loading the global stats touches the SD card, so do
+  // it here rather than on every render().
+  currentStreak = 0;
+  currentBookStats = BookReadingStats{};
+  ReadingStatsDateTime now;
+  if (getCurrentLocalReadingStatsDateTime(now)) {
+    const GlobalReadingStats globalStats = StatsStore::loadGlobalStats();
+    currentStreak = globalStats.currentReadingStreak(readingStatsDayIndex(now.date));
+  }
+  // Per-book stats for the themed cover card (Minimal / Dashboard). Home has no
+  // cheap access to the saved reader progress, so the card shows lifetime stats
+  // only and passes progressPercent = -1.0f (unknown) to the theme.
+  if (!recentBooks.empty()) {
+    currentBookStats =
+        StatsStore::loadBookStats(recentBooks[0].path, recentBooks[0].title, recentBooks[0].author);
+  }
 
   const auto& metrics = UITheme::getInstance().getMetrics();
   loadRecentBooks(metrics.homeRecentBooksCount);
@@ -303,7 +323,20 @@ void HomeActivity::render(RenderLock&&) {
 
   GUI.drawRecentBookCover(renderer, Rect{0, metrics.homeTopPadding, pageWidth, metrics.homeCoverTileHeight},
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
-                          std::bind(&HomeActivity::storeCoverBuffer, this));
+                          std::bind(&HomeActivity::storeCoverBuffer, this),
+                          recentBooks.empty() ? nullptr : &currentBookStats, -1.0f);
+
+  // Small streak line at the bottom-right corner of the cover card. Right-aligned
+  // so it never collides with the left-side cover art or centered title block.
+  if (currentStreak > 0 && !recentBooks.empty()) {
+    char streakBuf[48];
+    snprintf(streakBuf, sizeof(streakBuf), "%s: %u %s", tr(STR_STATS_STREAK),
+             static_cast<unsigned>(currentStreak), tr(STR_STATS_DAYS));
+    const int lineH = renderer.getLineHeight(SMALL_FONT_ID);
+    const int textW = renderer.getTextWidth(SMALL_FONT_ID, streakBuf);
+    const int y = metrics.homeTopPadding + metrics.homeCoverTileHeight - lineH - 4;
+    renderer.drawText(SMALL_FONT_ID, pageWidth - metrics.contentSidePadding - textW, y, streakBuf);
+  }
 
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),

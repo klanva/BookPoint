@@ -39,6 +39,10 @@ bool readingStatsDateFromDayIndex(uint32_t dayIndex, ReadingStatsDate& outDate);
 uint8_t readingStatsDayOfWeekIndex(const ReadingStatsDate& date);  // Monday = 0
 ReadingTimeBucket readingTimeBucketForHour(uint8_t hour);
 
+// Calendar days between two valid dates (end - start, exclusive of start).
+// Returns 0 when either date is invalid or end precedes start.
+uint16_t readingSpanDaysElapsed(const ReadingStatsDate& start, const ReadingStatsDate& end);
+
 // Advances dt by seconds, rolling across bucket/day boundaries as needed.
 void addSecondsToReadingStatsDateTime(ReadingStatsDateTime& dt, uint32_t seconds);
 

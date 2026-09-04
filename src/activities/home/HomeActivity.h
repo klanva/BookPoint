@@ -4,6 +4,7 @@
 
 #include "./FileBrowserActivity.h"
 #include "activities/Activity.h"
+#include "stats/BookReadingStats.h"
 #include "util/ButtonNavigator.h"
 
 struct RecentBook;
@@ -27,6 +28,8 @@ class HomeActivity final : public Activity {
   int coverRectY = 0;
   int coverRectW = 0;
   int coverRectH = 0;
+  uint16_t currentStreak = 0;  // consecutive reading days ending today, shown under the cover card
+  BookReadingStats currentBookStats;  // stats for the first recent book, fed to the themed cover card
   std::vector<RecentBook> recentBooks;
   const HomeMenuItem initialMenuItem;
 

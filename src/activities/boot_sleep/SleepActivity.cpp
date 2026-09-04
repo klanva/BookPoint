@@ -28,6 +28,13 @@
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
+#include "stats/BookReadingStats.h"
+#include "stats/GlobalReadingStats.h"
+#include "stats/ReadingStatsTypes.h"
+#include "stats/StatsStore.h"
+#include "RecentBooksStore.h"
+#include "components/themes/minimal/MinimalTheme.h"
+#include "components/themes/dashboard/DashboardTheme.h"
 
 namespace {
 
@@ -544,6 +551,12 @@ void SleepActivity::onEnter() {
       } else {
         return renderCustomSleepScreen();
       }
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::READING_STATS):
+      return renderReadingStatsSleepScreen();
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::PAGE_OVERLAY):
+      return renderPageOverlaySleepScreen();
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR):
+      return renderCalendarSleepScreen();
     default:
       return renderDefaultSleepScreen();
   }
@@ -747,6 +760,52 @@ void SleepActivity::renderTransparentCustomSleepScreen() const {
   renderDefaultSleepScreen();
 }
 
+bool SleepActivity::resolveCoverBmpForCurrentBook(std::string& coverBmpPath) const {
+  if (APP_STATE.openEpubPath.empty()) {
+    return false;
+  }
+  const bool cropped = SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP;
+
+  if (FsHelpers::hasXtcExtension(APP_STATE.openEpubPath)) {
+    Xtc lastXtc(APP_STATE.openEpubPath, "/.crosspoint");
+    if (!lastXtc.load()) {
+      LOG_ERR("SLP", "Failed to load last XTC");
+      return false;
+    }
+    if (!lastXtc.generateCoverBmp()) {
+      LOG_ERR("SLP", "Failed to generate XTC cover bmp");
+      return false;
+    }
+    coverBmpPath = lastXtc.getCoverBmpPath();
+    return true;
+  } else if (FsHelpers::hasTxtExtension(APP_STATE.openEpubPath)) {
+    Txt lastTxt(APP_STATE.openEpubPath, "/.crosspoint");
+    if (!lastTxt.load()) {
+      LOG_ERR("SLP", "Failed to load last TXT");
+      return false;
+    }
+    if (!lastTxt.generateCoverBmp()) {
+      LOG_ERR("SLP", "No cover image found for TXT file");
+      return false;
+    }
+    coverBmpPath = lastTxt.getCoverBmpPath();
+    return true;
+  } else if (FsHelpers::hasEpubExtension(APP_STATE.openEpubPath)) {
+    Epub lastEpub(APP_STATE.openEpubPath, "/.crosspoint");
+    if (!lastEpub.load(true, true)) {
+      LOG_ERR("SLP", "Failed to load last epub");
+      return false;
+    }
+    if (!lastEpub.generateCoverBmp(cropped)) {
+      LOG_ERR("SLP", "Failed to generate cover bmp");
+      return false;
+    }
+    coverBmpPath = lastEpub.getCoverBmpPath(cropped);
+    return true;
+  }
+  return false;
+}
+
 void SleepActivity::renderCoverSleepScreen() const {
   void (SleepActivity::*renderNoCoverSleepScreen)() const;
   switch (SETTINGS.sleepScreen) {
@@ -758,80 +817,290 @@ void SleepActivity::renderCoverSleepScreen() const {
       break;
   }
 
-  if (APP_STATE.openEpubPath.empty()) {
-    return (this->*renderNoCoverSleepScreen)();
-  }
-
   std::string coverBmpPath;
-  bool cropped = SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP;
-
-  // Check if the current book is XTC, TXT, or EPUB
-  if (FsHelpers::hasXtcExtension(APP_STATE.openEpubPath)) {
-    // Handle XTC file
-    Xtc lastXtc(APP_STATE.openEpubPath, "/.crosspoint");
-    if (!lastXtc.load()) {
-      LOG_ERR("SLP", "Failed to load last XTC");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    if (!lastXtc.generateCoverBmp()) {
-      LOG_ERR("SLP", "Failed to generate XTC cover bmp");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    coverBmpPath = lastXtc.getCoverBmpPath();
-  } else if (FsHelpers::hasTxtExtension(APP_STATE.openEpubPath)) {
-    // Handle TXT file - looks for cover image in the same folder
-    Txt lastTxt(APP_STATE.openEpubPath, "/.crosspoint");
-    if (!lastTxt.load()) {
-      LOG_ERR("SLP", "Failed to load last TXT");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    if (!lastTxt.generateCoverBmp()) {
-      LOG_ERR("SLP", "No cover image found for TXT file");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    coverBmpPath = lastTxt.getCoverBmpPath();
-  } else if (FsHelpers::hasEpubExtension(APP_STATE.openEpubPath)) {
-    // Handle EPUB file
-    Epub lastEpub(APP_STATE.openEpubPath, "/.crosspoint");
-    // Skip loading css since we only need metadata here
-    if (!lastEpub.load(true, true)) {
-      LOG_ERR("SLP", "Failed to load last epub");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    if (!lastEpub.generateCoverBmp(cropped)) {
-      LOG_ERR("SLP", "Failed to generate cover bmp");
-      return (this->*renderNoCoverSleepScreen)();
-    }
-
-    coverBmpPath = lastEpub.getCoverBmpPath(cropped);
-  } else {
-    return (this->*renderNoCoverSleepScreen)();
-  }
-
-  HalFile file;
-  if (Storage.openFileForRead("SLP", coverBmpPath, file)) {
-    Bitmap bitmap(file);
-    if (bitmap.parseHeaders() == BmpReaderError::Ok) {
-      LOG_DBG("SLP", "Rendering sleep cover: %s", coverBmpPath.c_str());
-      renderBitmapSleepScreen(bitmap);
-      return;
+  if (resolveCoverBmpForCurrentBook(coverBmpPath)) {
+    HalFile file;
+    if (Storage.openFileForRead("SLP", coverBmpPath, file)) {
+      Bitmap bitmap(file);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+        LOG_DBG("SLP", "Rendering sleep cover: %s", coverBmpPath.c_str());
+        renderBitmapSleepScreen(bitmap);
+        return;
+      }
     }
   }
 
   return (this->*renderNoCoverSleepScreen)();
 }
 
+void SleepActivity::renderReadingStatsSleepScreen() const {
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+
+  BookReadingStats bookStats;
+  RecentBook recentBook;
+  bool hasBook = false;
+  float progressPercent = -1.0f;
+
+  if (!APP_STATE.openEpubPath.empty()) {
+    recentBook = RECENT_BOOKS.getDataFromBook(APP_STATE.openEpubPath);
+    if (!recentBook.path.empty()) {
+      hasBook = true;
+    } else {
+      recentBook.path = APP_STATE.openEpubPath;
+      const auto slash = APP_STATE.openEpubPath.find_last_of("/\\");
+      recentBook.title = (slash == std::string::npos) ? APP_STATE.openEpubPath : APP_STATE.openEpubPath.substr(slash + 1);
+      hasBook = true;
+    }
+    bookStats = StatsStore::loadBookStats(recentBook.path, recentBook.title, recentBook.author);
+  } else {
+    const auto& recents = RECENT_BOOKS.getBooks();
+    if (!recents.empty()) {
+      recentBook = recents[0];
+      hasBook = true;
+      bookStats = StatsStore::loadBookStats(recentBook.path, recentBook.title, recentBook.author);
+    }
+  }
+
+  const GlobalReadingStats globalStats = StatsStore::loadGlobalStats();
+
+  if (hasBook) {
+    std::string coverBmp;
+    if (resolveCoverBmpForCurrentBook(coverBmp)) {
+      recentBook.coverBmpPath = coverBmp;
+    }
+    MinimalTheme theme;
+    theme.drawStatsSleepScreen(renderer, recentBook, &bookStats, &globalStats, progressPercent);
+  } else {
+    renderer.clearScreen(0x00);
+    renderer.drawText(UI_12_FONT_ID, 24, 60, tr(STR_READING_STATS), false, EpdFontFamily::BOLD);
+    ReadingStatsDateTime now;
+    uint16_t streak = 0;
+    if (getCurrentLocalReadingStatsDateTime(now)) {
+      streak = globalStats.currentReadingStreak(readingStatsDayIndex(now.date));
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s: %u %s", tr(STR_STATS_STREAK), static_cast<unsigned>(streak), tr(STR_STATS_DAYS));
+    renderer.drawText(UI_12_FONT_ID, 24, 110, buf, false);
+    renderer.drawImage(Logo120, (pageWidth - 120) / 2, pageHeight - 160, 120, 120);
+  }
+
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+}
+
+void SleepActivity::renderPageOverlaySleepScreen() const {
+  std::string coverBmpPath;
+  bool hasCover = false;
+  if (resolveCoverBmpForCurrentBook(coverBmpPath)) {
+    HalFile file;
+    if (Storage.openFileForRead("SLP", coverBmpPath, file)) {
+      Bitmap bitmap(file);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+        renderBitmapSleepScreen(bitmap);
+        hasCover = true;
+      }
+    }
+  }
+
+  if (!hasCover) {
+    renderDefaultSleepScreen();
+  }
+
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  constexpr int cardMargin = 16;
+  constexpr int cardH = 76;
+  const int cardW = pageWidth - cardMargin * 2;
+  const int cardY = pageHeight - cardH - 20;
+
+  renderer.fillRoundedRect(cardMargin, cardY, cardW, cardH, 8, Color::White);
+  renderer.drawRoundedRect(cardMargin, cardY, cardW, cardH, 2, 8, true);
+
+  RecentBook recent = RECENT_BOOKS.getDataFromBook(APP_STATE.openEpubPath);
+  std::string title;
+  if (!recent.title.empty()) {
+    title = recent.title;
+  } else {
+    const auto slash = APP_STATE.openEpubPath.find_last_of("/\\");
+    title = (slash == std::string::npos) ? APP_STATE.openEpubPath : APP_STATE.openEpubPath.substr(slash + 1);
+  }
+
+  const int textW = cardW - 24;
+  auto wrapped = renderer.wrappedText(UI_10_FONT_ID, title.c_str(), textW, 1, EpdFontFamily::BOLD);
+  if (!wrapped.empty()) {
+    renderer.drawText(UI_10_FONT_ID, cardMargin + 12, cardY + 10, wrapped[0].c_str(), true, EpdFontFamily::BOLD);
+  }
+
+  BookReadingStats stats = StatsStore::loadBookStats(APP_STATE.openEpubPath, title, recent.author);
+  char buf[64];
+  if (stats.totalReadingSeconds > 0) {
+    char timeBuf[32];
+    BookReadingStats::formatDuration(stats.totalReadingSeconds, timeBuf, sizeof(timeBuf));
+    snprintf(buf, sizeof(buf), "%s: %s", tr(STR_STATS_TOTAL_TIME), timeBuf);
+    renderer.drawText(SMALL_FONT_ID, cardMargin + 12, cardY + 42, buf, true);
+  }
+
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+}
+
+namespace {
+static const char* calendarMonthName(const uint8_t month) {
+  switch (month) {
+    case 1: return tr(STR_CAL_MONTH_1);
+    case 2: return tr(STR_CAL_MONTH_2);
+    case 3: return tr(STR_CAL_MONTH_3);
+    case 4: return tr(STR_CAL_MONTH_4);
+    case 5: return tr(STR_CAL_MONTH_5);
+    case 6: return tr(STR_CAL_MONTH_6);
+    case 7: return tr(STR_CAL_MONTH_7);
+    case 8: return tr(STR_CAL_MONTH_8);
+    case 9: return tr(STR_CAL_MONTH_9);
+    case 10: return tr(STR_CAL_MONTH_10);
+    case 11: return tr(STR_CAL_MONTH_11);
+    case 12: return tr(STR_CAL_MONTH_12);
+    default: return "?";
+  }
+}
+
+static const char* calendarDayOfWeekAbbrev(const int mondayFirstIndex) {
+  switch (mondayFirstIndex) {
+    case 0: return tr(STR_CAL_DOW_1);
+    case 1: return tr(STR_CAL_DOW_2);
+    case 2: return tr(STR_CAL_DOW_3);
+    case 3: return tr(STR_CAL_DOW_4);
+    case 4: return tr(STR_CAL_DOW_5);
+    case 5: return tr(STR_CAL_DOW_6);
+    case 6: return tr(STR_CAL_DOW_7);
+    default: return "?";
+  }
+}
+
+constexpr uint8_t kBigSegmentsByDigit[10] = {
+    0b0111111,  // 0: a b c d e f
+    0b0000110,  // 1: b c
+    0b1011011,  // 2: a b d e g
+    0b1001111,  // 3: a b c d g
+    0b1100110,  // 4: b c f g
+    0b1101101,  // 5: a c d f g
+    0b1111101,  // 6: a c d e f g
+    0b0000111,  // 7: a b c
+    0b1111111,  // 8: all
+    0b1101101,  // 9: a b c d f g
+};
+
+static void drawBigDigit(const GfxRenderer& renderer, const int x, const int y, const int w, const int h,
+                         const unsigned digit) {
+  if (digit > 9) return;
+  const uint8_t segs = kBigSegmentsByDigit[digit];
+  const int thickness = std::max(3, h / 9);
+  const int halfH = h / 2;
+  if (segs & 0x01) renderer.fillRoundedRect(x, y, w, thickness, thickness / 2, Color::Black);
+  if (segs & 0x02) renderer.fillRoundedRect(x + w - thickness, y, thickness, halfH, thickness / 2, Color::Black);
+  if (segs & 0x04) renderer.fillRoundedRect(x + w - thickness, y + halfH, thickness, h - halfH, thickness / 2, Color::Black);
+  if (segs & 0x08) renderer.fillRoundedRect(x, y + h - thickness, w, thickness, thickness / 2, Color::Black);
+  if (segs & 0x10) renderer.fillRoundedRect(x, y + halfH, thickness, h - halfH, thickness / 2, Color::Black);
+  if (segs & 0x20) renderer.fillRoundedRect(x, y, thickness, halfH, thickness / 2, Color::Black);
+  if (segs & 0x40) renderer.fillRoundedRect(x, y + halfH - thickness / 2, w, thickness, thickness / 2, Color::Black);
+}
+}  // namespace
+
+void SleepActivity::renderCalendarSleepScreen() const {
+  ReadingStatsDateTime now;
+  if (!getCurrentLocalReadingStatsDateTime(now) || !now.isValid()) {
+    renderDefaultSleepScreen();
+    return;
+  }
+
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
+  constexpr int kMargin = 24;
+
+  renderer.clearScreen();
+
+  const ReadingStatsDate firstOfMonth{now.date.year, now.date.month, 1};
+  const uint8_t firstDow = readingStatsDayOfWeekIndex(firstOfMonth);  // Monday = 0
+  const uint8_t totalDays = daysInMonth(now.date.year, now.date.month);
+  const int gridRows = (firstDow + totalDays + 6) / 7;
+
+  constexpr int kRowHeight = 58;
+  constexpr int kHighlightSize = 40;
+  const int colW = (pageWidth - kMargin * 2) / 7;
+
+  const int monthLineH = renderer.getLineHeight(UI_12_FONT_ID);
+  const int yearLineH = renderer.getLineHeight(UI_12_FONT_ID);
+  const int dowLineH = renderer.getLineHeight(UI_10_FONT_ID);
+  constexpr int kHeaderLineGap = 6;
+  const int headerH = monthLineH + kHeaderLineGap + yearLineH;
+  const int dowGap = 28;
+  const int dowRowH = dowLineH + 16;
+  const int gridH = gridRows * kRowHeight;
+  const int blockH = headerH + dowGap + dowRowH + gridH;
+
+  constexpr int kLogoAreaH = 200;
+  const int available = pageHeight - kLogoAreaH;
+  const int monthTop = std::max(kMargin, (available - blockH) / 2);
+
+  // Month name + year, top-left.
+  const char* monthName = calendarMonthName(now.date.month);
+  renderer.drawText(UI_12_FONT_ID, kMargin, monthTop, monthName, true, EpdFontFamily::BOLD);
+  char yearBuf[8];
+  snprintf(yearBuf, sizeof(yearBuf), "%u", static_cast<unsigned>(now.date.year));
+  renderer.drawText(UI_12_FONT_ID, kMargin, monthTop + monthLineH + kHeaderLineGap, yearBuf, true, EpdFontFamily::BOLD);
+
+  // Big digits for month number, top-right
+  const int digitW = 28;
+  const int digitH = headerH;
+  const int digitGap = 8;
+  const int digitRight = pageWidth - kMargin;
+  if (now.date.month >= 10) {
+    drawBigDigit(renderer, digitRight - digitW * 2 - digitGap, monthTop, digitW, digitH, now.date.month / 10);
+    drawBigDigit(renderer, digitRight - digitW, monthTop, digitW, digitH, now.date.month % 10);
+  } else {
+    drawBigDigit(renderer, digitRight - digitW, monthTop, digitW, digitH, now.date.month);
+  }
+
+  // Day of week abbreviations row
+  const int dowY = monthTop + headerH + dowGap;
+  for (int i = 0; i < 7; ++i) {
+    const char* dowText = calendarDayOfWeekAbbrev(i);
+    const int textW = renderer.getTextWidth(UI_10_FONT_ID, dowText);
+    const int cellX = kMargin + i * colW;
+    renderer.drawText(UI_10_FONT_ID, cellX + (colW - textW) / 2, dowY, dowText, true, EpdFontFamily::BOLD);
+  }
+
+  // Days grid
+  const int gridY = dowY + dowRowH;
+  for (uint8_t day = 1; day <= totalDays; ++day) {
+    const int pos = firstDow + day - 1;
+    const int col = pos % 7;
+    const int row = pos / 7;
+    const int cellX = kMargin + col * colW;
+    const int cellY = gridY + row * kRowHeight;
+
+    char dayBuf[8];
+    snprintf(dayBuf, sizeof(dayBuf), "%u", static_cast<unsigned>(day));
+    const int textW = renderer.getTextWidth(UI_10_FONT_ID, dayBuf);
+
+    if (day == now.date.day) {
+      const int hx = cellX + (colW - kHighlightSize) / 2;
+      const int hy = cellY + (kRowHeight - kHighlightSize) / 2;
+      renderer.fillRoundedRect(hx, hy, kHighlightSize, kHighlightSize, 8, Color::Black);
+      renderer.drawText(UI_10_FONT_ID, cellX + (colW - textW) / 2, cellY + (kRowHeight - dowLineH) / 2, dayBuf, false, EpdFontFamily::BOLD);
+    } else {
+      renderer.drawText(UI_10_FONT_ID, cellX + (colW - textW) / 2, cellY + (kRowHeight - dowLineH) / 2, dayBuf, true);
+    }
+  }
+
+  const int logoY = pageHeight - 140;
+  renderer.drawImage(Logo120, (pageWidth - 120) / 2, logoY, 120, 120);
+
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+}
+
 void SleepActivity::renderLastScreenSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
   renderer.drawImage(MoonIcon, 0, pageHeight - MOONICON_HEIGHT, MOONICON_WIDTH, MOONICON_HEIGHT);
   if (gpio.deviceIsX3()) {
-    // The controller still holds the displayed page, so its differential base
-    // waveform can add the moon without a full-screen flash.
     renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
   } else {
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);

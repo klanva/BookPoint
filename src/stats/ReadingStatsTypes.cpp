@@ -75,6 +75,15 @@ ReadingTimeBucket readingTimeBucketForHour(const uint8_t hour) {
   return ReadingTimeBucket::Night;
 }
 
+uint16_t readingSpanDaysElapsed(const ReadingStatsDate& start, const ReadingStatsDate& end) {
+  if (!start.isValid() || !end.isValid()) return 0;
+  const uint32_t startDay = readingStatsDayIndex(start);
+  const uint32_t endDay = readingStatsDayIndex(end);
+  if (endDay < startDay) return 0;
+  const uint32_t elapsed = endDay - startDay;
+  return elapsed > UINT16_MAX ? UINT16_MAX : static_cast<uint16_t>(elapsed);
+}
+
 void addSecondsToReadingStatsDateTime(ReadingStatsDateTime& dt, const uint32_t seconds) {
   if (!dt.isValid() || seconds == 0) return;
 

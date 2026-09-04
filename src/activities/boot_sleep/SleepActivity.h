@@ -23,6 +23,10 @@ class SleepActivity final : public Activity {
   void renderLastScreenSleepScreen() const;
   void renderTransparentCustomSleepScreen() const;
   void renderBlankSleepScreen() const;
+  void renderReadingStatsSleepScreen() const;
+  void renderPageOverlaySleepScreen() const;
+  void renderCalendarSleepScreen() const;
+  bool resolveCoverBmpForCurrentBook(std::string& coverBmpPath) const;
 
   bool fromTimeout = false;
 };
