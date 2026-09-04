@@ -44,6 +44,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "activities/settings/SettingsActivity.h"
 #include "activities/settings/TextSettingsActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -865,6 +866,23 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
     }
     case EpubReaderMenuActivity::MenuAction::VIEW_CLIPPINGS: {
       openClippings();
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::SYSTEM_SETTINGS: {
+      startActivityForResult(std::make_unique<SettingsActivity>(renderer, mappedInput),
+                             [this](const ActivityResult&) {
+                               {
+                                 RenderLock lock;
+                                 if (section) {
+                                   rememberCurrentContentOffset();
+                                   cachedSpineIndex = currentSpineIndex;
+                                   cachedChapterTotalPageCount = section->pageCount;
+                                   nextPageNumber = section->currentPage;
+                                 }
+                                 section.reset();
+                               }
+                               openReaderMenu();
+                             });
       break;
     }
   }

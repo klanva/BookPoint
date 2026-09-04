@@ -30,7 +30,8 @@ class EpubReaderMenuActivity final : public UiListActivity {
     DELETE_CACHE,
     DICTIONARY,
     CREATE_CLIPPING,
-    VIEW_CLIPPINGS
+    VIEW_CLIPPINGS,
+    SYSTEM_SETTINGS
   };
 
   explicit EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
