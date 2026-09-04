@@ -13,12 +13,14 @@
 #include "../../stats/ReadingTracker.h"
 
 #include "BookmarkEntry.h"
+#include "ClippingStore.h"
 #include "EpubReaderMenuActivity.h"
 #include "ProgressMapper.h"
 #include "ReaderActivity.h"
 
 class EpubReaderActivity final : public ReaderActivity {
   std::shared_ptr<Epub> epub;
+  ClippingStore clippings;
   std::unique_ptr<Section> section = nullptr;
   int currentSpineIndex = 0;
   int nextPageNumber = 0;
@@ -112,6 +114,8 @@ class EpubReaderActivity final : public ReaderActivity {
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
+  void createClipping();
+  void openClippings();
 
   void navigateToHref(const std::string& href, bool savePosition = false);
   void restoreSavedPosition();

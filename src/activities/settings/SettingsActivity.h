@@ -28,6 +28,7 @@ enum class SettingAction {
   ClockUtcOffset,
   ClockSync,
   DictionaryDownload,
+  SystemInfo,
 };
 
 struct SettingInfo {

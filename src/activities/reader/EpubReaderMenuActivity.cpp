@@ -50,6 +50,8 @@ std::vector<EpubReaderMenuActivity::MenuItem> EpubReaderMenuActivity::buildMenuI
     items.push_back({MenuAction::BOOKMARKS, StrId::STR_BOOKMARKS});
   }
   items.push_back({MenuAction::TOGGLE_BOOKMARK, StrId::STR_TOGGLE_BOOKMARK});
+  items.push_back({MenuAction::CREATE_CLIPPING, StrId::STR_CREATE_CLIPPING});
+  items.push_back({MenuAction::VIEW_CLIPPINGS, StrId::STR_CLIPPINGS});
   items.push_back({MenuAction::TEXT_SETTINGS, StrId::STR_TEXT_SETTINGS});
   items.push_back({MenuAction::NIGHT_MODE, StrId::STR_NIGHT_MODE});
   if (Frontlight.present()) {

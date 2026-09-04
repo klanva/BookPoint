@@ -20,7 +20,11 @@ class FileBrowserActivity final : public UiListActivity {
   // Files state
   std::string basepath = "/";
   std::vector<std::string> files;
+  std::vector<uint32_t> fileSizes;
+  std::vector<uint32_t> fileDateTimes;
   std::unique_ptr<char[]> fileNameBuffer;
+
+  void sortFileList();
 
   // Per-row render buffers, derived from `files` and rebuilt only when it
   // changes (loadFiles()) rather than on every repaint — buildScreen() used to

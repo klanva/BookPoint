@@ -26,6 +26,7 @@
 #include "SdFirmwareUpdateActivity.h"
 #include "SettingsList.h"
 #include "StatusBarSettingsActivity.h"
+#include "SystemInformationActivity.h"
 #include "TextSettingsActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
@@ -96,6 +97,7 @@ void SettingsActivity::rebuildSettingsLists() {
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
+  systemSettings.push_back(SettingInfo::Action(StrId::STR_SYSTEM_INFO, SettingAction::SystemInfo));
   readerSettings.insert(readerSettings.begin(),
                         SettingInfo::Action(StrId::STR_READING_STATS, SettingAction::ReadingStats));
   readerSettings.insert(readerSettings.begin() + 1,
@@ -380,6 +382,9 @@ void SettingsActivity::toggleCurrentSetting() {
                                  SETTINGS.saveToFile();
                                  rebuildSettingsLists();
                                });
+        break;
+      case SettingAction::SystemInfo:
+        startActivityForResult(std::make_unique<SystemInformationActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::None:
         // Do nothing

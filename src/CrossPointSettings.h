@@ -193,6 +193,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     QUICK_RESUME_SLEEP_SCREEN_COUNT
   };
 
+  enum FILE_SORT_MODE { SORT_BY_NAME = 0, SORT_BY_DATE = 1, SORT_BY_SIZE = 2, FILE_SORT_MODE_COUNT };
+  enum FILE_SORT_DIRECTION { SORT_ASCENDING = 0, SORT_DESCENDING = 1, FILE_SORT_DIRECTION_COUNT };
+
+  // File browser sorting settings
+  uint8_t fileSortMode = SORT_BY_NAME;
+  uint8_t fileSortDirection = SORT_ASCENDING;
+
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
   // Night mode: inverted output polarity on the reading surfaces only

@@ -18,6 +18,9 @@
 
 #include "../../util/BookmarkFile.h"
 #include "BookmarkEntry.h"
+#include "ClippingListActivity.h"
+#include "ClippingSelectionActivity.h"
+#include "ClippingUtils.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "DictionaryWordSelectActivity.h"
@@ -238,6 +241,7 @@ bool EpubReaderActivity::loadBook() {
   }
 
   loadCachedBookmarks();
+  clippings.loadForBook(epub->getPath(), epub->getTitle(), epub->getAuthor(), "epub");
   return true;
 }
 
@@ -853,6 +857,14 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
     }
     case EpubReaderMenuActivity::MenuAction::TOGGLE_BOOKMARK: {
       addBookmark();
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::CREATE_CLIPPING: {
+      createClipping();
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::VIEW_CLIPPINGS: {
+      openClippings();
       break;
     }
   }
@@ -1481,6 +1493,11 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   }
 
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+  if (section) {
+    ClippingUtils::drawSavedHighlights(renderer, *page, clippings.getClippings(),
+                                       fontId, orientedMarginLeft, orientedMarginTop,
+                                       !SETTINGS.screenInverted);
+  }
   renderStatusBar();
   renderFootnoteStrip(orientedMarginLeft, orientedMarginTop + buildViewportHeight - footnoteStripHeight,
                       renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight);
@@ -2021,4 +2038,64 @@ CrossPointPosition EpubReaderActivity::getCurrentPosition() const {
     localPos.hasParagraphIndex = true;
   }
   return localPos;
+}
+
+void EpubReaderActivity::createClipping() {
+  if (!section || !epub) return;
+  const int fontId = SETTINGS.getReaderFontId();
+  int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
+  renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
+                                   &orientedMarginLeft);
+  orientedMarginTop += SETTINGS.screenMargin;
+  orientedMarginLeft += SETTINGS.screenMargin;
+
+  startActivityForResult(
+      std::make_unique<ClippingSelectionActivity>(renderer, mappedInput, *section, fontId, orientedMarginLeft, orientedMarginTop),
+      [this](const ActivityResult& result) {
+        if (!result.isCancelled) {
+          if (const auto* sel = std::get_if<ClippingSelectionResult>(&result.data)) {
+            Clipping clip;
+            clip.spineIndex = static_cast<uint16_t>(currentSpineIndex);
+            clip.pageNumber = sel->startPageNumber;
+            clip.endPageNumber = sel->endPageNumber;
+            clip.pageCount = static_cast<uint16_t>(section ? section->pageCount : 1);
+            clip.startWordIndex = sel->startWordIndex;
+            clip.endWordIndex = sel->endWordIndex;
+            clip.timestamp = static_cast<uint32_t>(millis() / 1000);
+            const int tocIdx = epub ? epub->getTocIndexForSpineIndex(currentSpineIndex) : -1;
+            std::string chTitle = (tocIdx >= 0) ? epub->getTocItem(tocIdx).title : "";
+            snprintf(clip.chapterTitle, sizeof(clip.chapterTitle), "%s", chTitle.c_str());
+            snprintf(clip.text, sizeof(clip.text), "%s", sel->text.c_str());
+
+            const auto res = clippings.add(clip);
+            if (res == ClippingStore::AddResult::Added) {
+              GUI.drawPopup(renderer, tr(STR_CLIPPING_SAVED));
+            } else if (res == ClippingStore::AddResult::RemovedExisting) {
+              GUI.drawPopup(renderer, tr(STR_CLIPPING_REMOVED));
+            } else if (res == ClippingStore::AddResult::LimitReached) {
+              GUI.drawPopup(renderer, tr(STR_CLIPPING_LIMIT));
+            }
+            renderer.displayBuffer();
+            delay(700);
+          }
+        }
+        requestUpdate();
+      });
+}
+
+void EpubReaderActivity::openClippings() {
+  startActivityForResult(
+      std::make_unique<ClippingListActivity>(renderer, mappedInput, clippings),
+      [this](const ActivityResult& result) {
+        if (!result.isCancelled) {
+          if (const auto* jump = std::get_if<ClippingJumpResult>(&result.data)) {
+            RenderLock lock(*this);
+            currentSpineIndex = jump->spineIndex;
+            nextPageNumber = jump->pageNumber;
+            section.reset();
+            saveProgress(currentSpineIndex, nextPageNumber, 0);
+          }
+        }
+        requestUpdate();
+      });
 }

@@ -131,6 +131,22 @@ bool HalStorage::openFileForWrite(const char* moduleName, const String& path, Ha
 
 bool HalStorage::removeDir(const char* path) { HAL_STORAGE_WRAPPED_CALL(removeDir, path); }
 
+uint64_t HalStorage::sdTotalBytes() const {
+  HalStorage::StorageLock lock;
+  return SDCard.sdTotalBytes();
+}
+
+uint64_t HalStorage::sdUsedBytes() {
+  HalStorage::StorageLock lock;
+  return SDCard.sdUsedBytes();
+}
+
+uint64_t HalStorage::sdFreeBytes() {
+  const uint64_t total = sdTotalBytes();
+  const uint64_t used = sdUsedBytes();
+  return total > used ? total - used : 0;
+}
+
 // HalFile implementation
 // Allow doing file operations while ensuring thread safety via HalStorage's mutex.
 // Please keep the list below in sync with the HalFile.h header
@@ -162,6 +178,9 @@ size_t HalFile::write(const void* buf, size_t count) { HAL_FILE_WRAPPED_CALL(wri
 size_t HalFile::write(uint8_t b) { HAL_FILE_WRAPPED_CALL(write, b); }
 bool HalFile::rename(const char* newPath) { HAL_FILE_WRAPPED_CALL(rename, newPath); }
 bool HalFile::isDirectory() const { HAL_FILE_FORWARD_CALL(isDirectory, ); }  // already thread-safe, no need to wrap
+bool HalFile::getModifyDateTime(uint16_t* pdate, uint16_t* ptime) {
+  HAL_FILE_FORWARD_CALL(getModifyDateTime, pdate, ptime);
+}
 void HalFile::rewindDirectory() { HAL_FILE_WRAPPED_CALL(rewindDirectory, ); }
 bool HalFile::close() { HAL_FILE_WRAPPED_CALL(close, ); }
 HalFile HalFile::openNextFile() {

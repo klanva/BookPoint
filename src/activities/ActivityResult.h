@@ -67,9 +67,23 @@ struct FilePathResult {
   std::string path;
 };
 
+struct ClippingSelectionResult {
+  uint16_t startPageNumber = 0;
+  uint16_t endPageNumber = 0;
+  uint16_t startWordIndex = 0;
+  uint16_t endWordIndex = 0;
+  std::string text;
+};
+
+struct ClippingJumpResult {
+  uint16_t spineIndex = 0;
+  uint16_t pageNumber = 0;
+};
+
 using ResultVariant =
     std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult, IntervalResult,
-                 PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult>;
+                 PageResult, ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult,
+                 ClippingSelectionResult, ClippingJumpResult>;
 
 struct ActivityResult {
   bool isCancelled = false;

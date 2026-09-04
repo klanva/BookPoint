@@ -34,6 +34,8 @@ FileBrowserActivity::FileBrowserActivity(GfxRenderer& renderer, MappedInputManag
 
 void FileBrowserActivity::loadFiles() {
   files.clear();
+  fileSizes.clear();
+  fileDateTimes.clear();
 
   auto root = Storage.open(basepath.c_str());
   if (!root || !root.isDirectory()) {
@@ -60,23 +62,92 @@ void FileBrowserActivity::loadFiles() {
 
     if (isDirectory) {
       files.emplace_back(std::string(fileNameBuffer.get()) + "/");
+      fileSizes.push_back(0);
+      fileDateTimes.push_back(0);
     } else {
       std::string_view filename{fileNameBuffer.get()};
+      bool shouldAdd = false;
       if (mode == Mode::PickFirmware) {
         // Firmware picker: only show .bin files.
-        if (FsHelpers::checkFileExtension(filename, ".bin")) {
-          files.emplace_back(filename);
-        }
-      } else if (FsHelpers::hasEpubExtension(filename) || FsHelpers::hasXtcExtension(filename) ||
-                 FsHelpers::hasTxtExtension(filename) || FsHelpers::hasMarkdownExtension(filename) ||
-                 FsHelpers::hasBmpExtension(filename) || FsHelpers::hasPngExtension(filename)) {
+        shouldAdd = FsHelpers::checkFileExtension(filename, ".bin");
+      } else {
+        shouldAdd = FsHelpers::hasEpubExtension(filename) || FsHelpers::hasXtcExtension(filename) ||
+                    FsHelpers::hasTxtExtension(filename) || FsHelpers::hasMarkdownExtension(filename) ||
+                    FsHelpers::hasBmpExtension(filename) || FsHelpers::hasPngExtension(filename);
+      }
+      if (shouldAdd) {
         files.emplace_back(filename);
+        fileSizes.push_back(static_cast<uint32_t>(file.size()));
+        uint16_t fdate = 0, ftime = 0;
+        file.getModifyDateTime(&fdate, &ftime);
+        fileDateTimes.push_back((static_cast<uint32_t>(fdate) << 16) | ftime);
       }
     }
   }
   root.close();
-  FsHelpers::sortFileList(files);
+  sortFileList();
   rebuildRowItems();
+}
+
+void FileBrowserActivity::sortFileList() {
+  if (files.empty()) return;
+  const uint8_t sortMode = SETTINGS.fileSortMode;
+  const uint8_t sortDir = SETTINGS.fileSortDirection;
+
+  std::vector<size_t> indices(files.size());
+  for (size_t i = 0; i < files.size(); ++i) indices[i] = i;
+
+  std::sort(indices.begin(), indices.end(), [&](size_t idx_a, size_t idx_b) {
+    const std::string& a = files[idx_a];
+    const std::string& b = files[idx_b];
+    const bool isDir_a = (a.back() == '/');
+    const bool isDir_b = (b.back() == '/');
+
+    // Directories always sort first
+    if (isDir_a != isDir_b) return isDir_a;
+
+    switch (sortMode) {
+      case CrossPointSettings::SORT_BY_DATE: {
+        const uint32_t dt_a = (idx_a < fileDateTimes.size()) ? fileDateTimes[idx_a] : 0;
+        const uint32_t dt_b = (idx_b < fileDateTimes.size()) ? fileDateTimes[idx_b] : 0;
+        if (dt_a != dt_b) {
+          return (sortDir == CrossPointSettings::SORT_DESCENDING) ? (dt_a > dt_b) : (dt_a < dt_b);
+        }
+        break;
+      }
+      case CrossPointSettings::SORT_BY_SIZE: {
+        const uint32_t sz_a = (idx_a < fileSizes.size()) ? fileSizes[idx_a] : 0;
+        const uint32_t sz_b = (idx_b < fileSizes.size()) ? fileSizes[idx_b] : 0;
+        if (sz_a != sz_b) {
+          return (sortDir == CrossPointSettings::SORT_DESCENDING) ? (sz_a > sz_b) : (sz_a < sz_b);
+        }
+        break;
+      }
+      case CrossPointSettings::SORT_BY_NAME:
+      default:
+        break;
+    }
+
+    // Default or tie-breaker: natural compare
+    if (sortDir == CrossPointSettings::SORT_DESCENDING) {
+      return FsHelpers::naturalLess(b, a);
+    } else {
+      return FsHelpers::naturalLess(a, b);
+    }
+  });
+
+  std::vector<std::string> sorted_files(files.size());
+  std::vector<uint32_t> sorted_sizes(fileSizes.size());
+  std::vector<uint32_t> sorted_dts(fileDateTimes.size());
+  for (size_t i = 0; i < indices.size(); ++i) {
+    const size_t idx = indices[i];
+    sorted_files[i] = std::move(files[idx]);
+    if (idx < fileSizes.size()) sorted_sizes[i] = fileSizes[idx];
+    if (idx < fileDateTimes.size()) sorted_dts[i] = fileDateTimes[idx];
+  }
+  files = std::move(sorted_files);
+  fileSizes = std::move(sorted_sizes);
+  fileDateTimes = std::move(sorted_dts);
 }
 
 // Derives rowNames/rowExtensions/rowItems from `files`. Called whenever
@@ -150,6 +221,8 @@ void FileBrowserActivity::onEnter() {
 void FileBrowserActivity::onExit() {
   Activity::onExit();
   files.clear();
+  fileSizes.clear();
+  fileDateTimes.clear();
   rowNames.clear();
   rowExtensions.clear();
   rowItems.clear();
