@@ -21,4 +21,6 @@ struct ReaderRenderSpec {
   bool embeddedStyle = true;
   uint8_t imageRendering = 0;
   bool focusReadingEnabled = false;
+  uint16_t footnoteStripHeight = 0;
+  bool bracketFootnotes = false;
 };

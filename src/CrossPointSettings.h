@@ -339,6 +339,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     FOOTNOTE_DISPLAY_COUNT
   };
   uint8_t footnoteDisplay = FOOTNOTE_BOTTOM;
+  // Parse inline [text] as footnotes (0 = off, 1 = on)
+  uint8_t bracketFootnotes = 0;
   // Layout constants for the bottom-of-page footnote strip (EPUB reader).
   // The reserve height is computed at render time from the real UI font's
   // line height: separator + N wrapped lines + padding.
@@ -407,7 +409,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // viewport is renderer/orientation-derived, so the caller supplies it —
   // passing it in keeps a spec from ever existing in a half-filled state.
   // Unlocked for the same reason as statusBarSpec(); see the note above.
-  ReaderRenderSpec readerRenderSpec(uint16_t viewportWidth, uint16_t viewportHeight) const;
+  ReaderRenderSpec readerRenderSpec(uint16_t viewportWidth, uint16_t viewportHeight,
+                                    uint16_t footnoteStripHeight = 0) const;
 
   static const char* getFilePath() { return "/.crosspoint/settings.json"; }
   void toJson(JsonDocument& doc) const;

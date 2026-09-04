@@ -1087,7 +1087,6 @@ void EpubReaderActivity::renderBook() {
     footnoteStripHeight = CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX +
                           CrossPointSettings::FOOTNOTE_STRIP_MAX_LINES * renderer.getLineHeight(UI_10_FONT_ID) +
                           CrossPointSettings::FOOTNOTE_STRIP_PAD_PX;
-    orientedMarginBottom += footnoteStripHeight;
   }
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
@@ -1095,7 +1094,7 @@ void EpubReaderActivity::renderBook() {
   buildViewportWidth = viewportWidth;
   buildViewportHeight = viewportHeight;
 
-  const ReaderRenderSpec renderSpec = SETTINGS.readerRenderSpec(viewportWidth, viewportHeight);
+  const ReaderRenderSpec renderSpec = SETTINGS.readerRenderSpec(viewportWidth, viewportHeight, footnoteStripHeight);
 
   if (!section) {
     const auto filepath = epub->getSpineItem(currentSpineIndex).href;
@@ -1483,7 +1482,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
   renderStatusBar();
-  renderFootnoteStrip(orientedMarginLeft, orientedMarginTop + buildViewportHeight,
+  renderFootnoteStrip(orientedMarginLeft, orientedMarginTop + buildViewportHeight - footnoteStripHeight,
                       renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight);
   const auto tBwRender = millis();
 
@@ -1787,11 +1786,9 @@ void EpubReaderActivity::commitReadingStats() {
 }
 
 void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int stripTop, const int contentWidth) {
-  if (footnoteStripHeight <= 0 || contentWidth <= 40) return;
-  // Wipe the strip band on every page: partial refresh keeps old pixels, so a
-  // page without footnotes would otherwise keep the previous page's notes.
+  if (footnoteStripHeight <= 0 || contentWidth <= 40 || currentPageFootnotes.empty() || !epub) return;
+  // Wipe the strip band only on pages that have footnotes so normal pages retain full height
   renderer.fillRect(contentLeft, stripTop, contentWidth, footnoteStripHeight, false);
-  if (currentPageFootnotes.empty() || !epub) return;
 
   const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
   const size_t maxEntries = std::min<size_t>(currentPageFootnotes.size(), 3);

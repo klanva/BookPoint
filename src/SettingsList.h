@@ -306,6 +306,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_FOOTNOTE_DISPLAY, &CrossPointSettings::footnoteDisplay,
                           {StrId::STR_FOOTNOTE_DISPLAY_BOTTOM, StrId::STR_FOOTNOTE_DISPLAY_JUMP},
                           "footnoteDisplay", StrId::STR_CAT_READER),
+        SettingInfo::Toggle(StrId::STR_BRACKET_FOOTNOTES, &CrossPointSettings::bracketFootnotes,
+                            "bracketFootnotes", StrId::STR_CAT_READER),
         // Reading statistics tracking. The accumulated data lives on the SD
         // card and is never deleted by this toggle or by cache clears.
         SettingInfo::Toggle(StrId::STR_TRACK_READING_STATS, &CrossPointSettings::trackReadingStats,

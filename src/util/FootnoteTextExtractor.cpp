@@ -348,6 +348,117 @@ class AnchorScanner : public Print {
   bool done_ = false;
 };
 
+// Streams a chapter item and hunts for unlinked footnote markers like >[4] or >4.
+class UnlinkedNoteScanner : public Print {
+ public:
+  explicit UnlinkedNoteScanner(std::string digits, const size_t maxBytes)
+      : digits_(std::move(digits)), maxBytes_(maxBytes) {}
+
+  size_t write(const uint8_t* data, const size_t len) override {
+    if (done_) return len;
+    buf_.append(reinterpret_cast<const char*>(data), len);
+    process();
+    return len;
+  }
+
+  size_t write(const uint8_t b) override { return write(&b, 1); }
+
+  const std::string& result() const { return out_; }
+  bool done() const { return done_; }
+
+ private:
+  std::string digits_;
+  size_t maxBytes_;
+  std::string buf_;
+  std::string out_;
+  bool capturing_ = false;
+  bool done_ = false;
+
+  void process() {
+    if (!capturing_) {
+      size_t found = std::string::npos;
+      size_t afterMatch = 0;
+
+      for (size_t i = 0; i < buf_.size(); ++i) {
+        if (buf_[i] != '>') continue;
+        size_t p = i + 1;
+        while (p < buf_.size() && (buf_[p] == ' ' || buf_[p] == '\t' || buf_[p] == '\r' || buf_[p] == '\n')) p++;
+        if (p >= buf_.size()) break;
+
+        bool hasBracket = false;
+        if (buf_[p] == '[') {
+          hasBracket = true;
+          p++;
+          while (p < buf_.size() && (buf_[p] == ' ' || buf_[p] == '\t')) p++;
+        }
+
+        if (p + digits_.size() <= buf_.size() && buf_.compare(p, digits_.size(), digits_) == 0) {
+          size_t endDig = p + digits_.size();
+          if (hasBracket) {
+            while (endDig < buf_.size() && (buf_[endDig] == ' ' || buf_[endDig] == '\t')) endDig++;
+            if (endDig < buf_.size() && buf_[endDig] == ']') {
+              endDig++;
+              found = i;
+              afterMatch = endDig;
+              break;
+            }
+          } else {
+            if (endDig < buf_.size() && (buf_[endDig] == '.' || buf_[endDig] == ')' ||
+                                         isspace(static_cast<unsigned char>(buf_[endDig])))) {
+              found = i;
+              afterMatch = endDig;
+              break;
+            }
+          }
+        }
+      }
+
+      if (found == std::string::npos) {
+        if (buf_.size() > 512) buf_.erase(0, buf_.size() - 512);
+        return;
+      }
+
+      capturing_ = true;
+      buf_.erase(0, afterMatch);
+    }
+
+    if (capturing_) {
+      size_t pos = 0;
+      while (pos < buf_.size()) {
+        if (buf_[pos] == '<') {
+          size_t tagEnd = buf_.find('>', pos);
+          if (tagEnd == std::string::npos) {
+            buf_.erase(0, pos);
+            return;
+          }
+          std::string tag = buf_.substr(pos + 1, tagEnd - pos - 1);
+          if (strncasecmp(tag.c_str(), "/p", 2) == 0 || strncasecmp(tag.c_str(), "/div", 4) == 0 ||
+              strncasecmp(tag.c_str(), "/li", 3) == 0 || strncasecmp(tag.c_str(), "p ", 2) == 0 ||
+              strncasecmp(tag.c_str(), "p>", 2) == 0 || strncasecmp(tag.c_str(), "div ", 4) == 0) {
+            done_ = true;
+            buf_.clear();
+            return;
+          }
+          pos = tagEnd + 1;
+        } else {
+          char c = buf_[pos++];
+          if (isspace(static_cast<unsigned char>(c))) {
+            if (!out_.empty() && out_.back() != ' ') out_ += ' ';
+          } else {
+            out_ += c;
+          }
+          if (out_.size() >= maxBytes_) {
+            done_ = true;
+            buf_.clear();
+            return;
+          }
+        }
+      }
+      buf_.clear();
+    }
+  }
+};
+
 // Strips a leading note number that repeats the reference label, e.g.
 // label "[14]" drops the "14" from "14 Вист — карточная игра.".
 std::string stripLeadingLabel(const std::string& text, const char* label) {
@@ -388,36 +499,71 @@ std::string extract(const Epub& epub, const int currentSpineIndex, const std::st
                     const char* label) {
   if (href.empty()) return {};
 
+  if (href.rfind("!inline:", 0) == 0) {
+    return href.substr(8);
+  }
+
+  std::string unlinkedDigits;
+  if (href.rfind("#unlinked_", 0) == 0) {
+    unlinkedDigits = href.substr(10);
+  } else if (label != nullptr) {
+    for (const char* p = label; *p != '\0'; ++p) {
+      if (*p >= '0' && *p <= '9') unlinkedDigits += *p;
+    }
+  }
+
   std::string filePart;
   std::string anchor;
   const auto hashPos = href.find('#');
   if (hashPos != std::string::npos) {
     anchor = href.substr(hashPos + 1);
     filePart = href.substr(0, hashPos);
-  } else {
-    return {};  // no anchor, nothing precise to show
   }
-  if (anchor.empty()) return {};
 
-  int targetSpine = currentSpineIndex;
-  if (!filePart.empty()) {
-    targetSpine = epub.resolveHrefToSpineIndex(href);
-    if (targetSpine < 0) targetSpine = epub.resolveHrefToSpineIndex(filePart);
-    if (targetSpine < 0) {
-      LOG_DBG("FNX", "Could not resolve footnote href %s", href.c_str());
-      return {};
+  // 1. Standard EPUB anchor scan
+  if (!anchor.empty() && anchor.rfind("unlinked_", 0) != 0) {
+    int targetSpine = currentSpineIndex;
+    if (!filePart.empty()) {
+      targetSpine = epub.resolveHrefToSpineIndex(href);
+      if (targetSpine < 0) targetSpine = epub.resolveHrefToSpineIndex(filePart);
+    }
+    if (targetSpine >= 0) {
+      const std::string targetItem = epub.getSpineItem(targetSpine).href;
+      if (!targetItem.empty()) {
+        AnchorScanner scanner(anchor, maxBytes);
+        epub.readItemContentsToStream(targetItem, scanner, 512, /*allowEarlyStop=*/true);
+        if (!scanner.result().empty()) {
+          return stripLeadingLabel(scanner.result(), label);
+        }
+      }
     }
   }
 
-  const std::string targetItem = epub.getSpineItem(targetSpine).href;
-  if (targetItem.empty()) return {};
+  // 2. Unlinked footnote search by number in text
+  if (!unlinkedDigits.empty()) {
+    if (currentSpineIndex >= 0 && currentSpineIndex < epub.getSpineItemsCount()) {
+      UnlinkedNoteScanner curScanner(unlinkedDigits, maxBytes);
+      epub.readItemContentsToStream(epub.getSpineItem(currentSpineIndex).href, curScanner, 512, /*allowEarlyStop=*/true);
+      if (curScanner.done() && !curScanner.result().empty()) {
+        std::string decoded;
+        decodeEntities(curScanner.result(), decoded);
+        return stripLeadingLabel(decoded, label);
+      }
+    }
+    const int totalSpine = epub.getSpineItemsCount();
+    for (int i = totalSpine - 1; i >= 0; --i) {
+      if (i == currentSpineIndex) continue;
+      UnlinkedNoteScanner scanner(unlinkedDigits, maxBytes);
+      epub.readItemContentsToStream(epub.getSpineItem(i).href, scanner, 512, /*allowEarlyStop=*/true);
+      if (scanner.done() && !scanner.result().empty()) {
+        std::string decoded;
+        decodeEntities(scanner.result(), decoded);
+        return stripLeadingLabel(decoded, label);
+      }
+    }
+  }
 
-  // Small chunks keep allocations bounded; allowEarlyStop never fires (the
-  // scanner consumes the whole stream) but costs nothing.
-  AnchorScanner scanner(anchor, maxBytes);
-  epub.readItemContentsToStream(targetItem, scanner, 512, /*allowEarlyStop=*/true);
-  if (scanner.result().empty()) return std::string();
-  return stripLeadingLabel(scanner.result(), label);
+  return {};
 }
 
 std::string extractCached(const Epub& epub, const int currentSpineIndex, const std::string& href,

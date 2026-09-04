@@ -251,7 +251,8 @@ CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
 }
 
 ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWidth,
-                                                      const uint16_t viewportHeight) const {
+                                                      const uint16_t viewportHeight,
+                                                      const uint16_t footnoteStripHeight) const {
   ReaderRenderSpec spec;
   spec.fontId = getReaderFontId();
   spec.lineCompression = getReaderLineCompression();
@@ -263,6 +264,8 @@ ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWid
   spec.embeddedStyle = embeddedStyle != 0;
   spec.imageRendering = imageRendering;
   spec.focusReadingEnabled = focusReadingEnabled != 0;
+  spec.footnoteStripHeight = (footnoteDisplay == FOOTNOTE_BOTTOM) ? footnoteStripHeight : 0;
+  spec.bracketFootnotes = bracketFootnotes != 0;
   return spec;
 }
 

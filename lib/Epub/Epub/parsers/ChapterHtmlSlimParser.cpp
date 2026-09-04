@@ -770,9 +770,13 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                 }
 
                 // Create page for image - only break if image won't fit remaining space
+                const bool pageHasFn = self->currentPage && !self->currentPage->footnotes.empty();
+                const uint16_t availH =
+                    (pageHasFn && self->footnoteStripHeight > 0)
+                        ? (self->viewportHeight > self->footnoteStripHeight ? self->viewportHeight - self->footnoteStripHeight : 0)
+                        : self->viewportHeight;
                 if (self->currentPage && !self->currentPage->elements.empty() &&
-                    (self->currentPageNextY + imageMarginTop + displayHeight + imageMarginBottom >
-                     self->viewportHeight)) {
+                    (self->currentPageNextY + imageMarginTop + displayHeight + imageMarginBottom > availH)) {
                   self->completePageFn(std::move(self->currentPage), self->xpathParagraphIndex,
                                        self->xpathListItemIndex, self->currentPageVisibleOffset);
                   self->completedPageCount++;
@@ -801,8 +805,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                 // bar / big screen margin) absorbs that overflow silently, but with a
                 // thin reserve it crosses the physical screen edge and fails
                 // ImageBlock::render's bounds check, dropping the image entirely.
-                if (self->currentPageNextY + imageMarginTop + displayHeight > self->viewportHeight) {
-                  const int room = self->viewportHeight - displayHeight - self->currentPageNextY;
+                if (self->currentPageNextY + imageMarginTop + displayHeight > availH) {
+                  const int room = availH - displayHeight - self->currentPageNextY;
                   imageMarginTop = static_cast<int16_t>(room > 0 ? room : 0);
                 }
                 self->currentPageNextY += imageMarginTop;
@@ -1217,6 +1221,81 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
       self->nextWordContinues = false;
       // Skip the whitespace char
       continue;
+    }
+
+    // Recognize unlinked [4] or inline [text] footnotes
+    if (self->bracketFootnotes && !self->insideFootnoteLink && s[i] == '[') {
+      const bool isParagraphStart =
+          (self->partWordBufferIndex == 0 && (!self->currentTextBlock || self->currentTextBlock->isEmpty()));
+      if (!isParagraphStart) {
+        int close = -1;
+        for (int j = i + 1; j < len && (j - i) <= 120; ++j) {
+          if (s[j] == ']') {
+            close = j;
+            break;
+          }
+          if (s[j] == '<' || s[j] == '>') break;
+        }
+
+        if (close != -1 && close > i + 1) {
+          std::string inside;
+          for (int j = i + 1; j < close; ++j) inside += s[j];
+          bool isAllDigits = true;
+          for (char c : inside) {
+            if (c < '0' || c > '9') {
+              isAllDigits = false;
+              break;
+            }
+          }
+
+          if (isAllDigits && inside.size() <= 4) {
+            if (self->partWordBufferIndex > 0) {
+              self->flushPartWordBuffer();
+            }
+            FootnoteEntry entry = {};
+            strncpy(entry.number, inside.c_str(), sizeof(entry.number) - 1);
+            snprintf(entry.href, sizeof(entry.href), "#unlinked_%s", inside.c_str());
+            const int wordIndex =
+                self->wordsExtractedInBlock +
+                (self->currentTextBlock ? static_cast<int>(self->currentTextBlock->size()) : 0);
+            self->pendingFootnotes.push_back({wordIndex, entry});
+
+            std::string label = "[" + inside + "]";
+            self->currentTextBlock->addWord(label.c_str(), EpdFontFamily::SUP, false, false, codepointOffset);
+            self->nextWordContinues = false;
+
+            for (int k = i; k <= close; ++k) {
+              if (countVisibleOffsets && (static_cast<uint8_t>(s[k]) & 0xC0) != 0x80) {
+                nextCodepointOffset++;
+              }
+            }
+            i = close;
+            continue;
+          } else if (!isAllDigits && inside.size() >= 2 && inside.size() <= 120) {
+            if (self->partWordBufferIndex > 0) {
+              self->flushPartWordBuffer();
+            }
+            FootnoteEntry entry = {};
+            strncpy(entry.number, "*", sizeof(entry.number) - 1);
+            snprintf(entry.href, sizeof(entry.href), "!inline:%s", inside.c_str());
+            const int wordIndex =
+                self->wordsExtractedInBlock +
+                (self->currentTextBlock ? static_cast<int>(self->currentTextBlock->size()) : 0);
+            self->pendingFootnotes.push_back({wordIndex, entry});
+
+            self->currentTextBlock->addWord("[*]", EpdFontFamily::SUP, false, false, codepointOffset);
+            self->nextWordContinues = false;
+
+            for (int k = i; k <= close; ++k) {
+              if (countVisibleOffsets && (static_cast<uint8_t>(s[k]) & 0xC0) != 0x80) {
+                nextCodepointOffset++;
+              }
+            }
+            i = close;
+            continue;
+          }
+        }
+      }
     }
 
     // Detect U+00A0 (non-breaking space, UTF-8: 0xC2 0xA0) or
@@ -1681,7 +1760,14 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line, const
     currentPageVisibleOffsetSet = false;
   }
 
-  if (currentPageNextY + lineHeight > viewportHeight) {
+  const int nextWords = wordsExtractedInBlock + line->wordCount();
+  const bool lineHasFootnote = !pendingFootnotes.empty() && (pendingFootnotes.front().first <= nextWords);
+  const bool pageHasFootnotes = (currentPage && !currentPage->footnotes.empty()) || lineHasFootnote;
+  const uint16_t effectiveHeight = (pageHasFootnotes && footnoteStripHeight > 0)
+                                       ? (viewportHeight > footnoteStripHeight ? viewportHeight - footnoteStripHeight : 0)
+                                       : viewportHeight;
+
+  if (currentPageNextY + lineHeight > effectiveHeight) {
     setCurrentPageVisibleOffset(visibleOffset);
     completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex, currentPageVisibleOffset);
     completedPageCount++;
