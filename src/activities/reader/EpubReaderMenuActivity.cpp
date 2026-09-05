@@ -171,8 +171,8 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
                                       static_cast<int16_t>(renderer.getScreenHeight() - (safe.y + safe.height)),
                                       static_cast<int16_t>(safe.x)});
 
-  // Hero Reading Status Card at the top
-  const int16_t heroH = 68;
+  // Hero Reading Status Card at the top (74px height for airy, balanced padding)
+  const int16_t heroH = 74;
   const fui::Rect hero = screen.takeTop(heroH);
 
   // Outer frame for hero card (crisp 1px border, 8px rounded corners)
@@ -189,7 +189,7 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   const int16_t pctBadgeW = 44;
   const int16_t barW = static_cast<int16_t>(hero.width - 24 - pctBadgeW - 8);
   const int16_t barH = 8;
-  const int16_t barY = static_cast<int16_t>(hero.y + 32);
+  const int16_t barY = static_cast<int16_t>(hero.y + 33);
   fui::Rect barRect{static_cast<int16_t>(hero.x + 12), barY, barW, barH};
   screen.target().stroke(barRect, fui::Paint::solid(fui::Color::Black), 1, 4, fui::CornersAll);
   if (bookProgressPercent > 0) {
@@ -205,7 +205,7 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   pctStyle.bold = true;
   char pctBuf[16];
   snprintf(pctBuf, sizeof(pctBuf), "%d%%", bookProgressPercent);
-  fui::Rect pctRect{static_cast<int16_t>(hero.x + hero.width - 12 - pctBadgeW), static_cast<int16_t>(barY - 5),
+  fui::Rect pctRect{static_cast<int16_t>(hero.x + hero.width - 12 - pctBadgeW), static_cast<int16_t>(barY - 4),
                     pctBadgeW, 18};
   screen.target().text(pctRect, pctBuf, pctStyle);
 
@@ -217,7 +217,7 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   }
   progressLine += std::string(tr(STR_BOOK_PREFIX)) + std::to_string(bookProgressPercent) + "%";
   fui::TextStyle infoStyle = screen.theme().smallText;
-  fui::Rect infoRect{static_cast<int16_t>(hero.x + 12), static_cast<int16_t>(hero.y + 46),
+  fui::Rect infoRect{static_cast<int16_t>(hero.x + 12), static_cast<int16_t>(hero.y + 49),
                      static_cast<int16_t>(hero.width - 24), 16};
   screen.target().text(infoRect, progressLine.c_str(), infoStyle);
 
@@ -271,7 +271,9 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   props.rowStyles.selected.background = fui::Paint::solid(fui::Color::Black);
   props.rowStyles.selected.foreground = fui::Paint::solid(fui::Color::White);
 
-  syncListViewport(screen, props);
+  // Synchronize list viewport directly with our 44px card height and 6px gap,
+  // preventing UiListActivity::syncListViewport from crushing rows on non-touch devices
+  activeNav().syncToProps(screen.body(), props.rowHeight, props.rowGap, listCount(), props);
   screen.list(props);
 }
 
@@ -279,10 +281,9 @@ void EpubReaderMenuActivity::drawChrome() {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const Rect screen = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
 
-  // Header via GUI.drawHeader (already FreeInkUI-themed) for the battery
-  // indicator; the rest of the screen renders through the app.
+  // Header via GUI.drawHeader (displays "Меню чтения" / "Reader Menu")
   GUI.drawHeader(renderer, Rect{screen.x, screen.y + metrics.topPadding, screen.width, metrics.headerHeight},
-                 title.c_str());
+                 I18N.get(StrId::STR_READER_MENU));
 }
 
 void EpubReaderMenuActivity::render(RenderLock&&) {

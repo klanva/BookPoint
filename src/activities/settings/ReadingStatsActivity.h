@@ -21,6 +21,7 @@ class ReadingStatsActivity final : public Activity {
                                 uint32_t estimatedSecondsLeft = 0);
 
   void onEnter() override;
+  void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
 
@@ -62,6 +63,7 @@ class ReadingStatsActivity final : public Activity {
   BookReadingStats bookStats_;
   GlobalReadingStats globalStats_;
 
+  GfxRenderer::Orientation savedOrientation_ = GfxRenderer::Orientation::Portrait;
   Page page_ = Page::Device;
   bool hasData_ = false;
   uint32_t todayDayIndex_ = 0;

@@ -29,6 +29,8 @@ ReadingStatsActivity::ReadingStatsActivity(GfxRenderer& renderer, MappedInputMan
 
 void ReadingStatsActivity::onEnter() {
   Activity::onEnter();
+  savedOrientation_ = renderer.getOrientation();
+  renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   if (!bookPath_.empty()) {
     bookStats_ = StatsStore::loadBookStats(bookPath_, bookTitle_, bookAuthor_);
@@ -42,6 +44,11 @@ void ReadingStatsActivity::onEnter() {
 
   page_ = firstPage();
   requestUpdate();
+}
+
+void ReadingStatsActivity::onExit() {
+  renderer.setOrientation(savedOrientation_);
+  Activity::onExit();
 }
 
 ReadingStatsActivity::Page ReadingStatsActivity::getPageForTab(const int tabIndex) const {
@@ -92,9 +99,9 @@ void ReadingStatsActivity::handleConfirm() {
       requestUpdate();
       break;
     case Page::Device:
-    case Page::Activity:
       exportCsv();
       break;
+    case Page::Activity:
     default:
       break;
   }
@@ -110,7 +117,7 @@ void ReadingStatsActivity::loop() {
     requestUpdate();
   }
 
-  // Handle swipe gestures
+  // Handle swipe gestures (touch fallback)
   const auto swipe = mappedInput.wasSwipe();
   if (swipe == MappedInputManager::SwipeDir::Left) {
     cyclePage(+1);
@@ -121,7 +128,7 @@ void ReadingStatsActivity::loop() {
     return;
   }
 
-  // Handle screen taps
+  // Handle screen taps (touch fallback)
   int tx = 0, ty = 0;
   if (mappedInput.wasScreenTapped(tx, ty)) {
     // Top tab pills
@@ -147,17 +154,22 @@ void ReadingStatsActivity::loop() {
     }
   }
 
+  // Physical buttons (optimized for Xteink X4 hardware buttons)
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     finish();
     return;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
-      mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+      mappedInput.wasReleased(MappedInputManager::Button::Left) ||
+      mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
+      mappedInput.wasReleased(MappedInputManager::Button::NavPrevious)) {
     cyclePage(-1);
     return;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Down) ||
-      mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+      mappedInput.wasReleased(MappedInputManager::Button::Right) ||
+      mappedInput.wasReleased(MappedInputManager::Button::PageForward) ||
+      mappedInput.wasReleased(MappedInputManager::Button::NavNext)) {
     cyclePage(+1);
     return;
   }
@@ -191,17 +203,18 @@ void ReadingStatsActivity::renderTabBar(const int x, const int y, const int widt
       label = I18N.get(StrId::STR_STATS_ACTIVITY);
     }
 
+    const std::string safeLabel = renderer.truncatedText(UI_10_FONT_ID, label, pillW - 12);
+    const int textH = renderer.getLineHeight(UI_10_FONT_ID);
+
     if (active) {
       renderer.fillRoundedRect(pillX, y, pillW, height, 6, Color::Black);
-      const int textW = renderer.getTextAdvanceX(UI_10_FONT_ID, label, EpdFontFamily::BOLD);
-      const int textH = renderer.getLineHeight(UI_10_FONT_ID);
-      renderer.drawText(UI_10_FONT_ID, pillX + (pillW - textW) / 2, y + (height - textH) / 2, label, false,
+      const int textW = renderer.getTextAdvanceX(UI_10_FONT_ID, safeLabel.c_str(), EpdFontFamily::BOLD);
+      renderer.drawText(UI_10_FONT_ID, pillX + (pillW - textW) / 2, y + (height - textH) / 2, safeLabel.c_str(), false,
                         EpdFontFamily::BOLD);
     } else {
       renderer.drawRoundedRect(pillX, y, pillW, height, 1, 6, true);
-      const int textW = renderer.getTextAdvanceX(UI_10_FONT_ID, label, EpdFontFamily::REGULAR);
-      const int textH = renderer.getLineHeight(UI_10_FONT_ID);
-      renderer.drawText(UI_10_FONT_ID, pillX + (pillW - textW) / 2, y + (height - textH) / 2, label, true,
+      const int textW = renderer.getTextAdvanceX(UI_10_FONT_ID, safeLabel.c_str(), EpdFontFamily::REGULAR);
+      renderer.drawText(UI_10_FONT_ID, pillX + (pillW - textW) / 2, y + (height - textH) / 2, safeLabel.c_str(), true,
                         EpdFontFamily::REGULAR);
     }
   }
@@ -209,17 +222,21 @@ void ReadingStatsActivity::renderTabBar(const int x, const int y, const int widt
 
 void ReadingStatsActivity::drawBarChart(const int x, const int y, const int width, const int height,
                                         const uint16_t* values, const int count, const int highlightIndex) const {
+  if (count <= 0) return;
+
   uint16_t maxValue = 1;
   for (int i = 0; i < count; ++i) {
     if (values[i] > maxValue) maxValue = values[i];
   }
 
-  const int slotWidth = width / (count > 0 ? count : 1);
+  const int slotWidth = width / count;
   const int barWidth = slotWidth > 8 ? slotWidth - 4 : (slotWidth > 4 ? slotWidth - 2 : slotWidth);
+  const int chartActualW = count * slotWidth;
+  const int offsetX = x + (width - chartActualW) / 2;
   const int baseline = y + height;
 
   for (int i = 0; i < count; ++i) {
-    const int barX = x + i * slotWidth + (slotWidth - barWidth) / 2;
+    const int barX = offsetX + i * slotWidth + (slotWidth - barWidth) / 2;
     int barHeight = static_cast<int>((static_cast<uint32_t>(values[i]) * height) / maxValue);
     if (values[i] > 0 && barHeight < 3) barHeight = 3;
 
@@ -230,10 +247,11 @@ void ReadingStatsActivity::drawBarChart(const int x, const int y, const int widt
     }
 
     if (i == highlightIndex) {
-      renderer.drawRect(barX - 2, y - 2, barWidth + 4, height + 4, 1, true);
+      // Crisp solid 2px accent underline under the baseline for the current day
+      renderer.fillRect(barX - 1, baseline + 2, barWidth + 2, 2, true);
     }
   }
-  renderer.drawLine(x, baseline, x + width, baseline, 1, true);
+  renderer.drawLine(offsetX, baseline, offsetX + chartActualW, baseline, 1, true);
 }
 
 std::string ReadingStatsActivity::formatDay(const int daysAgo, const uint32_t anchorDayIndex) {
@@ -252,7 +270,7 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
   std::string title = bookStats_.bookTitle.empty() ? bookTitle_ : bookStats_.bookTitle;
   if (title.empty()) title = tr(STR_UNNAMED);
   renderer.drawText(UI_12_FONT_ID, x + 12, y + 10,
-                    renderer.truncatedText(UI_12_FONT_ID, title.c_str(), contentWidth - 24).c_str(), true,
+                    renderer.truncatedText(UI_12_FONT_ID, title.c_str(), contentWidth - 24, EpdFontFamily::BOLD).c_str(), true,
                     EpdFontFamily::BOLD);
 
   std::string author = !bookStats_.bookAuthor.empty() ? bookStats_.bookAuthor : bookAuthor_;
@@ -287,33 +305,45 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
 
   // Tile 1: Total Time
   renderer.drawRoundedRect(x1, y, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x1 + 10, y + 8, tr(STR_STATS_TOTAL_TIME));
+  renderer.drawText(UI_10_FONT_ID, x1 + 10, y + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_TOTAL_TIME), tileW - 20).c_str());
   BookReadingStats::formatDuration(bookStats_.totalReadingSeconds, buf, sizeof(buf));
-  renderer.drawText(UI_12_FONT_ID, x1 + 10, y + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x1 + 10, y + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   // Tile 2: Pace
   renderer.drawRoundedRect(x2, y, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x2 + 10, y + 8, tr(STR_STATS_PACE));
+  renderer.drawText(UI_10_FONT_ID, x2 + 10, y + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_PACE), tileW - 20).c_str());
   if (bookStats_.avgSecondsPerForwardPage > 0) {
     snprintf(buf, sizeof(buf), "%u %s", bookStats_.avgSecondsPerForwardPage, tr(STR_STATS_UNIT_SEC_PER_PAGE));
   } else {
     snprintf(buf, sizeof(buf), "—");
   }
-  renderer.drawText(UI_12_FONT_ID, x2 + 10, y + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x2 + 10, y + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   const int yRow2 = y + tileH + gap;
 
   // Tile 3: Pages Turned
   renderer.drawRoundedRect(x1, yRow2, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x1 + 10, yRow2 + 8, tr(STR_STATS_PAGES_TURNED));
+  renderer.drawText(UI_10_FONT_ID, x1 + 10, yRow2 + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_PAGES_TURNED), tileW - 20).c_str());
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(bookStats_.totalPagesTurned));
-  renderer.drawText(UI_12_FONT_ID, x1 + 10, yRow2 + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x1 + 10, yRow2 + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   // Tile 4: Sessions
   renderer.drawRoundedRect(x2, yRow2, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x2 + 10, yRow2 + 8, tr(STR_STATS_SESSIONS));
+  renderer.drawText(UI_10_FONT_ID, x2 + 10, yRow2 + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_SESSIONS), tileW - 20).c_str());
   snprintf(buf, sizeof(buf), "%u", bookStats_.sessionCount);
-  renderer.drawText(UI_12_FONT_ID, x2 + 10, yRow2 + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x2 + 10, yRow2 + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   y = yRow2 + tileH + 8;
 
@@ -322,16 +352,21 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
   renderer.drawRoundedRect(x, y, contentWidth, timelineH, 1, 6, true);
 
   // Row 1: Time Left + Finish Estimate
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 8, tr(STR_STATS_TIME_LEFT));
+  const int halfW = contentWidth / 2;
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_TIME_LEFT), halfW - 20).c_str());
   if (estimatedSecondsLeft_ > 0 && bookProgressPercent_ >= 0.0f && bookProgressPercent_ < 100.0f) {
     BookReadingStats::formatDuration(estimatedSecondsLeft_, buf, sizeof(buf));
     std::string leftStr = std::string("~ ") + buf;
-    renderer.drawText(UI_12_FONT_ID, x + 12, y + 24, leftStr.c_str(), true, EpdFontFamily::BOLD);
+    renderer.drawText(UI_12_FONT_ID, x + 12, y + 24,
+                      renderer.truncatedText(UI_12_FONT_ID, leftStr.c_str(), halfW - 20, EpdFontFamily::BOLD).c_str(),
+                      true, EpdFontFamily::BOLD);
   } else {
     renderer.drawText(UI_12_FONT_ID, x + 12, y + 24, "—", true, EpdFontFamily::BOLD);
   }
 
-  renderer.drawText(UI_10_FONT_ID, x + contentWidth / 2, y + 8, tr(STR_STATS_FINISH_ESTIMATE));
+  renderer.drawText(UI_10_FONT_ID, x + halfW + 12, y + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_FINISH_ESTIMATE), halfW - 24).c_str());
   std::string finishDateStr = "—";
   if (!bookStats_.isFinished && bookProgressPercent_ >= 0.0f && bookProgressPercent_ < 100.0f) {
     uint32_t estimateSec = estimatedSecondsLeft_;
@@ -347,7 +382,9 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
       finishDateStr = dateBuf;
     }
   }
-  renderer.drawText(UI_12_FONT_ID, x + contentWidth / 2, y + 24, finishDateStr.c_str(), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x + halfW + 12, y + 24,
+                    renderer.truncatedText(UI_12_FONT_ID, finishDateStr.c_str(), halfW - 24, EpdFontFamily::BOLD).c_str(),
+                    true, EpdFontFamily::BOLD);
 
   renderer.drawLine(x + 12, y + 46, x + contentWidth - 12, y + 46, true);
 
@@ -359,11 +396,14 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
     return std::string(dateBuf);
   };
   const char* dateLabel = bookStats_.isFinished ? tr(STR_STATS_FINISHED) : tr(STR_STATS_STARTED);
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 54, dateLabel);
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 54,
+                    renderer.truncatedText(UI_10_FONT_ID, dateLabel, halfW - 20).c_str());
   const std::string dateVal = (bookStats_.isFinished && bookStats_.finishedDate.isValid())
                                   ? formatDate(bookStats_.finishedDate)
                                   : formatDate(bookStats_.startDate);
-  renderer.drawText(UI_12_FONT_ID, x + contentWidth / 2, y + 52, dateVal.c_str(), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x + halfW + 12, y + 52,
+                    renderer.truncatedText(UI_12_FONT_ID, dateVal.c_str(), halfW - 24, EpdFontFamily::BOLD).c_str(),
+                    true, EpdFontFamily::BOLD);
 
   y += timelineH + 10;
 
@@ -373,17 +413,17 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
   actionButtonVisible_ = true;
 
   const char* btnText = bookStats_.isFinished ? tr(STR_STATS_MARK_UNFINISHED) : tr(STR_STATS_MARK_FINISHED);
+  const std::string safeBtnText = renderer.truncatedText(UI_12_FONT_ID, btnText, contentWidth - 24, EpdFontFamily::BOLD);
+  const int tw = renderer.getTextAdvanceX(UI_12_FONT_ID, safeBtnText.c_str(), EpdFontFamily::BOLD);
+  const int th = renderer.getLineHeight(UI_12_FONT_ID);
+
   if (bookStats_.isFinished) {
     renderer.drawRoundedRect(x, y, contentWidth, btnH, 2, 8, true);
-    const int tw = renderer.getTextAdvanceX(UI_12_FONT_ID, btnText, EpdFontFamily::BOLD);
-    const int th = renderer.getLineHeight(UI_12_FONT_ID);
-    renderer.drawText(UI_12_FONT_ID, x + (contentWidth - tw) / 2, y + (btnH - th) / 2, btnText, true,
+    renderer.drawText(UI_12_FONT_ID, x + (contentWidth - tw) / 2, y + (btnH - th) / 2, safeBtnText.c_str(), true,
                       EpdFontFamily::BOLD);
   } else {
     renderer.fillRoundedRect(x, y, contentWidth, btnH, 8, Color::Black);
-    const int tw = renderer.getTextAdvanceX(UI_12_FONT_ID, btnText, EpdFontFamily::BOLD);
-    const int th = renderer.getLineHeight(UI_12_FONT_ID);
-    renderer.drawText(UI_12_FONT_ID, x + (contentWidth - tw) / 2, y + (btnH - th) / 2, btnText, false,
+    renderer.drawText(UI_12_FONT_ID, x + (contentWidth - tw) / 2, y + (btnH - th) / 2, safeBtnText.c_str(), false,
                       EpdFontFamily::BOLD);
   }
 }
@@ -392,28 +432,38 @@ void ReadingStatsActivity::renderDevicePage(const int x, int y, const int conten
   // --- 1. Hero Total Reading Time ---
   const int heroH = 74;
   renderer.drawRoundedRect(x, y, contentWidth, heroH, 1, 8, true);
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10, tr(STR_STATS_TOTAL_TIME));
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_TOTAL_TIME), contentWidth - 24).c_str());
   char buf[96];
   BookReadingStats::formatDuration(globalStats_.totalReadingSeconds, buf, sizeof(buf));
-  renderer.drawText(UI_12_FONT_ID, x + 12, y + 32, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x + 12, y + 32,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, contentWidth - 24, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   y += heroH + 8;
 
   // --- 2. Streaks Card ---
   const int streakH = 66;
+  const int halfW = contentWidth / 2;
   renderer.drawRoundedRect(x, y, contentWidth, streakH, 1, 6, true);
-  renderer.drawLine(x + contentWidth / 2, y + 10, x + contentWidth / 2, y + 56, true);
+  renderer.drawLine(x + halfW, y + 10, x + halfW, y + 56, true);
 
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10, tr(STR_STATS_CURRENT_STREAK));
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_CURRENT_STREAK), halfW - 20).c_str());
   char streakBuf[32];
   snprintf(streakBuf, sizeof(streakBuf), "%u %s", globalStats_.currentReadingStreak(todayDayIndex_),
            tr(STR_STATS_DAYS));
-  renderer.drawText(UI_12_FONT_ID, x + 12, y + 30, streakBuf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x + 12, y + 30,
+                    renderer.truncatedText(UI_12_FONT_ID, streakBuf, halfW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
-  renderer.drawText(UI_10_FONT_ID, x + contentWidth / 2 + 12, y + 10, tr(STR_STATS_LONGEST_STREAK));
+  renderer.drawText(UI_10_FONT_ID, x + halfW + 12, y + 10,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_LONGEST_STREAK), halfW - 24).c_str());
   char longestBuf[32];
   snprintf(longestBuf, sizeof(longestBuf), "%u %s", globalStats_.displayLongestReadingStreak(), tr(STR_STATS_DAYS));
-  renderer.drawText(UI_12_FONT_ID, x + contentWidth / 2 + 12, y + 30, longestBuf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x + halfW + 12, y + 30,
+                    renderer.truncatedText(UI_12_FONT_ID, longestBuf, halfW - 24, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   y += streakH + 8;
 
@@ -426,32 +476,44 @@ void ReadingStatsActivity::renderDevicePage(const int x, int y, const int conten
 
   // Tile 1: Books Finished
   renderer.drawRoundedRect(x1, y, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x1 + 10, y + 8, tr(STR_STATS_BOOKS_FINISHED));
+  renderer.drawText(UI_10_FONT_ID, x1 + 10, y + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_BOOKS_FINISHED), tileW - 20).c_str());
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(globalStats_.completedBooks));
-  renderer.drawText(UI_12_FONT_ID, x1 + 10, y + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x1 + 10, y + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   // Tile 2: Total Pages
   renderer.drawRoundedRect(x2, y, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x2 + 10, y + 8, tr(STR_STATS_PAGES_TURNED));
+  renderer.drawText(UI_10_FONT_ID, x2 + 10, y + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_PAGES_TURNED), tileW - 20).c_str());
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(globalStats_.totalPagesTurned));
-  renderer.drawText(UI_12_FONT_ID, x2 + 10, y + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x2 + 10, y + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   const int yRow2 = y + tileH + gap;
 
   // Tile 3: Total Sessions
   renderer.drawRoundedRect(x1, yRow2, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x1 + 10, yRow2 + 8, tr(STR_STATS_SESSIONS));
+  renderer.drawText(UI_10_FONT_ID, x1 + 10, yRow2 + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_SESSIONS), tileW - 20).c_str());
   snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(globalStats_.totalSessions));
-  renderer.drawText(UI_12_FONT_ID, x1 + 10, yRow2 + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x1 + 10, yRow2 + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   // Tile 4: Average per Session
   renderer.drawRoundedRect(x2, yRow2, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x2 + 10, yRow2 + 8, tr(STR_STATS_AVG_SESSION));
+  renderer.drawText(UI_10_FONT_ID, x2 + 10, yRow2 + 8,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_AVG_SESSION), tileW - 20).c_str());
   const uint32_t avgSec = globalStats_.totalSessions > 0
                               ? static_cast<uint32_t>(globalStats_.totalReadingSeconds / globalStats_.totalSessions)
                               : 0;
   BookReadingStats::formatDuration(avgSec, buf, sizeof(buf));
-  renderer.drawText(UI_12_FONT_ID, x2 + 10, yRow2 + 26, buf, true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, x2 + 10, yRow2 + 26,
+                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
+                    EpdFontFamily::BOLD);
 
   y = yRow2 + tileH + 10;
 
@@ -462,9 +524,10 @@ void ReadingStatsActivity::renderDevicePage(const int x, int y, const int conten
 
   renderer.drawRoundedRect(x, y, contentWidth, btnH, 2, 8, true);
   const char* btnText = tr(STR_STATS_EXPORT);
-  const int tw = renderer.getTextAdvanceX(UI_12_FONT_ID, btnText, EpdFontFamily::BOLD);
+  const std::string safeBtnText = renderer.truncatedText(UI_12_FONT_ID, btnText, contentWidth - 24, EpdFontFamily::BOLD);
+  const int tw = renderer.getTextAdvanceX(UI_12_FONT_ID, safeBtnText.c_str(), EpdFontFamily::BOLD);
   const int th = renderer.getLineHeight(UI_12_FONT_ID);
-  renderer.drawText(UI_12_FONT_ID, x + (contentWidth - tw) / 2, y + (btnH - th) / 2, btnText, true,
+  renderer.drawText(UI_12_FONT_ID, x + (contentWidth - tw) / 2, y + (btnH - th) / 2, safeBtnText.c_str(), true,
                     EpdFontFamily::BOLD);
 }
 
@@ -472,7 +535,9 @@ void ReadingStatsActivity::renderActivityPage(const int x, int y, const int cont
   // --- 1. 14-Day Activity Bar Chart Card ---
   const int chartCardH = 144;
   renderer.drawRoundedRect(x, y, contentWidth, chartCardH, 1, 8, true);
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10, tr(STR_STATS_LAST_14_DAYS), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_LAST_14_DAYS), contentWidth - 24, EpdFontFamily::BOLD).c_str(),
+                    true, EpdFontFamily::BOLD);
 
   uint16_t days[14];
   for (int i = 0; i < 14; ++i) {
@@ -487,15 +552,18 @@ void ReadingStatsActivity::renderActivityPage(const int x, int y, const int cont
   renderer.drawText(UI_10_FONT_ID, x + 12, y + 34 + chartH + 6,
                     formatDay(13, globalStats_.anchorDayIndex).c_str());
   const std::string lastLabel = formatDay(0, globalStats_.anchorDayIndex);
-  const int lastW = renderer.getTextAdvanceX(UI_10_FONT_ID, lastLabel.c_str(), EpdFontFamily::REGULAR);
-  renderer.drawText(UI_10_FONT_ID, x + contentWidth - 12 - lastW, y + 34 + chartH + 6, lastLabel.c_str());
+  const int lastW = renderer.getTextAdvanceX(UI_10_FONT_ID, lastLabel.c_str(), EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, x + contentWidth - 12 - lastW, y + 34 + chartH + 6, lastLabel.c_str(), true,
+                    EpdFontFamily::BOLD);
 
   y += chartCardH + 8;
 
   // --- 2. Weekday Distribution Card ---
   const int dowCardH = 104;
   renderer.drawRoundedRect(x, y, contentWidth, dowCardH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10, tr(STR_STATS_BY_WEEKDAY), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_BY_WEEKDAY), contentWidth - 24, EpdFontFamily::BOLD).c_str(),
+                    true, EpdFontFamily::BOLD);
 
   static const StrId dowIds[READING_DAY_OF_WEEK_COUNT] = {
       StrId::STR_STATS_DOW_MON, StrId::STR_STATS_DOW_TUE, StrId::STR_STATS_DOW_WED, StrId::STR_STATS_DOW_THU,
@@ -506,11 +574,13 @@ void ReadingStatsActivity::renderActivityPage(const int x, int y, const int cont
   drawBarChart(x + 12, y + 32, contentWidth - 24, dowChartH, dow, READING_DAY_OF_WEEK_COUNT, -1);
 
   const int dowSlotW = (contentWidth - 24) / READING_DAY_OF_WEEK_COUNT;
+  const int dowOffsetX = x + 12 + ((contentWidth - 24) - (READING_DAY_OF_WEEK_COUNT * dowSlotW)) / 2;
   for (size_t i = 0; i < READING_DAY_OF_WEEK_COUNT; ++i) {
     const char* label = I18N.get(dowIds[i]);
-    const int labelW = renderer.getTextAdvanceX(UI_10_FONT_ID, label, EpdFontFamily::REGULAR);
-    const int slotCenter = x + 12 + dowSlotW * i + dowSlotW / 2;
-    renderer.drawText(UI_10_FONT_ID, slotCenter - labelW / 2, y + 32 + dowChartH + 4, label);
+    const std::string safeLabel = renderer.truncatedText(UI_10_FONT_ID, label, dowSlotW);
+    const int labelW = renderer.getTextAdvanceX(UI_10_FONT_ID, safeLabel.c_str(), EpdFontFamily::REGULAR);
+    const int slotCenter = dowOffsetX + dowSlotW * i + dowSlotW / 2;
+    renderer.drawText(UI_10_FONT_ID, slotCenter - labelW / 2, y + 32 + dowChartH + 4, safeLabel.c_str());
   }
 
   y += dowCardH + 8;
@@ -518,7 +588,9 @@ void ReadingStatsActivity::renderActivityPage(const int x, int y, const int cont
   // --- 3. Time of Day Distribution Card ---
   const int todCardH = 96;
   renderer.drawRoundedRect(x, y, contentWidth, todCardH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10, tr(STR_STATS_BY_TIME_OF_DAY), true, EpdFontFamily::BOLD);
+  renderer.drawText(UI_10_FONT_ID, x + 12, y + 10,
+                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_BY_TIME_OF_DAY), contentWidth - 24, EpdFontFamily::BOLD).c_str(),
+                    true, EpdFontFamily::BOLD);
 
   static const StrId todIds[READING_TIME_BUCKET_COUNT] = {StrId::STR_STATS_MORNING, StrId::STR_STATS_AFTERNOON,
                                                          StrId::STR_STATS_EVENING, StrId::STR_STATS_NIGHT};
@@ -528,11 +600,13 @@ void ReadingStatsActivity::renderActivityPage(const int x, int y, const int cont
   drawBarChart(x + 12, y + 32, contentWidth - 24, todChartH, tod, READING_TIME_BUCKET_COUNT, -1);
 
   const int todSlotW = (contentWidth - 24) / READING_TIME_BUCKET_COUNT;
+  const int todOffsetX = x + 12 + ((contentWidth - 24) - (READING_TIME_BUCKET_COUNT * todSlotW)) / 2;
   for (size_t i = 0; i < READING_TIME_BUCKET_COUNT; ++i) {
     const char* label = I18N.get(todIds[i]);
-    const int labelW = renderer.getTextAdvanceX(UI_10_FONT_ID, label, EpdFontFamily::REGULAR);
-    const int slotCenter = x + 12 + todSlotW * i + todSlotW / 2;
-    renderer.drawText(UI_10_FONT_ID, slotCenter - labelW / 2, y + 32 + todChartH + 4, label);
+    const std::string safeLabel = renderer.truncatedText(UI_10_FONT_ID, label, todSlotW);
+    const int labelW = renderer.getTextAdvanceX(UI_10_FONT_ID, safeLabel.c_str(), EpdFontFamily::REGULAR);
+    const int slotCenter = todOffsetX + todSlotW * i + todSlotW / 2;
+    renderer.drawText(UI_10_FONT_ID, slotCenter - labelW / 2, y + 32 + todChartH + 4, safeLabel.c_str());
   }
 }
 
@@ -586,16 +660,20 @@ void ReadingStatsActivity::render(RenderLock&&) {
                       false, EpdFontFamily::BOLD);
   }
 
-  const char* confirmLabel;
+  const char* confirmLabel = "";
   switch (page_) {
     case Page::Book:
       confirmLabel = bookStats_.isFinished ? tr(STR_STATS_MARK_UNFINISHED) : tr(STR_STATS_MARK_FINISHED);
       break;
-    default:
+    case Page::Device:
       confirmLabel = tr(STR_STATS_EXPORT);
       break;
+    case Page::Activity:
+    default:
+      confirmLabel = "";
+      break;
   }
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   renderer.displayBuffer();

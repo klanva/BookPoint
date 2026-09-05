@@ -110,8 +110,13 @@ void SystemInformationActivity::render(RenderLock&&) {
     y += subHeaderHeight + 2;
   };
   auto drawRow = [&](const char* label, const std::string& value) {
-    renderer.drawText(UI_10_FONT_ID, leftX, y, label, true, EpdFontFamily::BOLD);
-    renderer.drawText(UI_10_FONT_ID, valueX, y, value.c_str());
+    const int maxLabelW = valueX - leftX - 8;
+    const int maxValueW = contentRect.x + contentRect.width - valueX - 10;
+    renderer.drawText(UI_10_FONT_ID, leftX, y,
+                      renderer.truncatedText(UI_10_FONT_ID, label, maxLabelW, EpdFontFamily::BOLD).c_str(), true,
+                      EpdFontFamily::BOLD);
+    renderer.drawText(UI_10_FONT_ID, valueX, y,
+                      renderer.truncatedText(UI_10_FONT_ID, value.c_str(), maxValueW).c_str());
     y += rowStep;
   };
 
