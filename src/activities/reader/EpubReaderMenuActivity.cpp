@@ -291,8 +291,13 @@ void EpubReaderMenuActivity::render(RenderLock&&) {
 
   renderer.clearScreen();
   drawChrome();
-
   renderUi();
+
+  for (int pass = 0; activeNav().consumeRebuildNeeded() && pass < 8; ++pass) {
+    renderer.clearScreen();
+    drawChrome();
+    renderUi();
+  }
 
   drawFooter();
   renderer.displayBuffer();
