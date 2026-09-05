@@ -158,49 +158,69 @@ void DashboardTheme::drawCoverPanel(const GfxRenderer& renderer, Rect rect, cons
 
 void DashboardTheme::drawStatsColumn(const GfxRenderer& renderer, Rect rect, const BookReadingStats* stats,
                                      float progressPercent) const {
-  const int rightX = rect.x + rect.width;
-  const int blockH = statsBlockHeight(renderer);
   const BookReadingStats emptyStats{};
   const BookReadingStats& bookStats = stats != nullptr ? *stats : emptyStats;
+
+  // Background and border card for statistics, filling the available area
+  renderer.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, kCoverCornerRadius, Color::White);
+  renderer.drawRoundedRect(rect.x, rect.y, rect.width, rect.height, 1, kCoverCornerRadius, true);
+
+  const int colW = rect.width / 2;
+  const int rowH = rect.height / 3;
+
+  // Internal divider lines
+  renderer.drawLine(rect.x + colW, rect.y, rect.x + colW, rect.y + rect.height, true);
+  renderer.drawLine(rect.x, rect.y + rowH, rect.x + rect.width, rect.y + rowH, true);
+  renderer.drawLine(rect.x, rect.y + rowH * 2, rect.x + rect.width, rect.y + rowH * 2, true);
 
   char value[40];
   uint32_t estimatedSeconds = 0;
   const bool hasEstimate = fallbackEstimatedTimeLeft(bookStats, progressPercent, estimatedSeconds);
 
-  int rowIndex = 0;
-  int rowY = statsBlockTop(rect, rowIndex, blockH, kStatsRowCount);
-  BookReadingStats::formatDuration(bookStats.totalReadingSeconds, value, sizeof(value));
-  drawStatsRow(renderer, rightX, rowY, value, tr(STR_STATS_TOTAL_TIME));
+  auto drawCell = [&](int cX, int cY, const char* val, const char* lbl) {
+    const int valLineH = renderer.getLineHeight(UI_12_FONT_ID);
+    const int lblLineH = renderer.getLineHeight(SMALL_FONT_ID);
+    const int totalH = valLineH + kStatsValueLabelGap + lblLineH;
+    const int startY = cY + (rowH - totalH) / 2;
 
-  rowY = statsBlockTop(rect, ++rowIndex, blockH, kStatsRowCount);
+    renderer.drawText(UI_12_FONT_ID, cX + 10, startY, val, true, EpdFontFamily::BOLD);
+    renderer.drawText(SMALL_FONT_ID, cX + 10, startY + valLineH + kStatsValueLabelGap,
+                      renderer.truncatedText(SMALL_FONT_ID, lbl, colW - 14).c_str());
+  };
+
+  // Row 0, Col 0: Total Reading Time
+  BookReadingStats::formatDuration(bookStats.totalReadingSeconds, value, sizeof(value));
+  drawCell(rect.x, rect.y, value, tr(STR_STATS_TOTAL_TIME));
+
+  // Row 0, Col 1: Time Left
   if (hasEstimate && !bookStats.isFinished) {
     BookReadingStats::formatDuration(estimatedSeconds, value, sizeof(value));
   } else {
-    snprintf(value, sizeof(value), "-");
+    snprintf(value, sizeof(value), "—");
   }
-  drawStatsRow(renderer, rightX, rowY, value, tr(STR_STATS_TIME_LEFT));
+  drawCell(rect.x + colW, rect.y, value, tr(STR_STATS_TIME_LEFT));
 
-  rowY = statsBlockTop(rect, ++rowIndex, blockH, kStatsRowCount);
+  // Row 1, Col 0: Progress %
   if (progressPercent >= 0.0f) {
     snprintf(value, sizeof(value), "%d%%", static_cast<int>(progressPercent + 0.5f));
   } else {
-    snprintf(value, sizeof(value), "-");
+    snprintf(value, sizeof(value), "—");
   }
-  drawStatsRow(renderer, rightX, rowY, value, tr(STR_STATS_PROGRESS));
+  drawCell(rect.x, rect.y + rowH, value, tr(STR_STATS_PROGRESS));
 
-  rowY = statsBlockTop(rect, ++rowIndex, blockH, kStatsRowCount);
+  // Row 1, Col 1: Reading Pace (pages/min)
   snprintf(value, sizeof(value), "%.1f", pagesPerMinute(bookStats.totalPagesTurned, bookStats.totalReadingSeconds));
-  drawStatsRow(renderer, rightX, rowY, value, tr(STR_STATS_PAGES_PER_MIN));
+  drawCell(rect.x + colW, rect.y + rowH, value, tr(STR_STATS_PAGES_PER_MIN));
 
-  rowY = statsBlockTop(rect, ++rowIndex, blockH, kStatsRowCount);
+  // Row 2, Col 0: Sessions Count
   snprintf(value, sizeof(value), "%u", static_cast<unsigned>(bookStats.sessionCount));
-  drawStatsRow(renderer, rightX, rowY, value, tr(STR_STATS_SESSIONS));
+  drawCell(rect.x, rect.y + rowH * 2, value, tr(STR_STATS_SESSIONS));
 
-  rowY = statsBlockTop(rect, ++rowIndex, blockH, kStatsRowCount);
+  // Row 2, Col 1: Average Session Duration
   const uint32_t avgSeconds =
       bookStats.sessionCount > 0 ? bookStats.totalReadingSeconds / bookStats.sessionCount : 0;
   BookReadingStats::formatDuration(avgSeconds, value, sizeof(value));
-  drawStatsRow(renderer, rightX, rowY, value, tr(STR_STATS_AVG_SESSION));
+  drawCell(rect.x + colW, rect.y + rowH * 2, value, tr(STR_STATS_AVG_SESSION));
 }
 
 void DashboardTheme::drawDashboardRow(const GfxRenderer& renderer, Rect rect, const RecentBook* book, bool hasBook,
