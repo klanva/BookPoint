@@ -9,7 +9,7 @@
 #include "activities/UiTabListActivity.h"
 #include "components/OptionPopup.h"
 
-enum class SettingType { TOGGLE, ENUM, ACTION, VALUE, STRING };
+enum class SettingType { TOGGLE, ENUM, ACTION, VALUE, STRING, SUBMENU };
 
 enum class SettingAction {
   None,
@@ -29,6 +29,16 @@ enum class SettingAction {
   ClockSync,
   DictionaryDownload,
   SystemInfo,
+  // Hierarchical Submenus
+  DisplaySleepScreen,
+  ReaderFontLayout,
+  ReaderPageLayout,
+  ReaderFootnotes,
+  ControlsPowerButton,
+  ControlsSideGestures,
+  SystemNetwork,
+  SystemFilesCache,
+  SystemUpdateLanguage,
 };
 
 struct SettingInfo {
@@ -38,6 +48,7 @@ struct SettingInfo {
   std::vector<StrId> enumValues;
   std::vector<std::string> enumStringValues;  // runtime alternative to StrId enumValues (for SD card fonts etc.)
   SettingAction action = SettingAction::None;
+  const char* customLabel = nullptr;
 
   struct ValueRange {
     uint8_t min;
@@ -102,6 +113,15 @@ struct SettingInfo {
     return s;
   }
 
+  static SettingInfo Submenu(SettingAction action, const char* customLabel = nullptr) {
+    SettingInfo s;
+    s.nameId = StrId::STR_NONE_OPT;
+    s.type = SettingType::SUBMENU;
+    s.action = action;
+    s.customLabel = customLabel;
+    return s;
+  }
+
   static SettingInfo Value(StrId nameId, uint8_t CrossPointSettings::* ptr, const ValueRange valueRange,
                            const char* key = nullptr, StrId category = StrId::STR_NONE_OPT) {
     SettingInfo s;
@@ -163,6 +183,26 @@ class SettingsActivity final : public UiTabListActivity {
   std::vector<SettingInfo> readerSettings;
   std::vector<SettingInfo> controlsSettings;
   std::vector<SettingInfo> systemSettings;
+
+  // Submenu lists
+  std::vector<SettingInfo> displaySleepSettings;
+  std::vector<SettingInfo> readerFontSettings;
+  std::vector<SettingInfo> readerPageLayoutSettings;
+  std::vector<SettingInfo> readerFootnotesSettings;
+  std::vector<SettingInfo> controlsPowerSettings;
+  std::vector<SettingInfo> controlsSideButtonSettings;
+  std::vector<SettingInfo> systemNetworkSettings;
+  std::vector<SettingInfo> systemFilesCacheSettings;
+  std::vector<SettingInfo> systemUpdateLanguageSettings;
+
+  SettingAction activeSubmenu = SettingAction::None;
+  int parentSelectedIndex = 0;
+
+  void openSubmenu(SettingAction action);
+  void closeSubmenu();
+  const char* getFolderLabel(SettingAction action) const;
+  void setCurrentSettingsForCategory();
+
   const std::vector<SettingInfo>* currentSettings = nullptr;
 
   bool preserveQuickResumeTimeoutOn = false;

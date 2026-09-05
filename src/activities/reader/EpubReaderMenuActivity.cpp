@@ -40,6 +40,9 @@ void EpubReaderMenuActivity::buildMenuRowItems() {
     } else if (menuItems[i].action == MenuAction::FRONTLIGHT) {
       item.toggle = true;
       item.toggleChecked = Frontlight.isOn();
+    } else if (menuItems[i].action != MenuAction::ROTATE_SCREEN &&
+               menuItems[i].action != MenuAction::AUTO_PAGE_TURN) {
+      item.value = "›";
     }
     menuRowItems[i] = item;
   }
@@ -49,30 +52,39 @@ std::vector<EpubReaderMenuActivity::MenuItem> EpubReaderMenuActivity::buildMenuI
                                                                                      bool hasBookmarks) {
   std::vector<MenuItem> items;
   items.reserve(MAX_MENU_ITEMS);
+
+  // 1. Navigation
   items.push_back({MenuAction::SELECT_CHAPTER, StrId::STR_SELECT_CHAPTER});
   if (hasBookmarks) {
     items.push_back({MenuAction::BOOKMARKS, StrId::STR_BOOKMARKS});
   }
-  items.push_back({MenuAction::CREATE_CLIPPING, StrId::STR_CREATE_CLIPPING});
-  items.push_back({MenuAction::VIEW_CLIPPINGS, StrId::STR_CLIPPINGS});
-  items.push_back({MenuAction::STATISTICS, StrId::STR_READING_STATS});
-  items.push_back({MenuAction::TEXT_SETTINGS, StrId::STR_TEXT_SETTINGS});
   items.push_back({MenuAction::GO_TO_PERCENT, StrId::STR_GO_TO_PERCENT});
-  items.push_back({MenuAction::DICTIONARY, StrId::STR_LOOKUP});
+  if (hasFootnotes) {
+    items.push_back({MenuAction::FOOTNOTES, StrId::STR_FOOTNOTES});
+  }
+
+  // 2. Appearance & Display
+  items.push_back({MenuAction::TEXT_SETTINGS, StrId::STR_TEXT_SETTINGS});
   items.push_back({MenuAction::NIGHT_MODE, StrId::STR_NIGHT_MODE});
   if (Frontlight.present()) {
     items.push_back({MenuAction::FRONTLIGHT, StrId::STR_FRONTLIGHT});
   }
   items.push_back({MenuAction::ROTATE_SCREEN, StrId::STR_ORIENTATION});
+
+  // 3. Tools & Utilities
+  items.push_back({MenuAction::CREATE_CLIPPING, StrId::STR_CREATE_CLIPPING});
+  items.push_back({MenuAction::VIEW_CLIPPINGS, StrId::STR_CLIPPINGS});
+  items.push_back({MenuAction::DICTIONARY, StrId::STR_LOOKUP});
+  items.push_back({MenuAction::STATISTICS, StrId::STR_READING_STATS});
   items.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_PAGES_PER_MIN});
-  if (hasFootnotes) {
-    items.push_back({MenuAction::FOOTNOTES, StrId::STR_FOOTNOTES});
-  }
   if (KOREADER_STORE.hasCredentials()) {
     items.push_back({MenuAction::SYNC, StrId::STR_SYNC_PROGRESS});
   }
+
+  // 4. System & Home
   items.push_back({MenuAction::SYSTEM_SETTINGS, StrId::STR_SETTINGS_TITLE});
   items.push_back({MenuAction::GO_HOME, StrId::STR_GO_HOME_BUTTON});
+
   return items;
 }
 
