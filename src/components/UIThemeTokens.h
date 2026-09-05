@@ -27,7 +27,8 @@ inline freeink::ui::ThemeTokens uiThemeTokens(const freeink::ui::GfxRendererTarg
   // (BoardConfig::ViewableInsets); lists render in the portrait UI frame, so
   // the panel-native portrait insets apply directly.
   const auto& vi = BoardConfig::ACTIVE.viewableInsets;
-  tokens.listScrollInset = static_cast<int16_t>(metrics.listScrollSide == 1 ? vi.left : vi.right);
+  const int16_t boardInset = static_cast<int16_t>(metrics.listScrollSide == 1 ? vi.left : vi.right);
+  tokens.listScrollInset = std::max<int16_t>(8, boardInset);
   // Screen::header()/status() band height. Without this the SDK's
   // line-height-derived default applies and fui-drawn headers (OPDS) come out
   // a different height than every GUI.drawHeader band.

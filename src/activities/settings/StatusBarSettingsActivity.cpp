@@ -22,6 +22,7 @@ namespace {
 enum MenuItem {
   ITEM_CHAPTER_PAGE_COUNT = 0,
   ITEM_BOOK_PROGRESS_PERCENTAGE,
+  ITEM_TIME_LEFT,
   ITEM_PROGRESS_BAR,
   ITEM_PROGRESS_BAR_THICKNESS,
   ITEM_TITLE,
@@ -44,6 +45,7 @@ static_assert(FULL_MENU_ITEMS == StatusBarSettingsActivity::MAX_STATUS_BAR_ITEMS
 const StrId menuNames[FULL_MENU_ITEMS] = {
     StrId::STR_CHAPTER_PAGE_COUNT,
     StrId::STR_BOOK_PROGRESS_PERCENTAGE,
+    StrId::STR_STATS_TIME_LEFT,
     StrId::STR_PROGRESS_BAR,
     StrId::STR_PROGRESS_BAR_THICKNESS,
     StrId::STR_TITLE,
@@ -165,6 +167,9 @@ void StatusBarSettingsActivity::handleSelection() {
     case ITEM_BOOK_PROGRESS_PERCENTAGE:
       SETTINGS.statusBarBookProgressPercentage = (SETTINGS.statusBarBookProgressPercentage + 1) % 2;
       break;
+    case ITEM_TIME_LEFT:
+      SETTINGS.statusBarTimeLeft = (SETTINGS.statusBarTimeLeft + 1) % 2;
+      break;
     case ITEM_PROGRESS_BAR:
       optionPopup.show(StrId::STR_PROGRESS_BAR, progressBarNames, PROGRESS_BAR_ITEMS, SETTINGS.statusBarProgressBar,
                        [this](int idx) {
@@ -186,7 +191,16 @@ void StatusBarSettingsActivity::handleSelection() {
       });
       return;
     case ITEM_BATTERY:
-      SETTINGS.statusBarBattery = (SETTINGS.statusBarBattery + 1) % 2;
+      if (!SETTINGS.statusBarBattery) {
+        SETTINGS.statusBarBattery = 1;
+        SETTINGS.batteryStyle = CrossPointSettings::BATTERY_STYLE_ICON_AND_PERCENT;
+      } else if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_ICON_AND_PERCENT) {
+        SETTINGS.batteryStyle = CrossPointSettings::BATTERY_STYLE_PERCENT_ONLY;
+      } else if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_PERCENT_ONLY) {
+        SETTINGS.batteryStyle = CrossPointSettings::BATTERY_STYLE_ICON_ONLY;
+      } else {
+        SETTINGS.statusBarBattery = 0;
+      }
       break;
     case ITEM_STATUS_BAR_POSITION:
       optionPopup.show(StrId::STR_STATUS_BAR_POSITION, statusBarPositionNames, STATUS_BAR_POSITION_ITEMS,
@@ -231,6 +245,8 @@ std::string StatusBarSettingsActivity::rowValueText(const int index) {
       return SETTINGS.statusBarChapterPageCount ? tr(STR_SHOW) : tr(STR_HIDE);
     case ITEM_BOOK_PROGRESS_PERCENTAGE:
       return SETTINGS.statusBarBookProgressPercentage ? tr(STR_SHOW) : tr(STR_HIDE);
+    case ITEM_TIME_LEFT:
+      return SETTINGS.statusBarTimeLeft ? tr(STR_SHOW) : tr(STR_HIDE);
     case ITEM_PROGRESS_BAR:
       return I18N.get(progressBarNames[SETTINGS.statusBarProgressBar]);
     case ITEM_PROGRESS_BAR_THICKNESS:
@@ -238,7 +254,14 @@ std::string StatusBarSettingsActivity::rowValueText(const int index) {
     case ITEM_TITLE:
       return I18N.get(titleNames[SETTINGS.statusBarTitle]);
     case ITEM_BATTERY:
-      return SETTINGS.statusBarBattery ? tr(STR_SHOW) : tr(STR_HIDE);
+      if (!SETTINGS.statusBarBattery) return tr(STR_HIDE);
+      if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_PERCENT_ONLY) {
+        return I18N.getLanguage() == Language::RU ? "Только %" : "Only %";
+      }
+      if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_ICON_ONLY) {
+        return I18N.getLanguage() == Language::RU ? "Только иконка" : "Only icon";
+      }
+      return I18N.getLanguage() == Language::RU ? "Иконка и %" : "Icon & %";
     case ITEM_STATUS_BAR_POSITION:
       return I18N.get(statusBarPositionNames[SETTINGS.statusBarPosition]);
     case ITEM_STATUS_BAR_HIDDEN:
@@ -319,7 +342,8 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
   }
 
   // Anchor the preview as a footer directly above the button hints.
-  GUI.drawStatusBar(renderer, 75, 8, 32, title, metrics.buttonHintsHeight, 0, false);
+  // forceBottomPreview = true so that even when statusBarPosition is TOP, preview stays in its footer box
+  GUI.drawStatusBar(renderer, 75, 8, 32, title, metrics.buttonHintsHeight, 0, false, false, false, true, 4500);
 
   renderer.drawCenteredText(UI_10_FONT_ID,
                             renderer.getScreenHeight() - UITheme::getInstance().getStatusBarHeight() -

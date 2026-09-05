@@ -102,7 +102,14 @@ void BaseTheme::drawBatteryLeft(const GfxRenderer& renderer, Rect rect, const bo
   const uint16_t percentage = powerManager.getBatteryPercentage();
   const int y = rect.y + 6;
 
-  if (showPercentage) {
+  if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_PERCENT_ONLY) {
+    const auto percentageText = std::to_string(percentage) + "%";
+    renderer.drawText(SMALL_FONT_ID, rect.x, rect.y, percentageText.c_str());
+    return;
+  }
+
+  const bool showPercent = showPercentage && (SETTINGS.batteryStyle != CrossPointSettings::BATTERY_STYLE_ICON_ONLY);
+  if (showPercent) {
     const auto percentageText = std::to_string(percentage) + "%";
     renderer.drawText(SMALL_FONT_ID, rect.x + batteryPercentSpacing + rect.width, rect.y, percentageText.c_str());
   }
@@ -133,7 +140,9 @@ void BaseTheme::drawProgressBar(const GfxRenderer& renderer, Rect rect, const si
 
   // Draw percentage text centered below bar
   const std::string percentText = std::to_string(percent) + "%";
-  renderer.drawCenteredText(UI_10_FONT_ID, rect.y + rect.height + 15, percentText.c_str());
+  const int textWidth = renderer.getTextWidth(SMALL_FONT_ID, percentText.c_str());
+  renderer.drawText(SMALL_FONT_ID, rect.x + (rect.width - textWidth) / 2, rect.y + rect.height + 4,
+                    percentText.c_str());
 }
 
 // Centre a button-hint label inside its box. A label that fits is drawn on the
@@ -142,27 +151,29 @@ void BaseTheme::drawProgressBar(const GfxRenderer& renderer, Rect rect, const si
 // (wrappedText() ellipsises anything that still doesn't fit). Shared so every
 // theme's drawButtonHints() gets the same behaviour.
 void BaseTheme::drawHintLabel(GfxRenderer& renderer, const int fontId, const char* label, const int x,
-                              const int boxWidth, const int boxTop, const int boxHeight, const int singleLineYOffset) {
-  constexpr int textPadding = 4;  // keeps a wrapped label off the button's border
-  const int maxTextWidth = boxWidth - (textPadding * 2);
+                              const int boxWidth, const int boxTop, const int boxHeight,
+                              const int singleLineYOffset) {
+  if (label == nullptr || label[0] == '\0') {
+    return;
+  }
 
   const int textWidth = renderer.getTextWidth(fontId, label);
+  const int maxTextWidth = boxWidth - 4;
   if (textWidth <= maxTextWidth) {
     renderer.drawText(fontId, x + (boxWidth - 1 - textWidth) / 2, boxTop + singleLineYOffset, label);
     return;
   }
 
-  // Spaced by the glyph height, not getLineHeight() — that returns the font's
-  // full advanceY (leading included), which stacks two lines taller than the
-  // button and clips the second one.
-  constexpr int lineGap = 2;
-  const int step = renderer.getTextHeight(fontId) + lineGap;
-  const auto lines = renderer.wrappedText(fontId, label, maxTextWidth, 2);
+  // Two-line wrapped hint: use SMALL_FONT_ID so both lines stay inside the button box without clipping
+  const int wrapFont = SMALL_FONT_ID;
+  constexpr int lineGap = 1;
+  const int step = renderer.getTextHeight(wrapFont) + lineGap;
+  const auto lines = renderer.wrappedText(wrapFont, label, maxTextWidth, 2);
   const int block = static_cast<int>(lines.size()) * step - lineGap;
-  int lineY = boxTop + std::max(1, (boxHeight - block) / 2);
+  int lineY = boxTop + std::max(2, (boxHeight - block) / 2);
   for (const auto& line : lines) {
-    const int lineWidth = renderer.getTextWidth(fontId, line.c_str());
-    renderer.drawText(fontId, x + (boxWidth - 1 - lineWidth) / 2, lineY, line.c_str());
+    const int lineWidth = renderer.getTextWidth(wrapFont, line.c_str());
+    renderer.drawText(wrapFont, x + (boxWidth - 1 - lineWidth) / 2, lineY, line.c_str());
     lineY += step;
   }
 }
@@ -464,21 +475,28 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   fui::BatteryIndicatorProps battery;
   battery.percent = static_cast<uint8_t>(percentage > 100 ? 100 : percentage);
   battery.charging = gpio.isUsbConnected();
-  battery.label = showBatteryPercentage ? percentText : nullptr;
+  battery.label = (showBatteryPercentage && SETTINGS.batteryStyle != CrossPointSettings::BATTERY_STYLE_ICON_ONLY)
+                      ? percentText
+                      : nullptr;
   battery.text = tokens.smallText;
   battery.glyphWidth = static_cast<int16_t>(metrics.batteryWidth);
   battery.glyphHeight = static_cast<int16_t>(metrics.batteryHeight);
   battery.gap = batteryPercentSpacing;
-  // Detached: hug the corner (12px, the legacy inset) within the battery
-  // strip; shared line: sit on the content grid. Both anchor to the band's top
-  // strip (batteryBarHeight) — the legacy shared-line headers drew the battery
-  // at the top edge, and it keeps the lower-right corner free for the manual
-  // right label below.
-  const int16_t batteryEdgeInset = batteryDetached ? 12 : tokens.headerSidePadding;
+  const int16_t safeInset = std::max<int16_t>(16, tokens.headerSidePadding);
+  const int16_t batteryEdgeInset = batteryDetached ? 16 : safeInset;
   const int16_t batteryX = batteryLeft ? static_cast<int16_t>(band.x + batteryEdgeInset)
                                        : static_cast<int16_t>(band.right() - batteryEdgeInset - batteryReserve);
   const int16_t batteryH = static_cast<int16_t>(metrics.batteryBarHeight);
-  fui::batteryIndicator(ui.frame, fui::Rect{batteryX, band.y, batteryReserve, batteryH}, battery);
+
+  if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_PERCENT_ONLY) {
+    if (showBatteryPercentage) {
+      fui::TextStyle style = tokens.smallText;
+      style.align = fui::TextAlign::Right;
+      ui.target.text(fui::Rect{batteryX, band.y, batteryReserve, batteryH}, percentText, style);
+    }
+  } else {
+    fui::batteryIndicator(ui.frame, fui::Rect{batteryX, band.y, batteryReserve, batteryH}, battery);
+  }
 
   if (manualRightLabel) {
     const fui::Size labelSize = ui.target.measureText(fui::GfxRendererTarget::FONT_SMALL, subtitle, tokens.smallText);
@@ -882,33 +900,32 @@ void BaseTheme::fillPopupProgress(const GfxRenderer& renderer, const Rect& layou
 
 void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage,
                               const int pageCount, std::string title, const int paddingBottom, const int textYOffset,
-                              const bool fillMargin, const bool isPageBookmarked, const bool pageCountEstimated) const {
+                              const bool fillMargin, const bool isPageBookmarked, const bool pageCountEstimated,
+                              const bool forceBottomPreview, const uint32_t estimatedTimeLeftSec) const {
   auto metrics = UITheme::getInstance().getMetrics();
   int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
   renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
                                    &orientedMarginLeft);
   const auto sb = SETTINGS.statusBarSpec();
   if (sb.hidden) return;
-  // The lane is reserved whenever any element can appear in it; the clock
-  // itself only draws once the software clock has a time.
+
+  const bool atTop = forceBottomPreview ? false : sb.atTop;
   const bool showStatusBarTextLane = sb.textLaneVisible(true);
 
   // Draw Progress Text
   const auto screenHeight = renderer.getScreenHeight();
-  auto textY = sb.atTop ? orientedMarginTop + paddingBottom + 2
-                        : screenHeight - UITheme::getInstance().getStatusBarHeight() - orientedMarginBottom -
-                              paddingBottom - 4;
+  auto textY = atTop ? orientedMarginTop + paddingBottom + 2
+                     : screenHeight - UITheme::getInstance().getStatusBarHeight() - orientedMarginBottom -
+                           paddingBottom - 4;
 
-  const int leftClusterX = metrics.statusBarHorizontalMargin + orientedMarginLeft + 1;
-  const int rightClusterX = renderer.getScreenWidth() - metrics.statusBarHorizontalMargin - orientedMarginRight;
+  const int leftMargin = std::max(16, metrics.statusBarHorizontalMargin);
+  const int leftClusterX = leftMargin + orientedMarginLeft + 1;
+  const int rightClusterX = renderer.getScreenWidth() - leftMargin - orientedMarginRight;
   int leftClusterWidth = 0;
   int rightClusterWidth = 0;
 
-  if (sb.showBookProgressPercent || sb.showChapterPageCount) {
-    // Right aligned text for progress counter
-    char progressStr[32];
-
-    // Prefix the page count with "~" while a still-building spine only yields an estimated total.
+  if (sb.showBookProgressPercent || sb.showChapterPageCount || (sb.showTimeLeft && estimatedTimeLeftSec > 0)) {
+    char progressStr[48] = "";
     const char* estimatePrefix = pageCountEstimated ? "~" : "";
 
     if (sb.showBookProgressPercent && sb.showChapterPageCount) {
@@ -916,14 +933,27 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
                bookProgress);
     } else if (sb.showBookProgressPercent) {
       snprintf(progressStr, sizeof(progressStr), "%.0f%%", bookProgress);
-    } else {
+    } else if (sb.showChapterPageCount) {
       snprintf(progressStr, sizeof(progressStr), "%s%d/%d", estimatePrefix, currentPage, pageCount);
     }
 
-    int progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progressStr);
-    renderer.drawText(SMALL_FONT_ID, rightClusterX - progressTextWidth, textY, progressStr);
+    if (sb.showTimeLeft && estimatedTimeLeftSec > 0) {
+      char timeLeftBuf[24];
+      uint32_t th = estimatedTimeLeftSec / 3600;
+      uint32_t tm = (estimatedTimeLeftSec % 3600) / 60;
+      if (th > 0) {
+        snprintf(timeLeftBuf, sizeof(timeLeftBuf), "  %u ч %u м", th, tm);
+      } else {
+        snprintf(timeLeftBuf, sizeof(timeLeftBuf), "  %u мин", std::max<uint32_t>(1, tm));
+      }
+      strncat(progressStr, timeLeftBuf, sizeof(progressStr) - strlen(progressStr) - 1);
+    }
 
-    rightClusterWidth += progressTextWidth;
+    if (progressStr[0] != '\0') {
+      int progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progressStr);
+      renderer.drawText(SMALL_FONT_ID, rightClusterX - progressTextWidth, textY, progressStr);
+      rightClusterWidth += progressTextWidth;
+    }
   }
 
   // Draw Progress Bar
@@ -931,9 +961,9 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
     const int barMarginLeft = fillMargin ? 0 : orientedMarginLeft;
     const int barMarginRight = fillMargin ? 0 : orientedMarginRight;
     const int progressBarMaxWidth = renderer.getScreenWidth() - barMarginLeft - barMarginRight;
-    const int progressBarY = sb.atTop ? (fillMargin ? 0 : orientedMarginTop)
-                                      : renderer.getScreenHeight() - orientedMarginBottom -
-                                            sb.progressBarHeightPx - paddingBottom + (fillMargin ? 1 : 0);
+    const int progressBarY = atTop ? (fillMargin ? 0 : orientedMarginTop)
+                                   : renderer.getScreenHeight() - orientedMarginBottom -
+                                         sb.progressBarHeightPx - paddingBottom + (fillMargin ? 1 : 0);
     size_t progress;
     if (sb.progressBarMode == CrossPointSettings::STATUS_BAR_PROGRESS_BAR::BOOK_PROGRESS) {
       progress = static_cast<size_t>(bookProgress);
@@ -942,7 +972,7 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
       progress = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) * 100 : 0;
     }
     const int barWidth = progressBarMaxWidth * progress / 100;
-    const int barHeight = sb.progressBarHeightPx + (fillMargin ? (sb.atTop ? orientedMarginTop : orientedMarginBottom) - 1 : 0);
+    const int barHeight = sb.progressBarHeightPx + (fillMargin ? (atTop ? orientedMarginTop : orientedMarginBottom) - 1 : 0);
     renderer.fillRect(barMarginLeft, progressBarY, barWidth, barHeight, true);
   }
 
@@ -950,29 +980,34 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
   const bool showBatteryPercentage = sb.showBatteryPercent;
 
   if (sb.showBattery) {
-    GUI.drawBatteryLeft(renderer,
-                        Rect{leftClusterX + leftClusterWidth, textY, metrics.batteryWidth, metrics.batteryHeight},
-                        showBatteryPercentage);
-    int batteryWidth = metrics.batteryWidth;
-
-    if (showBatteryPercentage) {
+    if (SETTINGS.batteryStyle == CrossPointSettings::BATTERY_STYLE_PERCENT_ONLY) {
       const uint16_t percentage = powerManager.getBatteryPercentage();
-      // width of icon + spacing + text for layout purposes
-      batteryWidth +=
-          batteryPercentSpacing + renderer.getTextWidth(SMALL_FONT_ID, (std::to_string(percentage) + "%").c_str());
+      const auto percentageText = std::to_string(percentage) + "%";
+      const int bw = renderer.getTextWidth(SMALL_FONT_ID, percentageText.c_str());
+      renderer.drawText(SMALL_FONT_ID, leftClusterX + leftClusterWidth, textY, percentageText.c_str());
+      leftClusterWidth += bw + 8;
+    } else {
+      GUI.drawBatteryLeft(renderer,
+                          Rect{leftClusterX + leftClusterWidth, textY, metrics.batteryWidth, metrics.batteryHeight},
+                          showBatteryPercentage);
+      int batteryWidth = metrics.batteryWidth;
+      if (showBatteryPercentage && SETTINGS.batteryStyle != CrossPointSettings::BATTERY_STYLE_ICON_ONLY) {
+        const uint16_t percentage = powerManager.getBatteryPercentage();
+        batteryWidth +=
+            batteryPercentSpacing + renderer.getTextWidth(SMALL_FONT_ID, (std::to_string(percentage) + "%").c_str());
+      }
+      leftClusterWidth += batteryWidth;
     }
-
-    leftClusterWidth += batteryWidth;
   }
 
-  // Draw Clock (software clock on X4, RTC on X3; nothing drawn until a time
-  // is available)
+  // Draw Clock (software clock on X4, RTC on X3; nothing drawn until a time is available)
+  int clockCenterMinX = 0;
+  int clockCenterMaxX = 0;
   if (sb.showsClock()) {
     char timeBuf[9];
     if (halClock.formatTime(timeBuf, sizeof(timeBuf), sb.clockUtcOffsetQ, sb.clock12h)) {
       int clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, timeBuf);
       int clockX = 0;
-      // Position to the left or right of the progress text (with a small gap)
       if (sb.clockMode == CrossPointSettings::STATUS_BAR_CLOCK_LEFT) {
         clockX = leftClusterX + leftClusterWidth + (leftClusterWidth > 0 ? 10 : 0);
         leftClusterWidth += clockTextWidth + 10;
@@ -981,6 +1016,8 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
         rightClusterWidth += clockTextWidth + 10;
       } else if (sb.clockMode == CrossPointSettings::STATUS_BAR_CLOCK_CENTER) {
         clockX = (renderer.getScreenWidth() - clockTextWidth) / 2;
+        clockCenterMinX = clockX - 10;
+        clockCenterMaxX = clockX + clockTextWidth + 10;
       }
       renderer.drawText(SMALL_FONT_ID, clockX, textY, timeBuf);
     }
@@ -998,35 +1035,39 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
   // Draw Title
   if (!title.empty()) {
     textY -= textYOffset;
-    // Centered chapter title text
-    // Page width minus existing content with 30px padding on each side
-    const int rendererableScreenWidth =
-        renderer.getScreenWidth() - (metrics.statusBarHorizontalMargin * 2) - orientedMarginLeft - orientedMarginRight;
+    if (clockCenterMaxX > clockCenterMinX) {
+      // Clock is centered: title goes between left cluster and center clock hitbox
+      const int titleLeft = leftClusterX + leftClusterWidth + 12;
+      const int availW = clockCenterMinX - titleLeft - 4;
+      if (availW > 30) {
+        title = renderer.truncatedText(SMALL_FONT_ID, title.c_str(), availW);
+        renderer.drawText(SMALL_FONT_ID, titleLeft, textY, title.c_str());
+      }
+    } else {
+      const int rendererableScreenWidth =
+          renderer.getScreenWidth() - (leftMargin * 2) - orientedMarginLeft - orientedMarginRight;
 
-    const int titleMarginLeft = leftClusterWidth + 30;
-    const int titleMarginRight = rightClusterWidth + 30;
+      const int titleMarginLeft = leftClusterWidth + 30;
+      const int titleMarginRight = rightClusterWidth + 30;
 
-    // Attempt to center title on the screen, but if title is too wide then later we will center it within the
-    // available space.
-    int titleMarginLeftAdjusted = std::max(titleMarginLeft, titleMarginRight);
-    int availableTitleSpace = rendererableScreenWidth - 2 * titleMarginLeftAdjusted;
+      int titleMarginLeftAdjusted = std::max(titleMarginLeft, titleMarginRight);
+      int availableTitleSpace = rendererableScreenWidth - 2 * titleMarginLeftAdjusted;
 
-    int titleWidth;
-    titleWidth = renderer.getTextWidth(SMALL_FONT_ID, title.c_str());
-    if (titleWidth > availableTitleSpace) {
-      // Not enough space to center on the screen, center it within the remaining space instead
-      availableTitleSpace = rendererableScreenWidth - titleMarginLeft - titleMarginRight;
-      titleMarginLeftAdjusted = titleMarginLeft;
+      int titleWidth = renderer.getTextWidth(SMALL_FONT_ID, title.c_str());
+      if (titleWidth > availableTitleSpace) {
+        availableTitleSpace = rendererableScreenWidth - titleMarginLeft - titleMarginRight;
+        titleMarginLeftAdjusted = titleMarginLeft;
+      }
+      if (titleWidth > availableTitleSpace) {
+        title = renderer.truncatedText(SMALL_FONT_ID, title.c_str(), availableTitleSpace);
+        titleWidth = renderer.getTextWidth(SMALL_FONT_ID, title.c_str());
+      }
+
+      renderer.drawText(SMALL_FONT_ID,
+                        titleMarginLeftAdjusted + leftMargin + orientedMarginLeft +
+                            (availableTitleSpace - titleWidth) / 2,
+                        textY, title.c_str());
     }
-    if (titleWidth > availableTitleSpace) {
-      title = renderer.truncatedText(SMALL_FONT_ID, title.c_str(), availableTitleSpace);
-      titleWidth = renderer.getTextWidth(SMALL_FONT_ID, title.c_str());
-    }
-
-    renderer.drawText(SMALL_FONT_ID,
-                      titleMarginLeftAdjusted + metrics.statusBarHorizontalMargin + orientedMarginLeft +
-                          (availableTitleSpace - titleWidth) / 2,
-                      textY, title.c_str());
   }
 }
 

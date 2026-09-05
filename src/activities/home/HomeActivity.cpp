@@ -354,11 +354,12 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.insert(menuIcons.begin(), Book);
   }
 
+  const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
+  const int menuHeight = std::max(0, pageHeight - menuTop - metrics.buttonHintsHeight);
+
   GUI.drawButtonMenu(
       renderer,
-      Rect{0, metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset, pageWidth,
-           pageHeight - (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing +
-                         metrics.homeMenuTopOffset + metrics.buttonHintsHeight)},
+      Rect{0, menuTop, pageWidth, menuHeight},
       static_cast<int>(menuItems.size()),
       metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size(),
       [&menuItems](int index) { return std::string(menuItems[index]); },

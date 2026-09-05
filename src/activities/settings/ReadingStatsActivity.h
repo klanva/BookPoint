@@ -35,13 +35,13 @@ class ReadingStatsActivity final : public Activity {
     int height = 0;
   };
 
-  bool hasBookPage() const { return !bookPath_.empty(); }
-  Page firstPage() const { return hasBookPage() ? Page::Book : Page::Device; }
+  bool hasBookPage() const { return true; }
+  Page firstPage() const { return launchedWithBook_ ? Page::Book : Page::Device; }
   void cyclePage(int delta);
   void handleConfirm();
   void exportCsv();
 
-  int getTabCount() const { return hasBookPage() ? 3 : 2; }
+  int getTabCount() const { return 3; }
   Page getPageForTab(int tabIndex) const;
   int getTabForPage(Page page) const;
 
@@ -59,6 +59,7 @@ class ReadingStatsActivity final : public Activity {
   std::string bookAuthor_;
   float bookProgressPercent_;
   uint32_t estimatedSecondsLeft_;
+  bool launchedWithBook_ = false;
 
   BookReadingStats bookStats_;
   GlobalReadingStats globalStats_;

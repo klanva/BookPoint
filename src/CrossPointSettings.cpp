@@ -103,6 +103,9 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
   doc["language"] = (language < getLanguageCount()) ? LANGUAGE_CODES[language] : "EN";
+  doc["batteryStyle"] = batteryStyle;
+  doc["statusBarTimeLeft"] = statusBarTimeLeft;
+  doc["activeSecondsSinceCharge"] = activeSecondsSinceCharge;
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc) {
@@ -221,6 +224,16 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
   }
 
+  if (doc["batteryStyle"].is<uint8_t>()) {
+    batteryStyle = clamp(doc["batteryStyle"].as<uint8_t>(), BATTERY_STYLE_COUNT, BATTERY_STYLE_ICON_AND_PERCENT);
+  }
+  if (doc["statusBarTimeLeft"].is<uint8_t>()) {
+    statusBarTimeLeft = doc["statusBarTimeLeft"].as<uint8_t>();
+  }
+  if (doc["activeSecondsSinceCharge"].is<uint32_t>()) {
+    activeSecondsSinceCharge = doc["activeSecondsSinceCharge"].as<uint32_t>();
+  }
+
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");
     requestResave();
@@ -235,9 +248,11 @@ CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   StatusBarSpec spec;
   spec.showChapterPageCount = statusBarChapterPageCount != 0;
   spec.showBookProgressPercent = statusBarBookProgressPercentage != 0;
+  spec.showTimeLeft = statusBarTimeLeft != 0;
   spec.titleMode = statusBarTitle;
   spec.showBattery = statusBarBattery != 0;
-  spec.showBatteryPercent = hideBatteryPercentage == HIDE_NEVER;
+  spec.showBatteryIcon = (batteryStyle != BATTERY_STYLE_PERCENT_ONLY);
+  spec.showBatteryPercent = (batteryStyle != BATTERY_STYLE_ICON_ONLY) && (hideBatteryPercentage == HIDE_NEVER);
   spec.clockMode = statusBarClock;
   spec.clock12h = clockFormat == 1;
   spec.clockUtcOffsetQ = clockUtcOffsetQ;

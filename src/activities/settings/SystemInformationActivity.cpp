@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "SystemStatus.h"
 #include "components/UITheme.h"
@@ -158,6 +159,20 @@ void SystemInformationActivity::render(RenderLock&&) {
   char uptimeBuf[16];
   snprintf(uptimeBuf, sizeof(uptimeBuf), "%uh %02um %02us", h, m, s);
   drawRow(tr(STR_UPTIME), uptimeBuf);
+
+  const uint32_t totalSinceCharge = SETTINGS.activeSecondsSinceCharge + (millis() / 1000);
+  const uint32_t cd = totalSinceCharge / 86400;
+  const uint32_t ch = (totalSinceCharge % 86400) / 3600;
+  const uint32_t cm = (totalSinceCharge % 3600) / 60;
+  char chargeBuf[32];
+  if (cd > 0) {
+    snprintf(chargeBuf, sizeof(chargeBuf), "%ud %uh %02um", cd, ch, cm);
+  } else if (ch > 0) {
+    snprintf(chargeBuf, sizeof(chargeBuf), "%uh %02um", ch, cm);
+  } else {
+    snprintf(chargeBuf, sizeof(chargeBuf), "%um %02us", cm, totalSinceCharge % 60);
+  }
+  drawRow((I18N.getLanguage() == Language::RU) ? "С зарядки" : "Since charge", chargeBuf);
 
   std::string batteryLabel = std::to_string(status.batteryPercent) + "%";
   if (status.charging) {

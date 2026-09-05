@@ -15,8 +15,8 @@ constexpr ThemeMetrics makeValues() {
   // Kept at/under Classic's homeTopPadding+homeCoverTileHeight (40+370=410) so
   // the menu and button hints below keep the same room they have in Classic.
   v.homeTopPadding = 40;
-  v.homeCoverHeight = 320;
-  v.homeCoverTileHeight = 320;
+  v.homeCoverHeight = 260;
+  v.homeCoverTileHeight = 280;
   v.homeRecentBooksCount = 1;
   v.homeContinueReadingInMenu = false;
   v.homeMenuTopOffset = 16;

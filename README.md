@@ -115,17 +115,17 @@ BookPoint включает несколько вариантов оформле�
 1. **Через Web-флешер по USB**:
    - Перейдите в веб-программатор [crosspointreader.com/#flash-tools](https://crosspointreader.com/#flash-tools).
    - Подключите устройство через кабель USB-C.
-   - Выберите файл `BookPoint_1.6.7_xteink_x4_x3.bin` и выполните прошивку.
+   - Выберите файл `BookPoint_1.6.8_xteink_x4_x3.bin` и выполните прошивку.
 
 2. **Через SD-карту**:
    - Скопируйте файл прошивки на SD-карту и воспользуйтесь штатной функцией обновления.
 
 3. **Через esptool (для разработчиков)**:
    ```bash
-   esptool.py --chip esp32c3 write_flash 0x10000 BookPoint_1.6.7_xteink_x4_x3.bin
+   esptool.py --chip esp32c3 write_flash 0x10000 BookPoint_1.6.8_xteink_x4_x3.bin
    ```
 
-Актуальный бинарный файл сборки: **`BookPoint_1.6.7_xteink_x4_x3.bin`** (доступен в разделе [Releases](https://github.com/klanva/BookPoint/releases)).
+Актуальный бинарный файл сборки: **`BookPoint_1.6.8_xteink_x4_x3.bin`** (доступен в разделе [Releases](https://github.com/klanva/BookPoint/releases)).
 
 > **Внимание**: не используйте пункт «Проверить обновления» в меню устройства, так как он загрузит оригинальный CrossPoint без доработок BookPoint.
 

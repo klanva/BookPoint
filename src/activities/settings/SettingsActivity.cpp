@@ -97,7 +97,8 @@ void SettingsActivity::rebuildSettingsLists() {
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_LANGUAGE, SettingAction::Language));
-  systemSettings.push_back(SettingInfo::Action(StrId::STR_SYSTEM_INFO, SettingAction::SystemInfo));
+  systemSettings.insert(systemSettings.begin(),
+                        SettingInfo::Action(StrId::STR_SYSTEM_INFO, SettingAction::SystemInfo));
   readerSettings.insert(readerSettings.begin(),
                         SettingInfo::Action(StrId::STR_READING_STATS, SettingAction::ReadingStats));
   readerSettings.insert(readerSettings.begin() + 1,

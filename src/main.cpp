@@ -264,6 +264,13 @@ void enterDeepSleep(bool fromTimeout = false) {
 
   APP_STATE.saveToFile();
 
+  if (gpio.isUsbConnected() && powerManager.getBatteryPercentage() >= 95) {
+    SETTINGS.activeSecondsSinceCharge = 0;
+  } else {
+    SETTINGS.activeSecondsSinceCharge += millis() / 1000;
+  }
+  SETTINGS.saveToFile();
+
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
   deepSleepInProgress = true;
@@ -588,6 +595,15 @@ void loop() {
     LOG_INF("MEM", "Free: %d bytes, Total: %d bytes, Min Free: %d bytes, MaxAlloc: %d bytes", ESP.getFreeHeap(),
             ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
     lastMemPrint = millis();
+  }
+
+  static unsigned long lastChargeCheck = 0;
+  if (millis() - lastChargeCheck >= 5000) {
+    lastChargeCheck = millis();
+    if (gpio.isUsbConnected() && powerManager.getBatteryPercentage() >= 95 && SETTINGS.activeSecondsSinceCharge > 0) {
+      SETTINGS.activeSecondsSinceCharge = 0;
+      SETTINGS.saveToFile();
+    }
   }
 
   // Handle incoming serial commands,

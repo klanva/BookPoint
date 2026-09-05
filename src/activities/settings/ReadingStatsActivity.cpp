@@ -11,6 +11,7 @@
 #include "stats/StatsStore.h"
 #include "stats/ReadingStatsTypes.h"
 #include "stats/ReadingStatsUtils.h"
+#include "../../RecentBooksStore.h"
 #include "../../util/BookCacheUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -25,12 +26,22 @@ ReadingStatsActivity::ReadingStatsActivity(GfxRenderer& renderer, MappedInputMan
       bookTitle_(bookTitle),
       bookAuthor_(bookAuthor),
       bookProgressPercent_(bookProgressPercent),
-      estimatedSecondsLeft_(estimatedSecondsLeft) {}
+      estimatedSecondsLeft_(estimatedSecondsLeft),
+      launchedWithBook_(!bookPath.empty()) {}
 
 void ReadingStatsActivity::onEnter() {
   Activity::onEnter();
   savedOrientation_ = renderer.getOrientation();
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+
+  if (bookPath_.empty()) {
+    const auto& recents = RECENT_BOOKS.getBooks();
+    if (!recents.empty()) {
+      bookPath_ = recents[0].path;
+      bookTitle_ = recents[0].title;
+      bookAuthor_ = recents[0].author;
+    }
+  }
 
   if (!bookPath_.empty()) {
     bookStats_ = StatsStore::loadBookStats(bookPath_, bookTitle_, bookAuthor_);
@@ -52,26 +63,16 @@ void ReadingStatsActivity::onExit() {
 }
 
 ReadingStatsActivity::Page ReadingStatsActivity::getPageForTab(const int tabIndex) const {
-  if (hasBookPage()) {
-    return static_cast<Page>(tabIndex);
-  }
-  return tabIndex == 0 ? Page::Device : Page::Activity;
+  return static_cast<Page>(tabIndex);
 }
 
 int ReadingStatsActivity::getTabForPage(const Page page) const {
-  if (hasBookPage()) {
-    return static_cast<int>(page);
-  }
-  return page == Page::Activity ? 1 : 0;
+  return static_cast<int>(page);
 }
 
 void ReadingStatsActivity::cyclePage(const int delta) {
   const int count = static_cast<int>(Page::PAGE_COUNT);
-  int page = static_cast<int>(page_);
-  int first = hasBookPage() ? 0 : 1;
-  do {
-    page = (page + delta + count) % count;
-  } while (page < first);
+  int page = (static_cast<int>(page_) + delta + count) % count;
   page_ = static_cast<Page>(page);
   requestUpdate();
 }
@@ -317,7 +318,12 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
   renderer.drawText(UI_10_FONT_ID, x2 + 10, y + 8,
                     renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_PACE), tileW - 20).c_str());
   if (bookStats_.avgSecondsPerForwardPage > 0) {
-    snprintf(buf, sizeof(buf), "%u %s", bookStats_.avgSecondsPerForwardPage, tr(STR_STATS_UNIT_SEC_PER_PAGE));
+    const float pagesPerHour = 3600.0f / static_cast<float>(bookStats_.avgSecondsPerForwardPage);
+    if (I18N.getLanguage() == Language::RU) {
+      snprintf(buf, sizeof(buf), "%u с/стр (%.0f/ч)", bookStats_.avgSecondsPerForwardPage, pagesPerHour);
+    } else {
+      snprintf(buf, sizeof(buf), "%us/p (%.0f/h)", bookStats_.avgSecondsPerForwardPage, pagesPerHour);
+    }
   } else {
     snprintf(buf, sizeof(buf), "—");
   }

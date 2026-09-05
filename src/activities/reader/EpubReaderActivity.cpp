@@ -1106,7 +1106,7 @@ void EpubReaderActivity::renderBook() {
         std::max(SETTINGS.screenMargin,
                  static_cast<uint8_t>(statusBarHeight + UITheme::getInstance().getMetrics().statusBarVerticalMargin));
   } else {
-    orientedMarginBottom += std::max(SETTINGS.screenMargin, statusBarHeight);
+    orientedMarginBottom += std::max(SETTINGS.screenMargin, static_cast<uint8_t>(statusBarHeight + 6));
   }
 
   // Paper-style footnote strip: reserve a fixed band above the status bar for
@@ -1713,8 +1713,31 @@ void EpubReaderActivity::renderStatusBar() const {
     title = epub ? epub->getTitle() : "";
   }
 
+  uint32_t estimatedTimeLeftSec = 0;
+  if (sb.showTimeLeft && epub && bookProgress < 100.0f && section && section->estimatedTotalPages() > 0) {
+    const float progressFraction = bookProgress / 100.0f;
+    const size_t cumulativeHere = epub->getCumulativeSpineItemSize(currentSpineIndex);
+    const size_t cumulativePrev = currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0;
+    const size_t spineBytes = cumulativeHere > cumulativePrev ? cumulativeHere - cumulativePrev : 0;
+    if (spineBytes > 0) {
+      const float bytesPerPage = static_cast<float>(spineBytes) / static_cast<float>(section->estimatedTotalPages());
+      if (bytesPerPage > 0) {
+        const float remainingPages = static_cast<float>(epub->getBookSize()) * (1.0f - progressFraction) / bytesPerPage;
+        uint32_t pacePerPage = bookStats.avgSecondsPerForwardPage;
+        if (pacePerPage == 0 && bookStats.totalPagesTurned > 0) {
+          pacePerPage = static_cast<uint32_t>(bookStats.totalReadingSeconds / bookStats.totalPagesTurned);
+        }
+        if (pacePerPage > 0) {
+          estimatedTimeLeftSec = static_cast<uint32_t>(remainingPages * static_cast<float>(pacePerPage));
+        } else if (bookProgress > 0 && bookStats.totalReadingSeconds > 0) {
+          estimatedTimeLeftSec = static_cast<uint32_t>(static_cast<float>(bookStats.totalReadingSeconds) * (1.0f - progressFraction) / progressFraction);
+        }
+      }
+    }
+  }
+
   GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title, 0, textYOffset, true, currentPageBookmarked,
-                    section ? section->isBuilding() : false);
+                    section ? section->isBuilding() : false, false, estimatedTimeLeftSec);
 }
 
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {
@@ -1831,6 +1854,15 @@ void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int st
   const int linesPerEntry = std::max(1, static_cast<int>(maxEntries) > 0 ? linesLeft / static_cast<int>(maxEntries)
                                                                          : linesLeft);
 
+  int maxLabelWidth = 0;
+  for (size_t i = 0; i < maxEntries; ++i) {
+    const auto& fn = currentPageFootnotes[i];
+    const char* lbl = fn.number[0] ? fn.number : "*";
+    maxLabelWidth = std::max(maxLabelWidth, renderer.getTextWidth(UI_10_FONT_ID, lbl));
+  }
+  const int labelIndent = std::max(22, maxLabelWidth + 8);
+  const int wrapWidth = std::max(40, contentWidth - labelIndent - 4);
+
   // Resolve and wrap first; the separator is only drawn when at least one
   // note actually rendered, so a failed extraction never looks like a broken
   // empty box.
@@ -1842,7 +1874,7 @@ void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int st
     if (body.empty()) continue;
 
     const int useLines = std::min(linesPerEntry, linesLeft);
-    std::vector<std::string> lines = renderer.wrappedText(UI_10_FONT_ID, body.c_str(), contentWidth - 20, useLines);
+    std::vector<std::string> lines = renderer.wrappedText(UI_10_FONT_ID, body.c_str(), wrapWidth, useLines);
     bool firstOfEntry = true;
     for (const auto& line : lines) {
       if (linesLeft <= 0) break;
@@ -1857,7 +1889,7 @@ void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int st
   int y = stripTop;
   renderer.drawLine(contentLeft, y, contentLeft + contentWidth, y, true);
   y += CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + 2;
-  const int textX = contentLeft + 18;
+  const int textX = contentLeft + labelIndent;
   for (size_t i = 0; i < drawLines.size(); ++i) {
     if (!drawLabels[i].empty()) {
       renderer.drawText(UI_10_FONT_ID, contentLeft, y, drawLabels[i].c_str());

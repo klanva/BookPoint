@@ -163,6 +163,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Hide battery percentage
   enum HIDE_BATTERY_PERCENTAGE { HIDE_NEVER = 0, HIDE_READER = 1, HIDE_ALWAYS = 2, HIDE_BATTERY_PERCENTAGE_COUNT };
 
+  enum BATTERY_STYLE {
+    BATTERY_STYLE_ICON_AND_PERCENT = 0,
+    BATTERY_STYLE_PERCENT_ONLY = 1,
+    BATTERY_STYLE_ICON_ONLY = 2,
+    BATTERY_STYLE_COUNT
+  };
+
   // Page turn button long press behavior
   enum LONG_PRESS_BUTTON_BEHAVIOR {
     OFF = 0,
@@ -278,6 +285,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t opdsFilenameFormat = 0;
   // Hide battery percentage
   uint8_t hideBatteryPercentage = HIDE_NEVER;
+  // Battery display style: 0 = Icon + %, 1 = % only, 2 = Icon only
+  uint8_t batteryStyle = BATTERY_STYLE_ICON_AND_PERCENT;
+  // Show estimated time left in status bar (0 = hide, 1 = show)
+  uint8_t statusBarTimeLeft = 0;
+  // Active seconds since last charge (survives deep sleep and reboots)
+  uint32_t activeSecondsSinceCharge = 0;
   // Long-press page turn button behavior
   uint8_t longPressButtonBehavior = OFF;
   // Long-press Confirm function in EPUB reader (cycles through LONG_PRESS_MENU_FUNCTION values).
@@ -352,7 +365,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // The reserve height is computed at render time from the real UI font's
   // line height: separator + N wrapped lines + padding.
   static constexpr uint8_t FOOTNOTE_STRIP_SEPARATOR_PX = 2;
-  static constexpr uint8_t FOOTNOTE_STRIP_MAX_LINES = 3;
+  static constexpr uint8_t FOOTNOTE_STRIP_MAX_LINES = 5;
   static constexpr uint8_t FOOTNOTE_STRIP_PAD_PX = 5;
 
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
@@ -390,7 +403,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     bool showBookProgressPercent = false;
     uint8_t titleMode = HIDE_TITLE;  // STATUS_BAR_TITLE
     bool showBattery = false;
+    bool showBatteryIcon = true;
     bool showBatteryPercent = false;
+    bool showTimeLeft = false;
     uint8_t clockMode = STATUS_BAR_CLOCK_HIDE;  // STATUS_BAR_CLOCK_MODE
     bool clock12h = false;
     uint8_t clockUtcOffsetQ = 48;             // 48 = UTC+0
@@ -406,7 +421,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     // Visibility of the text lane. Clock hardware presence is the caller's
     // concern: pass halClock.isAvailable(), or true for layout reservation.
     bool textLaneVisible(bool clockAvailable) const {
-      return showChapterPageCount || showBookProgressPercent || showsTitle() || showBattery ||
+      return showChapterPageCount || showBookProgressPercent || showTimeLeft || showsTitle() || showBattery ||
              (showsClock() && clockAvailable);
     }
   };
