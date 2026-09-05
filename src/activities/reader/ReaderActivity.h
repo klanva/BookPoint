@@ -27,9 +27,28 @@ class ReaderActivity : public Activity {
 
   virtual bool handleFormatInput() { return false; }
   virtual bool pageTurn(bool isForward) = 0;
+  virtual bool turnPages(int delta) {
+    if (delta == 0) return false;
+    bool turned = false;
+    if (delta > 0) {
+      for (int i = 0; i < delta; i++) {
+        if (!pageTurn(true)) break;
+        turned = true;
+      }
+    } else {
+      for (int i = 0; i < -delta; i++) {
+        if (!pageTurn(false)) break;
+        turned = true;
+      }
+    }
+    return turned;
+  }
   virtual bool skipPages(int amount) { return pageTurn(amount > 0); }
   virtual bool isAtEndOfBook() const = 0;
   virtual void onReturnFromEndOfBook() {}
+
+  std::atomic<int> pendingTurnDelta{0};
+  bool hasPendingTurn() const { return pendingTurnDelta.load(std::memory_order_relaxed) != 0; }
 
   virtual void renderBook() = 0;
   virtual void applyInitialOrientation();

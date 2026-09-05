@@ -40,6 +40,7 @@ class XtcReaderActivity final : public ReaderActivity {
   ~XtcReaderActivity() override = default;
 
   bool pageTurn(bool isForward) override;
+  bool turnPages(int delta) override { return skipPages(delta); }
   bool skipPages(int amount) override;
   bool isAtEndOfBook() const override;
   void onReturnFromEndOfBook() override;

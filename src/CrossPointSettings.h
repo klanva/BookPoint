@@ -34,6 +34,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     INVERTED_BLACK_AND_WHITE = 2,
     SLEEP_SCREEN_COVER_FILTER_COUNT
   };
+  enum STATUS_BAR_PAGE_COUNT {
+    PAGE_COUNT_HIDE = 0,
+    PAGE_COUNT_CHAPTER = 1,
+    PAGE_COUNT_BOOK = 2,
+    STATUS_BAR_PAGE_COUNT_COUNT
+  };
   enum STATUS_BAR_PROGRESS_BAR {
     BOOK_PROGRESS = 0,
     CHAPTER_PROGRESS = 1,
@@ -399,6 +405,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // refresh. Locking here would instead put a mutex on the render path and
   // stall it behind the SD write inside saveToFile(). Don't add one back.
   struct StatusBarSpec {
+    uint8_t pageCountMode = PAGE_COUNT_CHAPTER;  // STATUS_BAR_PAGE_COUNT
     bool showChapterPageCount = false;
     bool showBookProgressPercent = false;
     uint8_t titleMode = HIDE_TITLE;  // STATUS_BAR_TITLE

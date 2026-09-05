@@ -155,16 +155,23 @@ void ReaderActivity::loop() {
 
   if (prevTriggered) {
     if (skip) {
+      pendingTurnDelta.store(0, std::memory_order_relaxed);
       skipPages(-10);
     } else {
-      pageTurn(false);
+      pendingTurnDelta.fetch_sub(1, std::memory_order_relaxed);
     }
   } else {
     if (skip) {
+      pendingTurnDelta.store(0, std::memory_order_relaxed);
       skipPages(10);
     } else {
-      pageTurn(true);
+      pendingTurnDelta.fetch_add(1, std::memory_order_relaxed);
     }
+  }
+
+  const int delta = pendingTurnDelta.exchange(0, std::memory_order_relaxed);
+  if (delta != 0) {
+    turnPages(delta);
   }
   requestUpdate();
 }

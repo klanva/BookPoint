@@ -19,23 +19,28 @@ class StatusBarSettingsActivity final : public UiListActivity {
  private:
   OptionPopup optionPopup;
 
-  // Decided in onEnter() based on halClock.isAvailable() so clock entries are hidden on X4.
+  enum class Folder : uint8_t {
+    None,
+    Display,
+    Elements,
+    Clock
+  };
+  Folder activeFolder = Folder::None;
+  int lastFolderIndex_ = 0;
+
   int visibleItemCount = 0;
 
   int listCount() const override { return visibleItemCount; }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   bool handleCustomInput() override;
+  bool handleButtons() override;
+  void drawChrome() override;
 
   std::string rowValueText(int index);
-
   void handleSelection();
+  void updateVisibleItems();
 
-  // Row storage: MAX_STATUS_BAR_ITEMS is a compile-time constant, so
-  // fixed-capacity storage avoids any heap allocation for the row list.
-  // Labels are set once in onEnter() (visibleItemCount is decided there);
-  // buildScreen() only refreshes the live value text (rowValues_) by
-  // assigning into the existing strings (no array growth).
   std::string rowValues_[MAX_STATUS_BAR_ITEMS];
   freeink::ui::ListItem rowItems_[MAX_STATUS_BAR_ITEMS]{};
 };

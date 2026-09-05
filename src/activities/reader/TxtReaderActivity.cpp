@@ -322,6 +322,10 @@ void TxtReaderActivity::renderPage(GfxRenderer& renderer) {
   renderLines();
   renderStatusBar();
 
+  if (hasPendingTurn()) {
+    return;
+  }
+
   if (SETTINGS.textAntiAliasing) {
     ReaderUtils::displayBaseWithRefreshCycle(renderer, pagesUntilFullRefresh);
     ReaderUtils::renderAntiAliased(renderer, [&renderLines]() { renderLines(); });

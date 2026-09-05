@@ -982,15 +982,21 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 }
 
 bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
-  if (!section) return false;
+  return turnPages(isForwardTurn ? 1 : -1);
+}
+
+bool EpubReaderActivity::turnPages(int delta) {
+  if (!section || delta == 0) return false;
   noteReadingDwell();
-  {
-    RenderLock lock;
-    clearDeferredReposition();
-  }
-  if (isForwardTurn) {
-    if (section->currentPage < section->pageCount - 1 || section->isBuilding()) {
-      section->currentPage++;
+  clearDeferredReposition();
+
+  if (delta > 0) {
+    if (section->currentPage + delta < section->pageCount) {
+      section->currentPage += delta;
+      lastPageTurnTime = millis();
+      return true;
+    } else if (section->isBuilding()) {
+      section->currentPage += delta;
       lastPageTurnTime = millis();
       return true;
     } else if (currentSpineIndex + 1 < epub->getSpineItemsCount()) {
@@ -1006,8 +1012,9 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
       return true;
     }
   } else {
-    if (section->currentPage > 0) {
-      section->currentPage--;
+    const int step = -delta;
+    if (section->currentPage >= step) {
+      section->currentPage -= step;
       lastPageTurnTime = millis();
       return true;
     } else if (currentSpineIndex > 0) {
@@ -1016,6 +1023,10 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
       pendingPageJump = std::numeric_limits<uint16_t>::max();
       currentSpineIndex--;
       section.reset();
+      lastPageTurnTime = millis();
+      return true;
+    } else {
+      section->currentPage = 0;
       lastPageTurnTime = millis();
       return true;
     }
@@ -1521,6 +1532,10 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
                       renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight);
   const auto tBwRender = millis();
 
+  if (hasPendingTurn()) {
+    return;
+  }
+
   if (pageHasImages) {
     // Image pages use one base refresh before the grayscale pass. FAST leaves
     // the panel receptive to the gray waveform; pending cleanup still honors
@@ -1685,14 +1700,33 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 
 void EpubReaderActivity::renderStatusBar() const {
   if (SETTINGS.statusBarSpec().hidden) return;
-  const int currentPage = section ? section->currentPage + 1 : 1;
-  const float pageCount = section ? section->estimatedTotalPages() : 1;
+  int currentPage = section ? section->currentPage + 1 : 1;
+  float pageCount = section ? section->estimatedTotalPages() : 1;
   const float sectionChapterProg = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) : 0;
   const float bookProgress = epub ? (epub->calculateProgress(currentSpineIndex, sectionChapterProg) * 100) : 0;
 
+  const auto sb = SETTINGS.statusBarSpec();
+
+  if (sb.pageCountMode == CrossPointSettings::PAGE_COUNT_BOOK && epub && epub->getBookSize() > 0 && section &&
+      section->estimatedTotalPages() > 0) {
+    const size_t cumulativeHere = epub->getCumulativeSpineItemSize(currentSpineIndex);
+    const size_t cumulativePrev = currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0;
+    const size_t spineBytes = cumulativeHere > cumulativePrev ? cumulativeHere - cumulativePrev : 0;
+    if (spineBytes > 0) {
+      const float bytesPerPage = static_cast<float>(spineBytes) / static_cast<float>(section->estimatedTotalPages());
+      if (bytesPerPage > 0) {
+        const int totalEstPages =
+            std::max(1, static_cast<int>(static_cast<float>(epub->getBookSize()) / bytesPerPage + 0.5f));
+        const float progFraction = bookProgress / 100.0f;
+        const int curEstPage = std::clamp(static_cast<int>(progFraction * totalEstPages + 0.5f), 1, totalEstPages);
+        currentPage = curEstPage;
+        pageCount = totalEstPages;
+      }
+    }
+  }
+
   std::string title;
   int textYOffset = 0;
-  const auto sb = SETTINGS.statusBarSpec();
 
   if (automaticPageTurnActive) {
     title = tr(STR_AUTO_TURN_ENABLED) + std::to_string(60 * 1000 / pageTurnDuration);

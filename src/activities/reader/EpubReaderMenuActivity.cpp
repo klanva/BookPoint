@@ -72,18 +72,17 @@ std::vector<EpubReaderMenuActivity::MenuItem> EpubReaderMenuActivity::buildMenuI
   items.push_back({MenuAction::ROTATE_SCREEN, StrId::STR_ORIENTATION});
 
   // 3. Tools & Utilities
-  items.push_back({MenuAction::CREATE_CLIPPING, StrId::STR_CREATE_CLIPPING});
-  items.push_back({MenuAction::VIEW_CLIPPINGS, StrId::STR_CLIPPINGS});
-  items.push_back({MenuAction::DICTIONARY, StrId::STR_LOOKUP});
-  items.push_back({MenuAction::STATISTICS, StrId::STR_READING_STATS});
   items.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_PAGES_PER_MIN});
+  items.push_back({MenuAction::STATISTICS, StrId::STR_READING_STATS});
+  items.push_back({MenuAction::VIEW_CLIPPINGS, StrId::STR_CLIPPINGS});
+  items.push_back({MenuAction::CREATE_CLIPPING, StrId::STR_CREATE_CLIPPING});
+  items.push_back({MenuAction::DICTIONARY, StrId::STR_LOOKUP});
   if (KOREADER_STORE.hasCredentials()) {
     items.push_back({MenuAction::SYNC, StrId::STR_SYNC_PROGRESS});
   }
 
-  // 4. System & Home
+  // 4. System Settings
   items.push_back({MenuAction::SYSTEM_SETTINGS, StrId::STR_SETTINGS_TITLE});
-  items.push_back({MenuAction::GO_HOME, StrId::STR_GO_HOME_BUTTON});
 
   return items;
 }
@@ -177,11 +176,11 @@ bool EpubReaderMenuActivity::handleButtons() {
 void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
-  // Content: the safe area minus the header band GUI.drawHeader paints.
+  const int16_t sideMargin = 14;
   screen.setContentMargin(fui::Insets{static_cast<int16_t>(safe.y + metrics.topPadding + metrics.headerHeight),
-                                      static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width)),
+                                      static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width) + sideMargin),
                                       static_cast<int16_t>(renderer.getScreenHeight() - (safe.y + safe.height)),
-                                      static_cast<int16_t>(safe.x)});
+                                      static_cast<int16_t>(safe.x + sideMargin)});
 
   // Hero Reading Status Card at the top (74px height for airy, balanced padding)
   const int16_t heroH = 74;
@@ -262,11 +261,11 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   props.valueInset = 10;              // air between the value and the row edge
 
   fui::TextStyle labelStyle = screen.theme().bodyText;
-  labelStyle.bold = true;
+  labelStyle.bold = false;
   props.labelText = labelStyle;
 
   fui::TextStyle valStyle = screen.theme().smallText;
-  valStyle.bold = true;
+  valStyle.bold = false;
   props.valueText = valStyle;
 
   // Modern Card Block Styles with rounded borders

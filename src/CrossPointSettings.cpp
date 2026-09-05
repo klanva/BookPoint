@@ -246,7 +246,10 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
 
 CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   StatusBarSpec spec;
-  spec.showChapterPageCount = statusBarChapterPageCount != 0;
+  spec.pageCountMode = statusBarChapterPageCount < STATUS_BAR_PAGE_COUNT_COUNT
+                           ? statusBarChapterPageCount
+                           : PAGE_COUNT_CHAPTER;
+  spec.showChapterPageCount = spec.pageCountMode != PAGE_COUNT_HIDE;
   spec.showBookProgressPercent = statusBarBookProgressPercentage != 0;
   spec.showTimeLeft = statusBarTimeLeft != 0;
   spec.titleMode = statusBarTitle;

@@ -17,6 +17,13 @@
 #include "fontIds.h"
 #include "MappedInputManager.h"
 
+namespace {
+float pagesPerMinute(const uint32_t totalPagesTurned, const uint32_t totalReadingSeconds) {
+  if (totalReadingSeconds <= 60) return 0.0f;
+  return static_cast<float>(totalPagesTurned) * 60.0f / static_cast<float>(totalReadingSeconds);
+}
+}  // namespace
+
 ReadingStatsActivity::ReadingStatsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                            const std::string& bookPath, const std::string& bookTitle,
                                            const std::string& bookAuthor, const float bookProgressPercent,
@@ -263,20 +270,37 @@ std::string ReadingStatsActivity::formatDay(const int daysAgo, const uint32_t an
   return buf;
 }
 
+static void drawCenteredLabel(const GfxRenderer& renderer, const int fontId, const int x, const int w, const int y,
+                              const char* text, const bool bold = false) {
+  const int textWidth = renderer.getTextWidth(fontId, text, bold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+  renderer.drawText(fontId, x + (w - textWidth) / 2, y, text, true,
+                    bold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR);
+}
+
+static void drawStatCell(const GfxRenderer& renderer, const int x, const int w, const int y, const int h,
+                         const char* value, const char* label) {
+  const int valueLineH = renderer.getLineHeight(UI_12_FONT_ID);
+  const int labelLineH = renderer.getLineHeight(SMALL_FONT_ID);
+  const int totalTextH = valueLineH + 3 + labelLineH;
+  const int textY = y + (h - totalTextH) / 2;
+  drawCenteredLabel(renderer, UI_12_FONT_ID, x, w, textY, value, true);
+  drawCenteredLabel(renderer, SMALL_FONT_ID, x, w, textY + valueLineH + 3, label);
+}
+
 void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentWidth) {
   // --- 1. Hero Book Card ---
-  const int heroH = 88;
+  const int heroH = 76;
   renderer.drawRoundedRect(x, y, contentWidth, heroH, 1, 8, true);
 
   std::string title = bookStats_.bookTitle.empty() ? bookTitle_ : bookStats_.bookTitle;
   if (title.empty()) title = tr(STR_UNNAMED);
-  renderer.drawText(UI_12_FONT_ID, x + 12, y + 10,
+  renderer.drawText(UI_12_FONT_ID, x + 12, y + 8,
                     renderer.truncatedText(UI_12_FONT_ID, title.c_str(), contentWidth - 24, EpdFontFamily::BOLD).c_str(), true,
                     EpdFontFamily::BOLD);
 
   std::string author = !bookStats_.bookAuthor.empty() ? bookStats_.bookAuthor : bookAuthor_;
   if (!author.empty()) {
-    renderer.drawText(UI_10_FONT_ID, x + 12, y + 30,
+    renderer.drawText(UI_10_FONT_ID, x + 12, y + 27,
                       renderer.truncatedText(UI_10_FONT_ID, author.c_str(), contentWidth - 24).c_str(), true);
   }
 
@@ -286,7 +310,7 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
   snprintf(pctBuf, sizeof(pctBuf), "%d%%", percent);
   const int pctW = renderer.getTextAdvanceX(UI_12_FONT_ID, pctBuf, EpdFontFamily::BOLD);
   const int barW = contentWidth - 24 - pctW - 10;
-  const int barY = y + 54;
+  const int barY = y + 49;
   renderer.drawRoundedRect(x + 12, barY, barW, 9, 1, 4, true);
   if (percent > 0) {
     const int fillW = (barW - 2) * std::min(percent, 100) / 100;
@@ -294,127 +318,106 @@ void ReadingStatsActivity::renderBookPage(const int x, int y, const int contentW
   }
   renderer.drawText(UI_12_FONT_ID, x + 12 + barW + 10, barY - 3, pctBuf, true, EpdFontFamily::BOLD);
 
-  y += heroH + 8;
+  y += heroH + 10;
 
-  // --- 2. 2x2 KPI Mini-Cards Grid ---
-  const int gap = 8;
-  const int tileW = (contentWidth - gap) / 2;
-  const int tileH = 54;
-  const int x1 = x;
-  const int x2 = x + tileW + gap;
+  // --- 2. 3x2 KPI Grid Card (Reference Style) ---
+  const int statsCardH = 116;
+  renderer.drawRoundedRect(x, y, contentWidth, statsCardH, 1, 8, true);
+  renderer.drawLine(x, y + statsCardH / 2, x + contentWidth, y + statsCardH / 2, true);
+
+  const int thirdW = contentWidth / 3;
+  const int rowH = statsCardH / 2;
   char buf[64];
 
-  // Tile 1: Total Time
-  renderer.drawRoundedRect(x1, y, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x1 + 10, y + 8,
-                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_TOTAL_TIME), tileW - 20).c_str());
-  BookReadingStats::formatDuration(bookStats_.totalReadingSeconds, buf, sizeof(buf));
-  renderer.drawText(UI_12_FONT_ID, x1 + 10, y + 26,
-                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
-                    EpdFontFamily::BOLD);
+  // Row 1, Col 1: Sessions
+  snprintf(buf, sizeof(buf), "%u", bookStats_.sessionCount);
+  drawStatCell(renderer, x, thirdW, y, rowH, buf, tr(STR_STATS_SESSIONS));
 
-  // Tile 2: Pace
-  renderer.drawRoundedRect(x2, y, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x2 + 10, y + 8,
-                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_PACE), tileW - 20).c_str());
-  if (bookStats_.avgSecondsPerForwardPage > 0) {
-    const float pagesPerHour = 3600.0f / static_cast<float>(bookStats_.avgSecondsPerForwardPage);
-    if (I18N.getLanguage() == Language::RU) {
-      snprintf(buf, sizeof(buf), "%u с/стр (%.0f/ч)", bookStats_.avgSecondsPerForwardPage, pagesPerHour);
-    } else {
-      snprintf(buf, sizeof(buf), "%us/p (%.0f/h)", bookStats_.avgSecondsPerForwardPage, pagesPerHour);
-    }
+  // Row 1, Col 2: Total Time
+  BookReadingStats::formatDuration(bookStats_.totalReadingSeconds, buf, sizeof(buf));
+  drawStatCell(renderer, x + thirdW, thirdW, y, rowH, buf, tr(STR_STATS_TOTAL_TIME));
+
+  // Row 1, Col 3: Progress
+  if (bookProgressPercent_ >= 0.0f) {
+    snprintf(buf, sizeof(buf), "%d%%", percent);
   } else {
     snprintf(buf, sizeof(buf), "—");
   }
-  renderer.drawText(UI_12_FONT_ID, x2 + 10, y + 26,
-                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
-                    EpdFontFamily::BOLD);
+  drawStatCell(renderer, x + thirdW * 2, contentWidth - thirdW * 2, y, rowH, buf, tr(STR_STATS_PROGRESS));
 
-  const int yRow2 = y + tileH + gap;
+  // Row 2, Col 1: Average Session
+  const uint32_t avgSecs = bookStats_.sessionCount > 0 ? bookStats_.totalReadingSeconds / bookStats_.sessionCount : 0;
+  BookReadingStats::formatDuration(avgSecs, buf, sizeof(buf));
+  drawStatCell(renderer, x, thirdW, y + rowH, rowH, buf, tr(STR_STATS_AVG_SESSION));
 
-  // Tile 3: Pages Turned
-  renderer.drawRoundedRect(x1, yRow2, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x1 + 10, yRow2 + 8,
-                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_PAGES_TURNED), tileW - 20).c_str());
-  snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(bookStats_.totalPagesTurned));
-  renderer.drawText(UI_12_FONT_ID, x1 + 10, yRow2 + 26,
-                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
-                    EpdFontFamily::BOLD);
-
-  // Tile 4: Sessions
-  renderer.drawRoundedRect(x2, yRow2, tileW, tileH, 1, 6, true);
-  renderer.drawText(UI_10_FONT_ID, x2 + 10, yRow2 + 8,
-                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_SESSIONS), tileW - 20).c_str());
-  snprintf(buf, sizeof(buf), "%u", bookStats_.sessionCount);
-  renderer.drawText(UI_12_FONT_ID, x2 + 10, yRow2 + 26,
-                    renderer.truncatedText(UI_12_FONT_ID, buf, tileW - 20, EpdFontFamily::BOLD).c_str(), true,
-                    EpdFontFamily::BOLD);
-
-  y = yRow2 + tileH + 8;
-
-  // --- 3. Timeline & Estimates Card ---
-  const int timelineH = 86;
-  renderer.drawRoundedRect(x, y, contentWidth, timelineH, 1, 6, true);
-
-  // Row 1: Time Left + Finish Estimate
-  const int halfW = contentWidth / 2;
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 8,
-                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_TIME_LEFT), halfW - 20).c_str());
-  if (estimatedSecondsLeft_ > 0 && bookProgressPercent_ >= 0.0f && bookProgressPercent_ < 100.0f) {
-    BookReadingStats::formatDuration(estimatedSecondsLeft_, buf, sizeof(buf));
-    std::string leftStr = std::string("~ ") + buf;
-    renderer.drawText(UI_12_FONT_ID, x + 12, y + 24,
-                      renderer.truncatedText(UI_12_FONT_ID, leftStr.c_str(), halfW - 20, EpdFontFamily::BOLD).c_str(),
-                      true, EpdFontFamily::BOLD);
+  // Row 2, Col 2: Time Left
+  uint32_t timeLeftSec = estimatedSecondsLeft_;
+  if (timeLeftSec == 0 && percent < 100) {
+    fallbackEstimatedTimeLeft(bookStats_, bookProgressPercent_, timeLeftSec);
+  }
+  if (timeLeftSec > 0 && percent < 100) {
+    BookReadingStats::formatDuration(timeLeftSec, buf, sizeof(buf));
   } else {
-    renderer.drawText(UI_12_FONT_ID, x + 12, y + 24, "—", true, EpdFontFamily::BOLD);
+    snprintf(buf, sizeof(buf), "—");
   }
+  drawStatCell(renderer, x + thirdW, thirdW, y + rowH, rowH, buf, tr(STR_STATS_TIME_LEFT));
 
-  renderer.drawText(UI_10_FONT_ID, x + halfW + 12, y + 8,
-                    renderer.truncatedText(UI_10_FONT_ID, tr(STR_STATS_FINISH_ESTIMATE), halfW - 24).c_str());
-  std::string finishDateStr = "—";
-  if (!bookStats_.isFinished && bookProgressPercent_ >= 0.0f && bookProgressPercent_ < 100.0f) {
-    uint32_t estimateSec = estimatedSecondsLeft_;
-    if (estimateSec == 0) {
-      fallbackEstimatedTimeLeft(bookStats_, bookProgressPercent_, estimateSec);
-    }
-    ReadingStatsDateTime now;
-    ReadingStatsDate finishDate;
-    if (estimateSec > 0 && getCurrentLocalReadingStatsDateTime(now) &&
-        estimateFinishDateFromDailyPace(bookStats_, now, estimateSec, finishDate)) {
-      char dateBuf[24];
-      formatFinishDate(finishDate, dateBuf, sizeof(dateBuf));
-      finishDateStr = dateBuf;
-    }
-  }
-  renderer.drawText(UI_12_FONT_ID, x + halfW + 12, y + 24,
-                    renderer.truncatedText(UI_12_FONT_ID, finishDateStr.c_str(), halfW - 24, EpdFontFamily::BOLD).c_str(),
-                    true, EpdFontFamily::BOLD);
+  // Row 2, Col 3: Pages per Minute
+  snprintf(buf, sizeof(buf), "%.1f", pagesPerMinute(bookStats_.totalPagesTurned, bookStats_.totalReadingSeconds));
+  drawStatCell(renderer, x + thirdW * 2, contentWidth - thirdW * 2, y + rowH, rowH, buf, tr(STR_STATS_PAGES_PER_MIN));
 
-  renderer.drawLine(x + 12, y + 46, x + contentWidth - 12, y + 46, true);
+  y += statsCardH + 10;
 
-  // Row 2: Started / Finished Date
+  // --- 3. Reading Timeline & Pace Details Card ---
+  const int detailsH = 104;
+  renderer.drawRoundedRect(x, y, contentWidth, detailsH, 1, 8, true);
+  renderer.drawLine(x, y + detailsH / 2, x + contentWidth, y + detailsH / 2, true);
+
+  const int halfW = contentWidth / 2;
+  const int detailRowH = detailsH / 2;
+
+  // Detail Row 1, Col 1: Started Date
   const auto formatDate = [](const ReadingStatsDate& d) {
     if (!d.isValid()) return std::string("—");
     char dateBuf[16];
     snprintf(dateBuf, sizeof(dateBuf), "%02u.%02u.%04u", d.day, d.month, d.year);
     return std::string(dateBuf);
   };
-  const char* dateLabel = bookStats_.isFinished ? tr(STR_STATS_FINISHED) : tr(STR_STATS_STARTED);
-  renderer.drawText(UI_10_FONT_ID, x + 12, y + 54,
-                    renderer.truncatedText(UI_10_FONT_ID, dateLabel, halfW - 20).c_str());
-  const std::string dateVal = (bookStats_.isFinished && bookStats_.finishedDate.isValid())
-                                  ? formatDate(bookStats_.finishedDate)
-                                  : formatDate(bookStats_.startDate);
-  renderer.drawText(UI_12_FONT_ID, x + halfW + 12, y + 52,
-                    renderer.truncatedText(UI_12_FONT_ID, dateVal.c_str(), halfW - 24, EpdFontFamily::BOLD).c_str(),
-                    true, EpdFontFamily::BOLD);
+  drawStatCell(renderer, x, halfW, y, detailRowH, formatDate(bookStats_.startDate).c_str(), tr(STR_STATS_STARTED));
 
-  y += timelineH + 10;
+  // Detail Row 1, Col 2: Finish Date / Estimate
+  std::string finishStr = "—";
+  if (bookStats_.isFinished && bookStats_.finishedDate.isValid()) {
+    finishStr = formatDate(bookStats_.finishedDate);
+  } else if (!bookStats_.isFinished && percent < 100) {
+    ReadingStatsDateTime now;
+    ReadingStatsDate finishDate;
+    if (timeLeftSec > 0 && getCurrentLocalReadingStatsDateTime(now) &&
+        estimateFinishDateFromDailyPace(bookStats_, now, timeLeftSec, finishDate)) {
+      char dateBuf[24];
+      formatFinishDate(finishDate, dateBuf, sizeof(dateBuf));
+      finishStr = dateBuf;
+    }
+  }
+  const char* finishLabel = bookStats_.isFinished ? tr(STR_STATS_FINISHED) : tr(STR_STATS_FINISH_ESTIMATE);
+  drawStatCell(renderer, x + halfW, contentWidth - halfW, y, detailRowH, finishStr.c_str(), finishLabel);
+
+  // Detail Row 2, Col 1: Reading Pace
+  if (bookStats_.avgSecondsPerForwardPage > 0) {
+    snprintf(buf, sizeof(buf), "%u с/стр", bookStats_.avgSecondsPerForwardPage);
+  } else {
+    snprintf(buf, sizeof(buf), "—");
+  }
+  drawStatCell(renderer, x, halfW, y + detailRowH, detailRowH, buf, tr(STR_STATS_PACE));
+
+  // Detail Row 2, Col 2: Total Pages Read
+  snprintf(buf, sizeof(buf), "%lu", static_cast<unsigned long>(bookStats_.totalPagesTurned));
+  drawStatCell(renderer, x + halfW, contentWidth - halfW, y + detailRowH, detailRowH, buf, tr(STR_STATS_PAGES_TURNED));
+
+  y += detailsH + 14;
 
   // --- 4. Interactive Action Button ---
-  const int btnH = 42;
+  const int btnH = 40;
   actionButtonRect_ = {x, y, contentWidth, btnH};
   actionButtonVisible_ = true;
 

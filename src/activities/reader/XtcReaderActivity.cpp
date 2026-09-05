@@ -282,6 +282,10 @@ void XtcReaderActivity::renderPage() {
     renderStatusBarOverlay(renderer, StatusBarOverlayPosition::Bottom);
   }
 
+  if (hasPendingTurn()) {
+    return;
+  }
+
   ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
 
   LOG_DBG("XTR", "Rendered page %lu/%lu (%u-bit)", currentPage + 1, xtc->getPageCount(), bitDepth);

@@ -328,7 +328,8 @@ void HomeActivity::render(RenderLock&&) {
 
   // Small streak line at the bottom-right corner of the cover card. Right-aligned
   // so it never collides with the left-side cover art or centered title block.
-  if (currentStreak > 0 && !recentBooks.empty()) {
+  // Suppressed in Dashboard theme where the right column is dedicated to statistics.
+  if (currentStreak > 0 && !recentBooks.empty() && SETTINGS.uiTheme != CrossPointSettings::UI_THEME::DASHBOARD) {
     char streakBuf[48];
     snprintf(streakBuf, sizeof(streakBuf), "%s: %u %s", tr(STR_STATS_STREAK),
              static_cast<unsigned>(currentStreak), tr(STR_STATS_DAYS));
