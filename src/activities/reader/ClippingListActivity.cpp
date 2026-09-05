@@ -160,20 +160,25 @@ void ClippingListActivity::render(RenderLock&&) {
           renderer.truncatedText(UI_10_FONT_ID, flattened.c_str(), renderer.getScreenWidth() - 38);
       renderer.drawText(UI_10_FONT_ID, 18, y + 6, snippet.c_str(), !selected);
 
-      if (clip.chapterTitle[0] != '\0') {
-        const auto chapterText = renderer.truncatedText(UI_10_FONT_ID, clip.chapterTitle, renderer.getScreenWidth() - 120);
-        renderer.drawText(UI_10_FONT_ID, 18, y + 32, chapterText.c_str(), !selected);
-      }
-
       char page[32];
       if (clip.endPageNumber > clip.pageNumber) {
         snprintf(page, sizeof(page), "%u-%u", static_cast<unsigned>(clip.pageNumber + 1),
                  static_cast<unsigned>(clip.endPageNumber + 1));
       } else {
-        snprintf(page, sizeof(page), "p. %u", static_cast<unsigned>(clip.pageNumber + 1));
+        snprintf(page, sizeof(page), "%u", static_cast<unsigned>(clip.pageNumber + 1));
       }
-      renderer.drawText(UI_10_FONT_ID, renderer.getScreenWidth() - 88, y + 32, page, !selected);
-      renderer.drawText(UI_10_FONT_ID, 18, y + 52, tr(STR_CLIPPING_DELETE_HINT), !selected);
+      const int pageW = renderer.getTextWidth(UI_10_FONT_ID, page);
+      renderer.drawText(UI_10_FONT_ID, renderer.getScreenWidth() - 18 - pageW, y + 32, page, !selected);
+
+      if (clip.chapterTitle[0] != '\0') {
+        const int maxChW = std::max(50, renderer.getScreenWidth() - 18 - pageW - 28);
+        const auto chapterText = renderer.truncatedText(UI_10_FONT_ID, clip.chapterTitle, maxChW);
+        renderer.drawText(UI_10_FONT_ID, 18, y + 32, chapterText.c_str(), !selected);
+      }
+
+      renderer.drawText(UI_10_FONT_ID, 18, y + 52,
+                        renderer.truncatedText(UI_10_FONT_ID, tr(STR_CLIPPING_DELETE_HINT), renderer.getScreenWidth() - 36).c_str(),
+                        !selected);
     }
   }
 

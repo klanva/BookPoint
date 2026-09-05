@@ -271,12 +271,14 @@ void ClippingSelectionActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+      mappedInput.wasReleased(MappedInputManager::Button::PageBack)) {
     const int steps = mappedInput.getHeldTime() >= PAGE_JUMP_HOLD_MS ? FAST_VERTICAL_STEPS : 1;
     for (int i = 0; i < steps; ++i) moveVertical(-1);
     return;
   }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+      mappedInput.wasReleased(MappedInputManager::Button::PageForward)) {
     const int steps = mappedInput.getHeldTime() >= PAGE_JUMP_HOLD_MS ? FAST_VERTICAL_STEPS : 1;
     for (int i = 0; i < steps; ++i) moveVertical(1);
     return;
