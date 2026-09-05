@@ -54,6 +54,7 @@ void OpdsBookBrowserActivity::onEnter() {
   currentPath = "";
   selectorIndex = 0;
   errorMessage.clear();
+  errorEnteredAtMs = 0;
   statusMessage = tr(STR_CHECKING_WIFI);
 
   listNav.reset();
@@ -123,9 +124,17 @@ void OpdsBookBrowserActivity::loop() {
   }
 
   if (state == BrowserState::ERROR) {
+    if (errorEnteredAtMs > 0 && millis() - errorEnteredAtMs > 4000) {
+      LOG_INF("OPDS", "Auto-exiting on error timeout");
+      errorEnteredAtMs = 0;
+      navigateBack();
+      return;
+    }
+
     int tx = 0;
     int ty = 0;
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(tx, ty)) {
+      errorEnteredAtMs = 0;
       if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
         state = BrowserState::LOADING;
         statusMessage = tr(STR_LOADING);
@@ -135,6 +144,7 @@ void OpdsBookBrowserActivity::loop() {
         launchWifiSelection();
       }
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      errorEnteredAtMs = 0;
       navigateBack();
     }
     return;
@@ -322,7 +332,11 @@ void OpdsBookBrowserActivity::buildStatusScreen(UiScreen& screen) {
     if (body.height > blockH) screen.spacer(static_cast<int16_t>((body.height - blockH) / 2));
     screen.target().text(screen.takeTop(lh, gap), tr(STR_ERROR_MSG), centered);
     screen.target().text(screen.takeTop(lh, gap), errorMessage.c_str(), centered);
-    if (showTapHint) screen.target().text(screen.takeTop(lh), tr(STR_TAP_TO_RETRY), centered);
+    if (showTapHint) {
+      screen.target().text(screen.takeTop(lh), tr(STR_TAP_TO_RETRY), centered);
+    } else {
+      screen.target().text(screen.takeTop(lh), tr(STR_BACK), centered);
+    }
     return;
   }
   // CHECK_WIFI / LOADING (and the brief child-activity handoff states).
@@ -361,6 +375,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   if (server.url.empty()) {
     state = BrowserState::ERROR;
     errorMessage = tr(STR_NO_SERVER_URL);
+    errorEnteredAtMs = millis();
     requestUpdate();
     return;
   }
@@ -373,6 +388,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
     if (!HttpDownloader::fetchUrl(url, stream, server.username, server.password)) {
       state = BrowserState::ERROR;
       errorMessage = tr(STR_FETCH_FEED_FAILED);
+      errorEnteredAtMs = millis();
       requestUpdate();
       return;
     }
@@ -381,6 +397,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   if (!parser) {
     state = BrowserState::ERROR;
     errorMessage = tr(STR_PARSE_FEED_FAILED);
+    errorEnteredAtMs = millis();
     requestUpdate();
     return;
   }
@@ -408,7 +425,10 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   }
 
   state = entries.empty() ? BrowserState::ERROR : BrowserState::BROWSING;
-  if (entries.empty()) errorMessage = tr(STR_NO_ENTRIES);
+  if (entries.empty()) {
+    errorMessage = tr(STR_NO_ENTRIES);
+    errorEnteredAtMs = millis();
+  }
   rebuildRowItems();
   requestUpdate();
 }
@@ -423,7 +443,9 @@ void OpdsBookBrowserActivity::rebuildRowItems() {
     fui::ListItem item;
     item.label = entry.title.c_str();
     if (entry.type == OpdsEntryType::BOOK && !entry.author.empty()) item.subtitle = entry.author.c_str();
-    if (entry.type == OpdsEntryType::NAVIGATION) item.value = ">";
+    if (entry.type == OpdsEntryType::NAVIGATION) {
+      item.value = (entry.href.find("{searchTerms}") != std::string::npos) ? "?" : ">";
+    }
     item.actionValue = static_cast<int16_t>(rowItems.size());
     rowItems.push_back(item);
   }
@@ -438,6 +460,14 @@ void OpdsBookBrowserActivity::releaseEntries() {
 }
 
 void OpdsBookBrowserActivity::navigateToEntry(const OpdsEntry& entry) {
+  // If entry href contains {searchTerms}, this is a search query template (e.g. "Поиск книги" or "Поиск автора")
+  if (entry.href.find("{searchTerms}") != std::string::npos) {
+    const std::string feedUrl = UrlUtils::buildUrl(server.url, currentPath);
+    searchTemplate = UrlUtils::buildUrl(feedUrl, entry.href);
+    launchSearch();
+    return;
+  }
+
   navigationHistory.push_back(currentPath);
   // Resolve to a full URL so sub-sub-navigation retains parent path context
   const std::string feedUrl = UrlUtils::buildUrl(server.url, currentPath);
@@ -632,6 +662,7 @@ void OpdsBookBrowserActivity::onWifiSelectionComplete(const bool connected) {
     // Leave WiFi up; onExit's silent reboot handles teardown without fragmenting.
     state = BrowserState::ERROR;
     errorMessage = tr(STR_WIFI_CONN_FAILED);
+    errorEnteredAtMs = millis();
     requestUpdate();
   }
 }

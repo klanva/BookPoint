@@ -51,6 +51,8 @@ void OpdsServerStore::seedDefaults() {
   const OpdsServer defaults[] = {
       {"Flibusta", "http://flibusta.is/opds", "", ""},
       {"Flibusta mirror", "http://flibusta.site/opds", "", ""},
+      {"CoolLib", "http://coollib.net/opds", "", ""},
+      {"Maxima Library", "http://maxima-library.org/opds", "", ""},
       {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/", "", ""},
   };
   bool changed = false;

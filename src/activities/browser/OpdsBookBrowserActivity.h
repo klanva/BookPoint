@@ -40,6 +40,7 @@ class OpdsBookBrowserActivity final : public Activity, private UiAppHost {
   int selectorIndex = 0;
   std::string errorMessage;
   std::string statusMessage;
+  unsigned long errorEnteredAtMs = 0;
   size_t downloadProgress = 0;
   size_t downloadTotal = 0;
 
