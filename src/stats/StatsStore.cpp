@@ -13,7 +13,7 @@ constexpr char STATS_DIR[] = "/.crosspoint/stats";
 constexpr char BOOKS_DIR[] = "/.crosspoint/stats/books";
 constexpr char GLOBAL_PATH[] = "/.crosspoint/stats/global.bin";
 constexpr char GLOBAL_BAK_PATH[] = "/.crosspoint/stats/global.bin.bak";
-constexpr char LEGACY_INKMOD_GLOBAL[] = "/.inkmod/global_stats.bin";
+constexpr char LEGACY_PREVIOUS_GLOBAL[] = "/.inkmod/global_stats.bin";
 constexpr char CSV_PATH[] = "/.crosspoint/stats/reading_stats.csv";
 
 constexpr uint8_t BOOK_FILE_VERSION = 1;
@@ -217,7 +217,7 @@ bool loadBookContainer(const char* path, BookReadingStats& stats) {
 // streaks and show activity on the chart without inventing precise numbers.
 bool importLegacyGlobal(GlobalReadingStats& target) {
   HalFile f;
-  if (!Storage.openFileForRead("STATS", LEGACY_INKMOD_GLOBAL, f)) return false;
+  if (!Storage.openFileForRead("STATS", LEGACY_PREVIOUS_GLOBAL, f)) return false;
   const size_t size = f.fileSize();
   if (size != 159) {
     f.close();

@@ -148,14 +148,7 @@ void StatusBarSettingsActivity::updateVisibleItems() {
   addItem(I18N.get(StrId::STR_CLOCK_SYNC_NOW), 23);
 }
 
-bool StatusBarSettingsActivity::handleButtons() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    finish();
-    return true;
-  }
-  return UiListActivity::handleButtons();
-}
-void StatusBarSettingsActivity::drawChrome() {}
+const char* StatusBarSettingsActivity::headerTitle() const { return tr(STR_CUSTOMISE_STATUS_BAR); }
 
 void StatusBarSettingsActivity::activateIndex(const int index) {
   if (optionPopup.isActive()) return;
@@ -309,18 +302,19 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
   if (optionPopup.processRender(renderer, mappedInput)) return;
 
   renderer.clearScreen();
-
-  auto metrics = UITheme::getInstance().getMetrics();
-  const auto pageWidth = renderer.getScreenWidth();
-
-  const char* title = tr(STR_CUSTOMISE_STATUS_BAR);
-
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, title);
-
+  drawChrome();
   renderUi();
+
+  for (int pass = 0; activeNav().consumeRebuildNeeded() && pass < 8; ++pass) {
+    renderer.clearScreen();
+    drawChrome();
+    renderUi();
+  }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_TOGGLE), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
 
   std::string previewTitle;
   if (SETTINGS.statusBarTitle == CrossPointSettings::STATUS_BAR_TITLE::BOOK_TITLE) {

@@ -2209,7 +2209,7 @@ void EpubReaderActivity::openClippings() {
 uint16_t EpubReaderActivity::measureFootnotesHeight(const std::vector<FootnoteEntry>& fns) {
   if (fns.empty() || !epub) return 0;
   
-  const int contentWidth = renderer.getScreenWidth() - 20 - 20; // approximate margins
+  const int contentWidth = buildViewportWidth > 40 ? buildViewportWidth : (renderer.getScreenWidth() - 40);
   int maxLabelWidth = 0;
   const size_t maxEntries = std::min<size_t>(fns.size(), 3);
   for (size_t i = 0; i < maxEntries; ++i) {
@@ -2230,7 +2230,8 @@ uint16_t EpubReaderActivity::measureFootnotesHeight(const std::vector<FootnoteEn
   
   if (totalLines == 0) return 0;
   
-  const uint16_t maxAllowedHeight = static_cast<uint16_t>(renderer.getScreenHeight() * 0.40f);
+  const uint16_t maxAllowedHeight = buildViewportHeight > 0 ? static_cast<uint16_t>(buildViewportHeight * 0.40f)
+                                                           : static_cast<uint16_t>(renderer.getScreenHeight() * 0.40f);
   int calcHeight = CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + totalLines * renderer.getLineHeight(UI_10_FONT_ID) + CrossPointSettings::FOOTNOTE_STRIP_PAD_PX;
   
   if (calcHeight > maxAllowedHeight) {

@@ -125,7 +125,7 @@ void UiListActivity::navigateButtons() {
       next = ButtonNavigator::nextIndex(next, count);
       tries++;
     }
-    moveSelectionTo(next);
+    if (isSelectable(next)) moveSelectionTo(next);
   });
   buttonNavigator.onPreviousRelease([this, count, &n] {
     int prev = ButtonNavigator::previousIndex(n.selected, count);
@@ -134,7 +134,7 @@ void UiListActivity::navigateButtons() {
       prev = ButtonNavigator::previousIndex(prev, count);
       tries++;
     }
-    moveSelectionTo(prev);
+    if (isSelectable(prev)) moveSelectionTo(prev);
   });
   // Page by the rows the last build actually drew (pageRows), not the
   // fixed-height visibleRows estimate: with wrapped labels the estimate
@@ -146,7 +146,7 @@ void UiListActivity::navigateButtons() {
       next = ButtonNavigator::nextIndex(next, count);
       tries++;
     }
-    moveSelectionTo(next);
+    if (isSelectable(next)) moveSelectionTo(next);
   });
   buttonNavigator.onPreviousContinuous([this, count, &n] {
     int prev = ButtonNavigator::previousPageIndex(n.selected, count, n.pageRows());
@@ -155,7 +155,7 @@ void UiListActivity::navigateButtons() {
       prev = ButtonNavigator::previousIndex(prev, count);
       tries++;
     }
-    moveSelectionTo(prev);
+    if (isSelectable(prev)) moveSelectionTo(prev);
   });
 }
 

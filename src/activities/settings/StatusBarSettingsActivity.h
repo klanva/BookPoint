@@ -28,8 +28,7 @@ class StatusBarSettingsActivity final : public UiListActivity {
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   bool handleCustomInput() override;
-  bool handleButtons() override;
-  void drawChrome() override;
+  const char* headerTitle() const override;
 
   std::string rowValueText(int index);
   void handleSelection();

@@ -441,8 +441,6 @@ void setup() {
 #endif
 
   HalSystem::begin();
-  
-  auto bootTimeSyncCandidate = checkSilentBootTimeSyncCandidate();
 
   // checkPanic() clears the watchdog capture marker after a successful SD
   // dump, so retain the boot classification for the later activity route.
@@ -511,6 +509,9 @@ void setup() {
   OPDS_STORE.seedDefaults();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
+  WIFI_STORE.loadFromFile();
+
+  auto bootTimeSyncCandidate = checkSilentBootTimeSyncCandidate();
 
   BatteryLog::logEvent("boot");
 
@@ -659,8 +660,8 @@ void setup() {
     gpio.update();
   }
 
-  allowSleepAt = millis() + 2000;
   attemptSilentBootTimeSync(bootTimeSyncCandidate);
+  allowSleepAt = millis() + 2000;
 }
 
 void loop() {

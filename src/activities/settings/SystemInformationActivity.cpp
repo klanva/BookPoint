@@ -180,7 +180,8 @@ void SystemInformationActivity::render(RenderLock&&) {
 
   std::string chargeText = formatDuration(activeSinceCharge);
   if (absoluteSinceCharge > 0) {
-    chargeText = formatDuration(absoluteSinceCharge) + " (act. " + formatDuration(activeSinceCharge) + ")";
+    const bool isRu = (I18N.getLanguage() == Language::RU);
+    chargeText = formatDuration(absoluteSinceCharge) + (isRu ? " (акт. " : " (act. ") + formatDuration(activeSinceCharge) + ")";
   }
   
   drawRow((I18N.getLanguage() == Language::RU) ? "Время с зарядки" : "Time since charge", chargeText.c_str());
