@@ -259,7 +259,7 @@ bool Section::createSectionFile(const ReaderRenderSpec& spec, const std::functio
   return buildComplete_;
 }
 
-bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void()>& popupFn) {
+bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void()>& popupFn, const std::function<uint16_t(const std::vector<FootnoteEntry>&)>& measureFootnotesHeightFn) {
   if (build_) {
     LOG_ERR("SCT", "startBuild called while a build is already active");
     return false;
@@ -414,7 +414,7 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
             {this->onPageComplete(std::move(page)), paragraphIndex, listItemIndex, visibleTextOffset});
       },
       spec.embeddedStyle, ctxPtr->contentBase, ctxPtr->imageBasePath, spec.imageRendering, std::move(tocAnchors),
-      popupFn, ctxPtr->cssParser, spec.footnoteStripHeight, spec.bracketFootnotes);
+      popupFn, ctxPtr->cssParser, spec.footnoteStripHeight, spec.bracketFootnotes, measureFootnotesHeightFn);
   if (!ctx->parser) {
     LOG_ERR("SCT", "OOM: ChapterHtmlSlimParser");
     if (ctx->cssParser) ctx->cssParser->clear();

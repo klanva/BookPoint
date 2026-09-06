@@ -19,6 +19,8 @@
 #include "ReaderActivity.h"
 
 class EpubReaderActivity final : public ReaderActivity {
+  uint16_t measureFootnotesHeight(const std::vector<FootnoteEntry>& fns);
+
   std::shared_ptr<Epub> epub;
   ClippingStore clippings;
   std::unique_ptr<Section> section = nullptr;

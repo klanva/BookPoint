@@ -38,6 +38,9 @@ class UiListActivity : public Activity, protected UiAppHost {
   // leave this screen should call app.clearTapFlash() so a lingering flash
   // can't gray an unrelated element on the next render.
   virtual void activateIndex(int index) = 0;
+  // Whether a row can receive focus/activation. Subclasses with section headers
+  // or disabled separator items return false for those indices.
+  virtual bool isSelectable(int index) const { return true; }
   // Touch long-press on a row; only fires when the subclass opted in via the
   // wantsTouchLongPress constructor flag (rows must also carry InputLongPress).
   virtual void onRowLongPress(int index) {}

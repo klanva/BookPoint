@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "FootnoteEntry.h"
 
 #include "Epub.h"
 #include "ReaderRenderSpec.h"
@@ -94,7 +95,7 @@ class Section {
   // builds. createSectionFile() above is the one-shot wrapper over these.
   //   if (!startBuild(...)) fail;
   //   each tick: buildSomeMore(N); render up to pageCount; when isBuildComplete() stop.
-  bool startBuild(const ReaderRenderSpec& spec, const std::function<void()>& popupFn = nullptr);
+  bool startBuild(const ReaderRenderSpec& spec, const std::function<void()>& popupFn = nullptr, const std::function<uint16_t(const std::vector<FootnoteEntry>&)>& measureFootnotesHeightFn = nullptr);
   // Lay out up to maxPages more pages (maxPages <= 0 = build to completion). Returns
   // false on error (the build is abandoned). Sets isBuildComplete() when finished.
   bool buildSomeMore(int maxPages);

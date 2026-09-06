@@ -21,6 +21,15 @@ void UiListActivity::onEnter() {
   resetUi();
   app.on(ACTION_ROW, &UiListActivity::rowActionTrampoline, this);
   app.setScreen(&UiListActivity::screenTrampoline, this);
+  const int count = listCount();
+  if (count > 0 && !isSelectable(activeNav().selected)) {
+    for (int i = 0; i < count; ++i) {
+      if (isSelectable(i)) {
+        activeNav().selected = i;
+        break;
+      }
+    }
+  }
   requestUpdate();
 }
 
@@ -35,6 +44,7 @@ void UiListActivity::rowActionTrampoline(const fui::ActionEvent& event, void* us
 }
 
 void UiListActivity::onRowAction(const fui::ActionEvent& event) {
+  if (!isSelectable(event.value)) return;
   activeNav().selected = event.value;
   if (event.longPress) {
     onRowLongPress(event.value);
@@ -50,7 +60,7 @@ bool UiListActivity::handleButtons() {
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     const int selected = activeNav().selected;
-    if (selected >= 0 && selected < listCount()) activateIndex(selected);
+    if (selected >= 0 && selected < listCount() && isSelectable(selected)) activateIndex(selected);
     return true;
   }
   return false;
@@ -106,17 +116,47 @@ void UiListActivity::loop() {
 
 void UiListActivity::navigateButtons() {
   const int count = listCount();
+  if (count <= 0) return;
   auto& n = activeNav();
-  buttonNavigator.onNextRelease([this, count, &n] { moveSelectionTo(ButtonNavigator::nextIndex(n.selected, count)); });
-  buttonNavigator.onPreviousRelease(
-      [this, count, &n] { moveSelectionTo(ButtonNavigator::previousIndex(n.selected, count)); });
+  buttonNavigator.onNextRelease([this, count, &n] {
+    int next = ButtonNavigator::nextIndex(n.selected, count);
+    int tries = 0;
+    while (!isSelectable(next) && tries < count) {
+      next = ButtonNavigator::nextIndex(next, count);
+      tries++;
+    }
+    moveSelectionTo(next);
+  });
+  buttonNavigator.onPreviousRelease([this, count, &n] {
+    int prev = ButtonNavigator::previousIndex(n.selected, count);
+    int tries = 0;
+    while (!isSelectable(prev) && tries < count) {
+      prev = ButtonNavigator::previousIndex(prev, count);
+      tries++;
+    }
+    moveSelectionTo(prev);
+  });
   // Page by the rows the last build actually drew (pageRows), not the
   // fixed-height visibleRows estimate: with wrapped labels the estimate
   // overshoots and rows between pages would never be shown.
-  buttonNavigator.onNextContinuous(
-      [this, count, &n] { moveSelectionTo(ButtonNavigator::nextPageIndex(n.selected, count, n.pageRows())); });
-  buttonNavigator.onPreviousContinuous(
-      [this, count, &n] { moveSelectionTo(ButtonNavigator::previousPageIndex(n.selected, count, n.pageRows())); });
+  buttonNavigator.onNextContinuous([this, count, &n] {
+    int next = ButtonNavigator::nextPageIndex(n.selected, count, n.pageRows());
+    int tries = 0;
+    while (!isSelectable(next) && tries < count) {
+      next = ButtonNavigator::nextIndex(next, count);
+      tries++;
+    }
+    moveSelectionTo(next);
+  });
+  buttonNavigator.onPreviousContinuous([this, count, &n] {
+    int prev = ButtonNavigator::previousPageIndex(n.selected, count, n.pageRows());
+    int tries = 0;
+    while (!isSelectable(prev) && tries < count) {
+      prev = ButtonNavigator::previousIndex(prev, count);
+      tries++;
+    }
+    moveSelectionTo(prev);
+  });
 }
 
 void UiListActivity::syncListViewport(UiScreen& screen, fui::ListProps& props, const bool hasSubtitle) {

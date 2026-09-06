@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "../FootnoteEntry.h"
 
 #include "Epub/FootnoteEntry.h"
 #include "Epub/ParsedText.h"
@@ -27,7 +28,8 @@ class ChapterHtmlSlimParser {
   const std::string& filepath;
   GfxRenderer& renderer;
   std::function<void(std::unique_ptr<Page>, uint16_t, uint16_t, uint32_t)> completePageFn;
-  std::function<void()> popupFn;  // Popup callback
+  std::function<void()> popupFn;
+  std::function<uint16_t(const std::vector<FootnoteEntry>&)> measureFootnotesHeightFn;  // Popup callback
   bool imagePopupFired = false;   // popupFn fired for the first image probe (single-shot)
   int depth = 0;
   int skipUntilDepth = INT_MAX;
@@ -153,7 +155,7 @@ class ChapterHtmlSlimParser {
       const bool embeddedStyle, const std::string& contentBase, const std::string& imageBasePath,
       const uint8_t imageRendering = 0, std::vector<std::string> tocAnchors = {},
       const std::function<void()>& popupFn = nullptr, const CssParser* cssParser = nullptr,
-      const uint16_t footnoteStripHeight = 0, const bool bracketFootnotes = false)
+      const uint16_t footnoteStripHeight = 0, const bool bracketFootnotes = false, std::function<uint16_t(const std::vector<FootnoteEntry>&)> measureFootnotesHeightFn = nullptr)
 
       : epub(epub),
         filepath(filepath),
@@ -170,6 +172,7 @@ class ChapterHtmlSlimParser {
         bracketFootnotes(bracketFootnotes),
         completePageFn(completePageFn),
         popupFn(popupFn),
+        measureFootnotesHeightFn(measureFootnotesHeightFn),
         cssParser(cssParser),
         embeddedStyle(embeddedStyle),
         imageRendering(imageRendering),

@@ -106,6 +106,11 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   doc["batteryStyle"] = batteryStyle;
   doc["statusBarTimeLeft"] = statusBarTimeLeft;
   doc["activeSecondsSinceCharge"] = activeSecondsSinceCharge;
+  doc["lastChargeEpoch"] = lastChargeEpoch;
+  doc["clockDateHasBeenSynced"] = clockDateHasBeenSynced;
+  if (clockLastSyncedEpoch != 0) {
+    doc["clockLastSyncedEpoch"] = clockLastSyncedEpoch;
+  }
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc) {
@@ -233,6 +238,11 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   if (doc["activeSecondsSinceCharge"].is<uint32_t>()) {
     activeSecondsSinceCharge = doc["activeSecondsSinceCharge"].as<uint32_t>();
   }
+  if (doc["lastChargeEpoch"].is<uint32_t>()) {
+    lastChargeEpoch = doc["lastChargeEpoch"].as<uint32_t>();
+  }
+  clockDateHasBeenSynced = clamp(doc["clockDateHasBeenSynced"] | (uint8_t)0, (uint8_t)2, (uint8_t)0);
+  clockLastSyncedEpoch = doc["clockLastSyncedEpoch"] | (uint32_t)0;
 
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");

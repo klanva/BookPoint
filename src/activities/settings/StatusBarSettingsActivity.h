@@ -9,9 +9,8 @@ class StatusBarSettingsActivity final : public UiListActivity {
  public:
   explicit StatusBarSettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
-  // Must equal ITEM_COUNT in the .cpp (static_assert'd there) — the max
-  // possible row count (RTC-equipped devices show all of them).
-  static constexpr int MAX_STATUS_BAR_ITEMS = 16;
+  // Capacity must hold all status bar rows and section headers.
+  static constexpr int MAX_STATUS_BAR_ITEMS = 32;
 
   void onEnter() override;
   void render(RenderLock&&) override;
@@ -19,11 +18,13 @@ class StatusBarSettingsActivity final : public UiListActivity {
  private:
   OptionPopup optionPopup;
 
-
-
   int visibleItemCount = 0;
 
-  int listCount() const override { return visibleItemCount; }
+  int listCount() const override { return std::min(visibleItemCount, MAX_STATUS_BAR_ITEMS); }
+  bool isSelectable(int index) const override {
+    if (index < 0 || index >= visibleItemCount || index >= MAX_STATUS_BAR_ITEMS) return false;
+    return !rowItems_[index].isHeader;
+  }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   bool handleCustomInput() override;

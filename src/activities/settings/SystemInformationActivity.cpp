@@ -160,19 +160,30 @@ void SystemInformationActivity::render(RenderLock&&) {
   snprintf(uptimeBuf, sizeof(uptimeBuf), "%uh %02um %02us", h, m, s);
   drawRow(tr(STR_UPTIME), uptimeBuf);
 
-  const uint32_t totalSinceCharge = SETTINGS.activeSecondsSinceCharge + (millis() / 1000);
-  const uint32_t cd = totalSinceCharge / 86400;
-  const uint32_t ch = (totalSinceCharge % 86400) / 3600;
-  const uint32_t cm = (totalSinceCharge % 3600) / 60;
-  char chargeBuf[32];
-  if (cd > 0) {
-    snprintf(chargeBuf, sizeof(chargeBuf), "%ud %uh %02um", cd, ch, cm);
-  } else if (ch > 0) {
-    snprintf(chargeBuf, sizeof(chargeBuf), "%uh %02um", ch, cm);
-  } else {
-    snprintf(chargeBuf, sizeof(chargeBuf), "%um %02us", cm, totalSinceCharge % 60);
+  uint32_t activeSinceCharge = SETTINGS.activeSecondsSinceCharge + (millis() / 1000);
+  uint32_t absoluteSinceCharge = 0;
+  uint32_t nowEpoch = static_cast<uint32_t>(time(nullptr));
+  if (nowEpoch > 1000000000UL && SETTINGS.lastChargeEpoch > 0 && nowEpoch >= SETTINGS.lastChargeEpoch) {
+    absoluteSinceCharge = nowEpoch - SETTINGS.lastChargeEpoch;
   }
-  drawRow((I18N.getLanguage() == Language::RU) ? "С зарядки" : "Since charge", chargeBuf);
+
+  auto formatDuration = [](uint32_t secs) -> std::string {
+    const uint32_t d = secs / 86400;
+    const uint32_t h = (secs % 86400) / 3600;
+    const uint32_t m = (secs % 3600) / 60;
+    char buf[64];
+    if (d > 0) snprintf(buf, sizeof(buf), "%ud %uh", d, h);
+    else if (h > 0) snprintf(buf, sizeof(buf), "%uh %02um", h, m);
+    else snprintf(buf, sizeof(buf), "%um", m);
+    return std::string(buf);
+  };
+
+  std::string chargeText = formatDuration(activeSinceCharge);
+  if (absoluteSinceCharge > 0) {
+    chargeText = formatDuration(absoluteSinceCharge) + " (act. " + formatDuration(activeSinceCharge) + ")";
+  }
+  
+  drawRow((I18N.getLanguage() == Language::RU) ? "Время с зарядки" : "Time since charge", chargeText.c_str());
 
   std::string batteryLabel = std::to_string(status.batteryPercent) + "%";
   if (status.charging) {

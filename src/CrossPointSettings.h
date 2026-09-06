@@ -297,6 +297,12 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t statusBarTimeLeft = 0;
   // Active seconds since last charge (survives deep sleep and reboots)
   uint32_t activeSecondsSinceCharge = 0;
+  // Absolute timestamp of the last charge to >=95% (UTC epoch)
+  uint32_t lastChargeEpoch = 0;
+  // 0 = never synced, 1 = synced this boot, 2 = previously synced
+  uint8_t clockDateHasBeenSynced = 0;
+  // Last successfully synced NTP time (used to seed software clock on X4 on boots without WiFi)
+  uint32_t clockLastSyncedEpoch = 0;
   // Long-press page turn button behavior
   uint8_t longPressButtonBehavior = OFF;
   // Long-press Confirm function in EPUB reader (cycles through LONG_PRESS_MENU_FUNCTION values).

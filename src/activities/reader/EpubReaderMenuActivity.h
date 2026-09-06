@@ -57,7 +57,7 @@ class EpubReaderMenuActivity final : public UiListActivity {
   freeink::ui::ListItem menuRowItems[MAX_MENU_ITEMS]{};
   void buildMenuRowItems();
 
-  int listCount() const override { return static_cast<int>(menuItems.size()); }
+  int listCount() const override { return static_cast<int>(std::min(menuItems.size(), MAX_MENU_ITEMS)); }
   void buildScreen(UiScreen& screen) override;
   void activateIndex(int index) override;
   // Popup input runs before any button or touch handling.

@@ -345,7 +345,7 @@ void EpubReaderActivity::loop() {
       section->currentPage + PARTIAL_REBUILD_START_MARGIN >= static_cast<int>(section->pageCount)) {
     RenderLock lock;
     const ReaderRenderSpec buildSpec = SETTINGS.readerRenderSpec(buildViewportWidth, buildViewportHeight);
-    if (!section->startBuild(buildSpec)) {
+    if (!section->startBuild(buildSpec, nullptr, [this](const std::vector<FootnoteEntry>& fns) { return measureFootnotesHeight(fns); })) {
       partialRebuildStartFailed = true;
       LOG_ERR("ERS", "Failed to start deferred partial extension build");
     } else {
@@ -1125,9 +1125,7 @@ void EpubReaderActivity::renderBook() {
   // deterministic (the strip is simply empty on pages without footnotes).
   footnoteStripHeight = 0;
   if (SETTINGS.footnoteDisplay == CrossPointSettings::FOOTNOTE_BOTTOM) {
-    footnoteStripHeight = CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX +
-                          CrossPointSettings::FOOTNOTE_STRIP_MAX_LINES * renderer.getLineHeight(UI_10_FONT_ID) +
-                          CrossPointSettings::FOOTNOTE_STRIP_PAD_PX;
+    footnoteStripHeight = static_cast<uint16_t>(buildViewportHeight * 0.40f);
   }
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
@@ -1208,7 +1206,7 @@ void EpubReaderActivity::renderBook() {
           bool started;
           {
             GfxRenderer::FrameBufferLoan loan(renderer);
-            started = section->startBuild(renderSpec, [this] { showBuildPopup(renderer, pagesUntilFullRefresh); });
+            started = section->startBuild(renderSpec, [this] { showBuildPopup(renderer, pagesUntilFullRefresh); }, [this](const std::vector<FootnoteEntry>& fns) { return measureFootnotesHeight(fns); });
           }
           if (!started) {
             LOG_ERR("ERS", "Failed to start section build");
@@ -1280,7 +1278,7 @@ void EpubReaderActivity::renderBook() {
     pagesUntilFullRefresh = 1;
   }
   while (section->isPartial() && section->currentPage >= static_cast<int>(section->pageCount)) {
-    if (!section->isBuilding() && !section->startBuild(renderSpec)) {
+    if (!section->isBuilding() && !section->startBuild(renderSpec, nullptr, [this](const std::vector<FootnoteEntry>& fns) { return measureFootnotesHeight(fns); })) {
       LOG_ERR("ERS", "Failed to start partial extension build");
       section.reset();
       showBuildError();
@@ -1877,45 +1875,69 @@ void EpubReaderActivity::commitReadingStats() {
   StatsStore::exportCsv();
 }
 
-void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int stripTop, const int contentWidth) {
+void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int _stripTop, const int contentWidth) {
   if (footnoteStripHeight <= 0 || contentWidth <= 40 || currentPageFootnotes.empty() || !epub) return;
-  // Wipe the strip band only on pages that have footnotes so normal pages retain full height
-  renderer.fillRect(contentLeft, stripTop, contentWidth, footnoteStripHeight, false);
 
-  const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+  uint16_t actualHeight = measureFootnotesHeight(currentPageFootnotes);
+  if (actualHeight <= 0) return;
+  
+  // Oriented bottom margin approximation (bottom of viewport).
+  // _stripTop was calculated as: orientedMarginTop + buildViewportHeight - footnoteStripHeight.
+  // We want to bottom-align our actual footprint.
+  const int stripTop = _stripTop + footnoteStripHeight - actualHeight;
+
+  renderer.fillRect(contentLeft, stripTop, contentWidth, actualHeight, false);
+
   const size_t maxEntries = std::min<size_t>(currentPageFootnotes.size(), 3);
-  int linesLeft = CrossPointSettings::FOOTNOTE_STRIP_MAX_LINES;
-  const int linesPerEntry = std::max(1, static_cast<int>(maxEntries) > 0 ? linesLeft / static_cast<int>(maxEntries)
-                                                                         : linesLeft);
-
-  int maxLabelWidth = 0;
+  
+  int fontId = UI_10_FONT_ID;
+  int lineHeight = renderer.getLineHeight(fontId);
+  int wrapWidth;
+  int labelIndent;
+  
+  std::vector<std::string> bodies;
   for (size_t i = 0; i < maxEntries; ++i) {
-    const auto& fn = currentPageFootnotes[i];
-    const char* lbl = fn.number[0] ? fn.number : "*";
-    maxLabelWidth = std::max(maxLabelWidth, renderer.getTextWidth(UI_10_FONT_ID, lbl));
+    bodies.push_back(FootnoteTextExtractor::extractCached(*epub, currentSpineIndex, currentPageFootnotes[i].href, 768, currentPageFootnotes[i].number));
   }
-  const int labelIndent = std::max(22, maxLabelWidth + 8);
-  const int wrapWidth = std::max(40, contentWidth - labelIndent - 4);
 
-  // Resolve and wrap first; the separator is only drawn when at least one
-  // note actually rendered, so a failed extraction never looks like a broken
-  // empty box.
+  // Try to fit by decreasing font size
+  while (fontId >= SMALL_FONT_ID) {
+    int maxLabelWidth = 0;
+    for (size_t i = 0; i < maxEntries; ++i) {
+      const char* lbl = currentPageFootnotes[i].number[0] ? currentPageFootnotes[i].number : "*";
+      maxLabelWidth = std::max(maxLabelWidth, renderer.getTextWidth(fontId, lbl));
+    }
+    labelIndent = std::max(22, maxLabelWidth + 8);
+    wrapWidth = std::max(40, contentWidth - labelIndent - 4);
+    
+    int totalLines = 0;
+    for (size_t i = 0; i < maxEntries; ++i) {
+      if (bodies[i].empty()) continue;
+      std::vector<std::string> lines = renderer.wrappedText(fontId, bodies[i].c_str(), wrapWidth, 100);
+      totalLines += lines.size();
+    }
+    
+    if (CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + totalLines * lineHeight + CrossPointSettings::FOOTNOTE_STRIP_PAD_PX <= actualHeight) {
+      break; // Fits!
+    }
+    
+    if (fontId == UI_10_FONT_ID) fontId = SMALL_FONT_ID;
+    else break;
+    
+    lineHeight = renderer.getLineHeight(fontId);
+  }
+
   std::vector<std::string> drawLines;
   std::vector<std::string> drawLabels;
-  for (size_t i = 0; i < maxEntries && linesLeft > 0; ++i) {
+  for (size_t i = 0; i < maxEntries; ++i) {
     const auto& fn = currentPageFootnotes[i];
-    const std::string body = FootnoteTextExtractor::extractCached(*epub, currentSpineIndex, fn.href, 768, fn.number);
-    if (body.empty()) continue;
+    if (bodies[i].empty()) continue;
 
-    const int useLines = std::min(linesPerEntry, linesLeft);
-    std::vector<std::string> lines = renderer.wrappedText(UI_10_FONT_ID, body.c_str(), wrapWidth, useLines);
-    bool firstOfEntry = true;
-    for (const auto& line : lines) {
-      if (linesLeft <= 0) break;
-      drawLines.push_back(line);
-      drawLabels.push_back(firstOfEntry ? std::string(fn.number[0] ? fn.number : "*") : std::string());
-      firstOfEntry = false;
-      linesLeft--;
+    std::vector<std::string> lines = renderer.wrappedText(fontId, bodies[i].c_str(), wrapWidth, 100);
+    
+    for (size_t l = 0; l < lines.size(); ++l) {
+      drawLines.push_back(lines[l]);
+      drawLabels.push_back(l == 0 ? (fn.number[0] ? fn.number : "*") : "");
     }
   }
   if (drawLines.empty()) return;
@@ -1926,9 +1948,9 @@ void EpubReaderActivity::renderFootnoteStrip(const int contentLeft, const int st
   const int textX = contentLeft + labelIndent;
   for (size_t i = 0; i < drawLines.size(); ++i) {
     if (!drawLabels[i].empty()) {
-      renderer.drawText(UI_10_FONT_ID, contentLeft, y, drawLabels[i].c_str());
+      renderer.drawText(fontId, contentLeft, y, drawLabels[i].c_str());
     }
-    renderer.drawText(UI_10_FONT_ID, textX, y, drawLines[i].c_str());
+    renderer.drawText(fontId, textX, y, drawLines[i].c_str());
     y += lineHeight;
   }
 }
@@ -2182,4 +2204,38 @@ void EpubReaderActivity::openClippings() {
         }
         requestUpdate();
       });
+}
+
+uint16_t EpubReaderActivity::measureFootnotesHeight(const std::vector<FootnoteEntry>& fns) {
+  if (fns.empty() || !epub) return 0;
+  
+  const int contentWidth = renderer.getScreenWidth() - 20 - 20; // approximate margins
+  int maxLabelWidth = 0;
+  const size_t maxEntries = std::min<size_t>(fns.size(), 3);
+  for (size_t i = 0; i < maxEntries; ++i) {
+    const char* lbl = fns[i].number[0] ? fns[i].number : "*";
+    maxLabelWidth = std::max(maxLabelWidth, renderer.getTextWidth(UI_10_FONT_ID, lbl));
+  }
+  const int labelIndent = std::max(22, maxLabelWidth + 8);
+  const int wrapWidth = std::max(40, contentWidth - labelIndent - 4);
+
+  int totalLines = 0;
+  for (size_t i = 0; i < maxEntries; ++i) {
+    const std::string body = FootnoteTextExtractor::extractCached(*epub, currentSpineIndex, fns[i].href, 768, fns[i].number);
+    if (body.empty()) continue;
+    
+    std::vector<std::string> lines = renderer.wrappedText(UI_10_FONT_ID, body.c_str(), wrapWidth, 100);
+    totalLines += lines.size();
+  }
+  
+  if (totalLines == 0) return 0;
+  
+  const uint16_t maxAllowedHeight = static_cast<uint16_t>(renderer.getScreenHeight() * 0.40f);
+  int calcHeight = CrossPointSettings::FOOTNOTE_STRIP_SEPARATOR_PX + totalLines * renderer.getLineHeight(UI_10_FONT_ID) + CrossPointSettings::FOOTNOTE_STRIP_PAD_PX;
+  
+  if (calcHeight > maxAllowedHeight) {
+    calcHeight = maxAllowedHeight;
+  }
+  
+  return calcHeight;
 }

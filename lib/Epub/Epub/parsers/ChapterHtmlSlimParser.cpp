@@ -1763,8 +1763,23 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line, const
   const int nextWords = wordsExtractedInBlock + line->wordCount();
   const bool lineHasFootnote = !pendingFootnotes.empty() && (pendingFootnotes.front().first <= nextWords);
   const bool pageHasFootnotes = (currentPage && !currentPage->footnotes.empty()) || lineHasFootnote;
-  const uint16_t effectiveHeight = (pageHasFootnotes && footnoteStripHeight > 0)
-                                       ? (viewportHeight > footnoteStripHeight ? viewportHeight - footnoteStripHeight : 0)
+  uint16_t requiredStrip = footnoteStripHeight;
+  if (pageHasFootnotes && measureFootnotesHeightFn) {
+    std::vector<FootnoteEntry> allFns;
+    if (currentPage && !currentPage->footnotes.empty()) {
+      allFns = currentPage->footnotes;
+    }
+    for (const auto& fn : pendingFootnotes) {
+      if (fn.first <= nextWords) {
+        allFns.push_back(fn.second);
+      }
+    }
+    if (!allFns.empty()) {
+      requiredStrip = measureFootnotesHeightFn(allFns);
+    }
+  }
+  const uint16_t effectiveHeight = (pageHasFootnotes && requiredStrip > 0)
+                                       ? (viewportHeight > requiredStrip ? viewportHeight - requiredStrip : 0)
                                        : viewportHeight;
 
   if (currentPageNextY + lineHeight > effectiveHeight) {

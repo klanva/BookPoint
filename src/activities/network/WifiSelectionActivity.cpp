@@ -527,6 +527,8 @@ void WifiSelectionActivity::checkConnectionStatus() {
     if (!SETTINGS.clockHasBeenSynced || halClock.needsPeriodicNTPSync()) {
       if (halClock.syncFromNTP()) {
         SETTINGS.clockHasBeenSynced = 1;
+        SETTINGS.clockDateHasBeenSynced = 1;
+        SETTINGS.clockLastSyncedEpoch = static_cast<uint32_t>(time(nullptr));
         SETTINGS.saveToFile();
       }
     }

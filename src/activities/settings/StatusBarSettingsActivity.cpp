@@ -58,14 +58,15 @@ std::string formatUtcOffset(uint8_t biasedQ) {
   return buf;
 }
 
+static_assert(StatusBarSettingsActivity::MAX_STATUS_BAR_ITEMS >= 24,
+              "MAX_STATUS_BAR_ITEMS must hold all status bar rows and headers");
+
 }  // namespace
 
 StatusBarSettingsActivity::StatusBarSettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiListActivity("StatusBarSettings", renderer, mappedInput) {}
 
 void StatusBarSettingsActivity::onEnter() {
-  UiListActivity::onEnter();
-
   if (SETTINGS.statusBarChapterPageCount >= PAGE_COUNT_ITEMS) {
     SETTINGS.statusBarChapterPageCount = CrossPointSettings::PAGE_COUNT_CHAPTER;
   }
@@ -97,7 +98,10 @@ void StatusBarSettingsActivity::onEnter() {
   if (SETTINGS.statusBarClock >= STATUS_BAR_CLOCK_ITEMS) {
     SETTINGS.statusBarClock = CrossPointSettings::STATUS_BAR_CLOCK_MODE::STATUS_BAR_CLOCK_HIDE;
   }
+
+  // Populate rowItems before UiListActivity::onEnter() so it can auto-select the first non-header item.
   updateVisibleItems();
+  UiListActivity::onEnter();
 }
 
 
@@ -106,15 +110,19 @@ void StatusBarSettingsActivity::updateVisibleItems() {
   visibleItemCount = 0;
 
   auto addHeader = [&](const char* title) {
+    if (visibleItemCount >= MAX_STATUS_BAR_ITEMS) return;
     rowItems_[visibleItemCount].label = title;
     rowItems_[visibleItemCount].isHeader = true;
+    rowItems_[visibleItemCount].enabled = false;
     rowItems_[visibleItemCount].actionValue = -1;
     visibleItemCount++;
   };
 
   auto addItem = [&](const char* title, int actionValue) {
+    if (visibleItemCount >= MAX_STATUS_BAR_ITEMS) return;
     rowItems_[visibleItemCount].label = title;
     rowItems_[visibleItemCount].isHeader = false;
+    rowItems_[visibleItemCount].enabled = true;
     rowItems_[visibleItemCount].actionValue = actionValue;
     visibleItemCount++;
   };
@@ -136,8 +144,8 @@ void StatusBarSettingsActivity::updateVisibleItems() {
   addHeader(I18N.get(StrId::STR_CLOCK));
   addItem(I18N.get(StrId::STR_CLOCK), 20);
   addItem(I18N.get(StrId::STR_CLOCK_FORMAT), 21);
-    addItem(I18N.get(StrId::STR_CLOCK_UTC_OFFSET), 22);
-    addItem(I18N.get(StrId::STR_CLOCK_SYNC_NOW), 23);
+  addItem(I18N.get(StrId::STR_CLOCK_UTC_OFFSET), 22);
+  addItem(I18N.get(StrId::STR_CLOCK_SYNC_NOW), 23);
 }
 
 bool StatusBarSettingsActivity::handleButtons() {
@@ -159,7 +167,7 @@ void StatusBarSettingsActivity::activateIndex(const int index) {
 
 
 void StatusBarSettingsActivity::handleSelection() {
-  if (nav.selected >= visibleItemCount) return;
+  if (nav.selected < 0 || nav.selected >= visibleItemCount || nav.selected >= MAX_STATUS_BAR_ITEMS) return;
   int action = rowItems_[nav.selected].actionValue;
   if (action == -1) return;
 
@@ -235,7 +243,7 @@ void StatusBarSettingsActivity::handleSelection() {
 }
 
 std::string StatusBarSettingsActivity::rowValueText(const int index) {
-  if (index >= visibleItemCount) return "";
+  if (index < 0 || index >= visibleItemCount || index >= MAX_STATUS_BAR_ITEMS) return "";
   int action = rowItems_[index].actionValue;
   if (action == -1) return "";
 
@@ -279,14 +287,15 @@ void StatusBarSettingsActivity::buildScreen(UiScreen& screen) {
 
   updateVisibleItems();
 
-  for (int i = 0; i < visibleItemCount; i++) {
+  const int count = listCount();
+  for (int i = 0; i < count; i++) {
     rowValues_[i] = rowValueText(i);
     rowItems_[i].value = rowValues_[i].empty() ? nullptr : rowValues_[i].c_str();
   }
 
   fui::ListProps props;
   props.items = rowItems_;
-  props.count = static_cast<uint16_t>(visibleItemCount);
+  props.count = static_cast<uint16_t>(count);
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;
   props.valueInset = 8;

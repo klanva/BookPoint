@@ -19,13 +19,12 @@
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
 #include <sys/time.h>
-#if FREEINK_CAP_TOUCH
 #include <esp_sntp.h>
-#endif
 
 #include <cstring>
 
 #include "CrossPointSettings.h"
+#include "WifiCredentialStore.h"
 #include "util/BatteryLog.h"
 #include "CrossPointState.h"
 #include "KOReaderCredentialStore.h"
@@ -344,6 +343,85 @@ void setupDisplayAndFonts(bool seamless = false) {
   LOG_DBG("MAIN", "Fonts setup");
 }
 
+
+struct BootTimeSyncCandidate {
+  bool shouldAttempt = false;
+  std::string ssid;
+  std::string password;
+};
+
+BootTimeSyncCandidate checkSilentBootTimeSyncCandidate() {
+  BootTimeSyncCandidate candidate;
+
+  if (!halClock.needsPeriodicNTPSync()) {
+    return candidate;  // X3 has a battery-backed RTC; nothing to do here.
+  }
+
+  uint8_t hour, minute;
+  if (halClock.getTime(hour, minute)) {
+    return candidate;  // Already have a valid time (e.g. woke from deep sleep)
+  }
+
+  WIFI_STORE.loadFromFile();
+  const std::string lastSsid = WIFI_STORE.getLastConnectedSsid();
+  if (lastSsid.empty()) {
+    LOG_DBG("CLK", "No saved WiFi network - skipping silent boot-time sync");
+    return candidate;
+  }
+  auto cred = WIFI_STORE.findCredential(lastSsid);
+  if (!cred.has_value()) {
+    LOG_DBG("CLK", "Saved network has no stored credential");
+    return candidate;
+  }
+
+  candidate.shouldAttempt = true;
+  candidate.ssid = cred->ssid;
+  candidate.password = cred->password;
+  return candidate;
+}
+
+void seedClockFromLastKnownTime() {
+  if (!halClock.needsPeriodicNTPSync()) return;
+  uint8_t hour, minute;
+  if (halClock.getTime(hour, minute)) return;
+  if (SETTINGS.clockLastSyncedEpoch == 0) return;
+  halClock.seedFallbackTime(static_cast<time_t>(SETTINGS.clockLastSyncedEpoch));
+}
+
+void attemptSilentBootTimeSync(const BootTimeSyncCandidate& candidate) {
+  if (!candidate.shouldAttempt) {
+    return;
+  }
+
+  LOG_INF("CLK", "No valid time on boot - briefly joining saved network to sync time");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(candidate.ssid.c_str(), candidate.password.c_str());
+
+  constexpr unsigned long kConnectTimeoutMs = 6000;
+  const unsigned long connectStart = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - connectStart) < kConnectTimeoutMs) {
+    delay(100);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (halClock.syncFromNTP()) {
+      RenderLock lock;
+      SETTINGS.clockDateHasBeenSynced = 1;
+      SETTINGS.clockLastSyncedEpoch = static_cast<uint32_t>(time(nullptr));
+      SETTINGS.saveToFile();
+      LOG_INF("CLK", "Silent boot-time sync succeeded");
+    }
+  }
+
+  if (esp_sntp_enabled()) {
+    esp_sntp_stop();
+  }
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  LOG_DBG("CLK", "Silent boot-time sync finished; WiFi disabled");
+}
+
 void setup() {
   BoardConfig::holdPowerRails();
 
@@ -363,6 +441,9 @@ void setup() {
 #endif
 
   HalSystem::begin();
+  
+  auto bootTimeSyncCandidate = checkSilentBootTimeSyncCandidate();
+
   // checkPanic() clears the watchdog capture marker after a successful SD
   // dump, so retain the boot classification for the later activity route.
   const bool rebootedFromPanic = HalSystem::isRebootFromPanic();
@@ -419,6 +500,7 @@ void setup() {
   HalSystem::checkPanic();
 
   SETTINGS.loadFromFile();
+  seedClockFromLastKnownTime();
   APP_STATE.loadFromFile();
   RECENT_BOOKS.loadFromFile();
   I18N.setLanguage(static_cast<Language>(SETTINGS.language));
@@ -578,6 +660,7 @@ void setup() {
   }
 
   allowSleepAt = millis() + 2000;
+  attemptSilentBootTimeSync(bootTimeSyncCandidate);
 }
 
 void loop() {
@@ -600,9 +683,27 @@ void loop() {
   static unsigned long lastChargeCheck = 0;
   if (millis() - lastChargeCheck >= 5000) {
     lastChargeCheck = millis();
-    if (gpio.isUsbConnected() && powerManager.getBatteryPercentage() >= 95 && SETTINGS.activeSecondsSinceCharge > 0) {
-      SETTINGS.activeSecondsSinceCharge = 0;
-      SETTINGS.saveToFile();
+    if (gpio.isUsbConnected() && powerManager.getBatteryPercentage() >= 95) {
+      bool needSave = false;
+      if (SETTINGS.activeSecondsSinceCharge > 0) {
+        SETTINGS.activeSecondsSinceCharge = 0;
+        needSave = true;
+      }
+      
+      uint32_t nowEpoch = static_cast<uint32_t>(time(nullptr));
+      // Only update absolute charge epoch if it has a valid time (synced)
+      if (nowEpoch > 1000000000UL && SETTINGS.lastChargeEpoch == 0) {
+        SETTINGS.lastChargeEpoch = nowEpoch;
+        needSave = true;
+      } else if (nowEpoch > 1000000000UL && (nowEpoch - SETTINGS.lastChargeEpoch > 3600)) {
+        // Debounce charge updates (e.g. plugged in overnight)
+        SETTINGS.lastChargeEpoch = nowEpoch;
+        needSave = true;
+      }
+
+      if (needSave) {
+        SETTINGS.saveToFile();
+      }
     }
   }
 
