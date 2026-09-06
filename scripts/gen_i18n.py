@@ -559,7 +559,9 @@ def generate_keys_header(
     ]
     lines.append("// V1 language.bin migration table (frozen enum order from 2f969a9)")
     lines.append("constexpr Language V1_LANGUAGES[] = {")
-    lines.append("    " + ", ".join(f"Language::{c}" for c in v1_codes) + ",")
+    lines.append(
+        "    Language::EN, Language::ES, Language::FR, Language::DE, Language::CS, Language::PT, Language::RU, Language::SV, Language::RO, Language::CA, Language::EN, Language::BE, Language::IT, Language::PL, Language::FI, Language::DA, Language::NL, Language::TR, Language::KK, Language::HU, Language::LT, Language::SI,"
+    )
     lines.append("};")
     lines.append(
         f"constexpr uint8_t V1_LANGUAGE_COUNT = {len(v1_codes)};"

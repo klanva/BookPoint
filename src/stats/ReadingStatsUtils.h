@@ -3,12 +3,12 @@
 #include "BookReadingStats.h"
 #include "ReadingStatsTypes.h"
 
-// Reading statistics helpers ported from inkMOD's ReadingStatsUtils /
+// Reading statistics helpers ported from previous firmware /
 // BookStatsView. Kept as free functions so both the on-device statistics
 // screen and the home screen can share the exact same finish-date estimate.
 
 // Time-left estimate from reading time already spent scaled by the fraction
-// of the book still unread (inkMOD's time-based fallback when no page pace
+// of the book still unread (time-based fallback when no page pace
 // exists). Returns false for a book that is barely started or already done.
 bool fallbackEstimatedTimeLeft(const BookReadingStats& stats, float progressPercent, uint32_t& seconds);
 

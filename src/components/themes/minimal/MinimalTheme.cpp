@@ -25,7 +25,7 @@ constexpr int kProgressBarGap = 6;
 constexpr int kProgressLabelGap = 6;
 constexpr int kStatsFooterInset = 24;
 
-// Centered 3:5 cover matching the "Minimal / four tiles" look from inkMOD.
+// Centered 3:5 cover matching the "Minimal / four tiles" look.
 Rect coverRectForScreen(const GfxRenderer& renderer, const Rect& rect) {
   const int coverW = MinimalMetrics::homeCoverWidth;
   const int coverH = MinimalMetrics::values.homeCoverHeight;

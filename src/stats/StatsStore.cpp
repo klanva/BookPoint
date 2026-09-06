@@ -210,9 +210,8 @@ bool loadBookContainer(const char* path, BookReadingStats& stats) {
   return true;
 }
 
-// ---------- legacy inkMOD import ----------
-
-// Reads the inkMOD global file (v3, 159 bytes) and folds its lifetime totals,
+// ---------- legacy import ----------
+// Reads the legacy global file (v3, 159 bytes) and folds its lifetime totals,
 // distribution buckets, streak record, and read-day history into our stores.
 // Day history is converted at 1 second per marked day: enough to preserve
 // streaks and show activity on the chart without inventing precise numbers.
@@ -229,7 +228,7 @@ bool importLegacyGlobal(GlobalReadingStats& target) {
   f.close();
   if (n != 159 || data[0] != 3) return false;
 
-  LOG_INF("STATS", "Importing reading statistics from inkMOD");
+  LOG_INF("STATS", "Importing reading statistics from previous firmware");
   target.totalSessions += readLe32(data, 1);
   target.totalReadingSeconds += readLe32(data, 5);
   target.totalPagesTurned += readLe32(data, 9);
@@ -277,7 +276,7 @@ bool importLegacyGlobal(GlobalReadingStats& target) {
   return true;
 }
 
-// Reads the inkMOD per-book stats (v4, 69 bytes) from a book cache directory.
+// Reads the legacy per-book stats (v4, 69 bytes) from a book cache directory.
 bool importLegacyBookStats(const std::string& legacyPath, BookReadingStats& stats) {
   HalFile f;
   if (!Storage.openFileForRead("STATS", legacyPath.c_str(), f)) return false;
@@ -400,7 +399,7 @@ BookReadingStats loadBookStats(const std::string& bookPath, const std::string& t
     return stats;
   }
 
-  // One-time import from the inkMOD-era per-book location(s).
+  // One-time import from the legacy per-book location(s).
   const std::string hashPath = std::to_string(std::hash<std::string>{}(bookPath));
   std::string legacy = "/.inkmod/epub_" + hashPath + "/stats.bin";
   if (!importLegacyBookStats(legacy, stats)) {
@@ -512,7 +511,7 @@ GlobalReadingStats loadGlobalStats() {
     return stats;
   }
 
-  // Fresh device: adopt the inkMOD statistics once, if present.
+  // Fresh device: adopt the legacy statistics once, if present.
   GlobalReadingStats imported;
   if (importLegacyGlobal(imported)) {
     stats = imported;

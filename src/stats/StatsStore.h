@@ -19,7 +19,7 @@ namespace StatsStore {
 // independent of the C++ standard library's std::hash seeding.
 std::string bookStatsKey(const std::string& bookPath);
 
-// Loads (or imports) the stats for a book. Falls back to the legacy inkMOD
+// Loads (or imports) the stats for a book. Falls back to the legacy
 // per-book file inside the book's cache directory when no central file
 // exists yet; the title/author are stored in the container on first save.
 BookReadingStats loadBookStats(const std::string& bookPath, const std::string& title, const std::string& author);

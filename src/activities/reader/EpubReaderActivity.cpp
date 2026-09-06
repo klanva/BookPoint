@@ -1955,7 +1955,7 @@ void EpubReaderActivity::openStats() {
         const float remainingPages = static_cast<float>(epub->getBookSize()) * (1.0f - progress) / bytesPerPage;
         // Prefer this book's measured pace; otherwise fall back to the reader's
         // lifetime pace (total reading seconds / total pages turned across all
-        // books). This mirrors inkMOD's fallbackEstimatedTimeLeft so a fresh book
+        // books). This mirrors the fallbackEstimatedTimeLeft so a fresh book
         // still shows a sensible "time left" instead of nothing.
         uint32_t pacePerPage = bookStats.avgSecondsPerForwardPage;
         if (pacePerPage == 0 && bookStats.totalPagesTurned > 0) {
@@ -1965,7 +1965,7 @@ void EpubReaderActivity::openStats() {
           statsEstimatedSecondsLeft = static_cast<uint32_t>(remainingPages * static_cast<float>(pacePerPage));
         } else if (progress > 0 && bookStats.totalReadingSeconds > 0) {
           // No per-page pace anywhere: estimate from lifetime reading time and
-          // current progress (inkMOD's time-based fallback).
+          // current progress (time-based fallback).
           statsEstimatedSecondsLeft =
               static_cast<uint32_t>(static_cast<float>(bookStats.totalReadingSeconds) * (1.0f - progress) / progress);
         }

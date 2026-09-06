@@ -7,7 +7,7 @@ struct GlobalReadingStats;
 // Dashboard: a real cover (correct aspect ratio, rounded corners) on the left
 // and a column of right-aligned reading-stat rows on the right, for the home
 // screen and (via drawDashboardSleepScreen) the sleep screen. Ported from
-// inkMOD/CrossInk's DashboardTheme and sized to fit BookPoint's generic
+// CrossInk's DashboardTheme and sized to fit BookPoint's generic
 // list-menu-below-the-cover home screen flow.
 namespace DashboardMetrics {
 constexpr ThemeMetrics makeValues() {
