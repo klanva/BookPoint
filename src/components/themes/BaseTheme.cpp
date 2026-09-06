@@ -963,7 +963,7 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
     const int progressBarMaxWidth = renderer.getScreenWidth() - barMarginLeft - barMarginRight;
     const int progressBarY = atTop ? (fillMargin ? 0 : orientedMarginTop)
                                    : renderer.getScreenHeight() - orientedMarginBottom -
-                                         sb.progressBarHeightPx - paddingBottom + (fillMargin ? 1 : 0);
+                                         sb.progressBarHeightPx - paddingBottom;
     size_t progress;
     if (sb.progressBarMode == CrossPointSettings::STATUS_BAR_PROGRESS_BAR::BOOK_PROGRESS) {
       progress = static_cast<size_t>(bookProgress);
@@ -972,8 +972,7 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
       progress = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) * 100 : 0;
     }
     const int barWidth = progressBarMaxWidth * progress / 100;
-    const int barHeight = sb.progressBarHeightPx + (fillMargin ? (atTop ? orientedMarginTop : orientedMarginBottom) - 1 : 0);
-    renderer.fillRect(barMarginLeft, progressBarY, barWidth, barHeight, true);
+    renderer.fillRect(barMarginLeft, progressBarY, barWidth, sb.progressBarHeightPx, true);
   }
 
   // Draw Battery

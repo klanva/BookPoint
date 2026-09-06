@@ -1702,7 +1702,7 @@ void EpubReaderActivity::renderStatusBar() const {
   if (SETTINGS.statusBarSpec().hidden) return;
   int currentPage = section ? section->currentPage + 1 : 1;
   float pageCount = section ? section->estimatedTotalPages() : 1;
-  const float sectionChapterProg = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) : 0;
+  const float sectionChapterProg = (pageCount > 0) ? (static_cast<float>(currentPage - 1) / pageCount) : 0;
   const float bookProgress = epub ? (epub->calculateProgress(currentSpineIndex, sectionChapterProg) * 100) : 0;
 
   const auto sb = SETTINGS.statusBarSpec();

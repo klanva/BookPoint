@@ -122,10 +122,10 @@ BookPoint включает несколько вариантов оформле�
 
 3. **Через esptool (для разработчиков)**:
    ```bash
-   esptool.py --chip esp32c3 write_flash 0x10000 BookPoint_1.6.9.1_xteink_x4_x3.bin
+   esptool.py --chip esp32c3 write_flash 0x10000 BookPoint_1.6.9.2_xteink_x4_x3.bin
    ```
 
-Актуальный бинарный файл сборки: **`BookPoint_1.6.9.1_xteink_x4_x3.bin`** (доступен в разделе [Releases](https://github.com/klanva/BookPoint/releases)).
+Актуальный бинарный файл сборки: **`BookPoint_1.6.9.2_xteink_x4_x3.bin`** (доступен в разделе [Releases](https://github.com/klanva/BookPoint/releases)).
 
 > **Внимание**: не используйте пункт «Проверить обновления» в меню устройства, так как он загрузит оригинальный CrossPoint без доработок BookPoint.
 
