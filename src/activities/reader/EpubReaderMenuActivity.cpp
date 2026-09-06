@@ -82,7 +82,7 @@ std::vector<EpubReaderMenuActivity::MenuItem> EpubReaderMenuActivity::buildMenuI
   }
 
   // 4. System Settings
-  items.push_back({MenuAction::SYSTEM_SETTINGS, StrId::STR_SETTINGS_TITLE});
+  // items.push_back({MenuAction::SYSTEM_SETTINGS, StrId::STR_SETTINGS_TITLE});
 
   return items;
 }
@@ -254,13 +254,13 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
   props.count = static_cast<uint16_t>(menuItems.size());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
-  props.rowHeight = 44;               // spacious card block
-  props.rowGap = 6;                  // distinct gap between cards
+  props.rowHeight = 36;               // spacious card block
+  props.rowGap = 2;                  // distinct gap between cards
   props.rowRadius = 6;               // rounded corners
   props.sidePadding = 14;
   props.valueInset = 10;              // air between the value and the row edge
 
-  fui::TextStyle labelStyle = screen.theme().bodyText;
+  fui::TextStyle labelStyle = screen.theme().smallText;
   labelStyle.bold = false;
   props.labelText = labelStyle;
 

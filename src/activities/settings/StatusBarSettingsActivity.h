@@ -11,7 +11,7 @@ class StatusBarSettingsActivity final : public UiListActivity {
 
   // Must equal ITEM_COUNT in the .cpp (static_assert'd there) — the max
   // possible row count (RTC-equipped devices show all of them).
-  static constexpr int MAX_STATUS_BAR_ITEMS = 14;
+  static constexpr int MAX_STATUS_BAR_ITEMS = 16;
 
   void onEnter() override;
   void render(RenderLock&&) override;
@@ -19,14 +19,7 @@ class StatusBarSettingsActivity final : public UiListActivity {
  private:
   OptionPopup optionPopup;
 
-  enum class Folder : uint8_t {
-    None,
-    Display,
-    Elements,
-    Clock
-  };
-  Folder activeFolder = Folder::None;
-  int lastFolderIndex_ = 0;
+
 
   int visibleItemCount = 0;
 
