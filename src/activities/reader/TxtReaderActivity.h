@@ -11,6 +11,7 @@
 
 class TxtReaderActivity final : public ReaderActivity {
   std::unique_ptr<Txt> txt;
+  std::string utf8CopyPath;  // set when the source needed encoding conversion
 
   int currentPage = 0;
   int totalPages = 1;

@@ -4,10 +4,12 @@
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
+#include <FsHelpers.h>
 #include <I18n.h>
 #include <Memory.h>
 #include <Serialization.h>
-#include <Utf8.h>
+
+#include "util/TxtEncoding.h"
 
 #include "CrossPointSettings.h"
 #include "ProgressFile.h"
@@ -24,7 +26,21 @@ constexpr uint8_t CACHE_VERSION = 3;          // Increment when cache format cha
 }  // namespace
 
 bool TxtReaderActivity::loadBook() {
-  txt = makeUniqueNoThrow<Txt>(bookPath, "/.crosspoint");
+  // Legacy single-byte encodings (windows-1251, koi8-r, cp866) are converted
+  // once into a UTF-8 copy in the cache; everything downstream reads UTF-8.
+  size_t srcSize = 0;
+  {
+    HalFile srcProbe;
+    if (Storage.openFileForRead("TRS", bookPath.c_str(), srcProbe)) {
+      srcSize = srcProbe.size();
+      srcProbe.close();
+    }
+  }
+  if (TxtEncoding::ensureUtf8Copy(bookPath, bookPath + ".utf8", srcSize)) {
+    utf8CopyPath = bookPath + ".utf8";
+  }
+  const std::string effectivePath = utf8CopyPath.empty() ? bookPath : utf8CopyPath;
+  txt = makeUniqueNoThrow<Txt>(effectivePath, "/.crosspoint");
   if (!txt) {
     LOG_ERR("TRS", "Failed to allocate TXT object");
     return false;
