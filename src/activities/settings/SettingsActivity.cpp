@@ -16,6 +16,7 @@
 #include "ClockSyncActivity.h"
 #include "CrossPointSettings.h"
 #include "DictionaryDownloadActivity.h"
+#include "../games/GamesActivity.h"
 #include "FontDownloadActivity.h"
 #include "KOReaderSettingsActivity.h"
 #include "LanguageSelectActivity.h"
@@ -544,6 +545,9 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::DictionaryDownload:
         startActivityForResult(std::make_unique<DictionaryDownloadActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::Games:
+        startActivityForResult(std::make_unique<GamesActivity>(renderer, mappedInput), resultHandler);
         break;
       case SettingAction::CheckForUpdates:
         startActivityForResult(std::make_unique<OtaUpdateActivity>(renderer, mappedInput), resultHandler);

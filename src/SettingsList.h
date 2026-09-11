@@ -326,6 +326,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Action(StrId::STR_CLOCK_UTC_OFFSET, SettingAction::ClockUtcOffset),
         SettingInfo::Action(StrId::STR_CLOCK_SYNC, SettingAction::ClockSync),
         SettingInfo::Action(StrId::STR_DICT_DOWNLOAD, SettingAction::DictionaryDownload),
+        SettingInfo::Action(StrId::STR_GAMES, SettingAction::Games),
         // --- Controls ---
         SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
                           {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED}, "sideButtonLayout",
