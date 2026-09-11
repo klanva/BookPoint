@@ -4,6 +4,8 @@
 #include <cstring>
 #include <time.h>
 
+#include "util/PowerStats.h"
+
 namespace {
 
 bool isRecentIndex(const uint16_t* recentImages, uint8_t recentPos, uint8_t recentFill, uint16_t idx,
@@ -58,6 +60,12 @@ void CrossPointState::toJson(JsonDocument& doc) const {
   // can still restore a plausible software clock (see setup() in main.cpp).
   const time_t now = time(nullptr);
   doc["lastKnownEpoch"] = static_cast<uint32_t>(now > 1600000000 ? now : lastKnownEpoch);
+  PowerStats::update();
+  doc["psSeconds"] = PowerStats::persistedSeconds();
+  doc["psPages"] = PowerStats::persistedPages();
+  doc["psChargeStart"] = PowerStats::persistedChargeStart();
+  doc["psLastChargeEnd"] = PowerStats::persistedLastChargeEnd();
+  doc["psPct"] = PowerStats::persistedPct();
 }
 
 bool CrossPointState::fromJson(JsonVariantConst doc) {
@@ -96,5 +104,11 @@ bool CrossPointState::fromJson(JsonVariantConst doc) {
   lastSleepFromReader = doc["lastSleepFromReader"] | false;
   showBootScreen = doc["showBootScreen"] | true;
   lastKnownEpoch = doc["lastKnownEpoch"] | static_cast<uint32_t>(0);
+  const uint32_t psSeconds = doc["psSeconds"] | static_cast<uint32_t>(0);
+  const uint32_t psPages = doc["psPages"] | static_cast<uint32_t>(0);
+  const uint32_t psChargeStart = doc["psChargeStart"] | static_cast<uint32_t>(0);
+  const uint32_t psLastEnd = doc["psLastChargeEnd"] | static_cast<uint32_t>(0);
+  const uint8_t psPct = static_cast<uint8_t>(doc["psPct"] | static_cast<uint8_t>(0));
+  PowerStats::loadPersisted(psSeconds, psPages, psChargeStart, psLastEnd, psPct);
   return true;
 }

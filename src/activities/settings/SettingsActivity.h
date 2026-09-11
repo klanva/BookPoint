@@ -29,6 +29,7 @@ enum class SettingAction {
   ClockSync,
   DictionaryDownload,
   Games,
+  Autonomy,
   SystemInfo,
   // Hierarchical Submenus
   DisplaySleepScreen,

@@ -26,6 +26,7 @@
 #include "CrossPointSettings.h"
 #include "WifiCredentialStore.h"
 #include "util/BatteryLog.h"
+#include "util/PowerStats.h"
 #include "CrossPointState.h"
 #include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
@@ -525,6 +526,7 @@ void setup() {
 
   auto bootTimeSyncCandidate = checkSilentBootTimeSyncCandidate();
 
+  PowerStats::update();
   BatteryLog::logEvent("boot");
 
   // Restore the software clock on devices without a hardware RTC (X4). Deep

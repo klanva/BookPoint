@@ -27,6 +27,13 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   // saved. Used at boot to restore the software clock on devices without a
   // hardware RTC so dated statistics survive deep sleep.
   uint32_t lastKnownEpoch = 0;
+  // Battery autonomy cycle counters (see util/PowerStats.h). RAM accrual in
+  // PowerStats; these fields persist across deep sleep and reboot.
+  uint32_t psSecondsOnBattery = 0;
+  uint32_t psPagesOnBattery = 0;
+  uint32_t psChargeStartEpoch = 0;
+  uint32_t psLastChargeEndEpoch = 0;
+  uint8_t psLastPct = 0;
 
   static const char* getFilePath() { return "/.crosspoint/state.json"; }
   void toJson(JsonDocument& doc) const;

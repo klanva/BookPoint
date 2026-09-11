@@ -33,6 +33,7 @@
 #include "activities/settings/ReadingStatsActivity.h"
 #include "stats/StatsStore.h"
 #include "util/FootnoteTextExtractor.h"
+#include "util/PowerStats.h"
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
 #include "KOReaderCredentialStore.h"
@@ -1526,6 +1527,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
                                        !SETTINGS.screenInverted);
   }
   renderStatusBar();
+  PowerStats::onPageShown();
   renderFootnoteStrip(orientedMarginLeft, orientedMarginTop + buildViewportHeight - footnoteStripHeight,
                       renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight);
   const auto tBwRender = millis();
