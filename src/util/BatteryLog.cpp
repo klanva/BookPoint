@@ -19,12 +19,12 @@ void logEvent(const char* event) {
     return;
   }
   if (f.size() == 0) {
-    f.write("epoch,event,battery_percent\r\n", 29);
+    f.write("epoch,event,battery_percent,voltage_mv\r\n", 40);
   }
 
-  char row[64];
-  const int len = snprintf(row, sizeof(row), "%lu,%s,%u\r\n", static_cast<unsigned long>(time(nullptr)), event,
-                           powerManager.getBatteryPercentage());
+  char row[80];
+  const int len = snprintf(row, sizeof(row), "%lu,%s,%u,%u\r\n", static_cast<unsigned long>(time(nullptr)), event,
+                           powerManager.getBatteryPercentage(), powerManager.getBatteryVoltageMv());
   if (len > 0) f.write(row, len);
   f.close();
 }

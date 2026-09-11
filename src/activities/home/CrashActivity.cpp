@@ -55,6 +55,13 @@ void CrashActivity::render(RenderLock&&) {
     y += lineHeight;
   }
 
+  const std::string stackSummary = HalSystem::getPanicStackSummary();
+  if (!stackSummary.empty()) {
+    y += metrics.verticalSpacing;
+    renderer.drawText(UI_10_FONT_ID, x, y, stackSummary.c_str());
+    y += lineHeight;
+  }
+
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 

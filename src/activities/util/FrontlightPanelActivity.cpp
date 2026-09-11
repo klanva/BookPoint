@@ -9,6 +9,7 @@
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "activities/ActivityManager.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
 #include "components/icons/customListIcons.h"
@@ -22,6 +23,7 @@ constexpr fui::ActionId ACTION_WARMTH = 2;
 constexpr fui::ActionId ACTION_TOGGLE = 3;
 constexpr fui::ActionId ACTION_BRIGHTNESS_STEP = 4;
 constexpr fui::ActionId ACTION_WARMTH_STEP = 5;
+constexpr fui::ActionId ACTION_QUICK_LOCK = 6;
 constexpr int BUTTON_BRIGHTNESS_STEP = 5;
 constexpr int FINE_STEP = 1;
 
@@ -50,6 +52,7 @@ void FrontlightPanelActivity::onEnter() {
   app.on(ACTION_TOGGLE, &FrontlightPanelActivity::onToggleEvent, this);
   app.on(ACTION_BRIGHTNESS_STEP, &FrontlightPanelActivity::onBrightnessStepEvent, this);
   app.on(ACTION_WARMTH_STEP, &FrontlightPanelActivity::onWarmthStepEvent, this);
+  app.on(ACTION_QUICK_LOCK, &FrontlightPanelActivity::onQuickLockEvent, this);
   app.setScreen(&FrontlightPanelActivity::panelScreen, this);
   requestUpdate();
 }
@@ -100,6 +103,12 @@ void FrontlightPanelActivity::onBrightnessStepEvent(const fui::ActionEvent& even
 
 void FrontlightPanelActivity::onWarmthStepEvent(const fui::ActionEvent& event, void* user) {
   static_cast<FrontlightPanelActivity*>(user)->adjustWarmth(event.value * FINE_STEP);
+}
+
+void FrontlightPanelActivity::onQuickLockEvent(const fui::ActionEvent&, void* user) {
+  auto* self = static_cast<FrontlightPanelActivity*>(user);
+  self->close();
+  activityManager.goToQuickLock();
 }
 
 void FrontlightPanelActivity::adjustBrightness(const int delta) {
@@ -185,6 +194,7 @@ int FrontlightPanelActivity::computePanelBottom() const {
   if (Frontlight.hasColorTemperature()) {
     y += lineHeight + tokens.spaceSm + tokens.rowHeight + tokens.spaceLg;
   }
+  y += tokens.rowHeight + tokens.spaceLg;
   y += tokens.spaceLg;
   return y;
 }
@@ -231,6 +241,14 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
     addStepSlider(screen, screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), warmth, ACTION_WARMTH,
                   ACTION_WARMTH_STEP);
   }
+
+  fui::ButtonProps lockBtn;
+  lockBtn.label = tr(STR_QUICK_LOCK);
+  lockBtn.action = ACTION_QUICK_LOCK;
+  lockBtn.inputMask = fui::InputTouch;
+  lockBtn.text = theme.bodyText;
+  lockBtn.text.align = fui::TextAlign::Center;
+  fui::button(screen.frame(), screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), lockBtn);
 
   screen.spacer(theme.spaceLg);
 }
