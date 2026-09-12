@@ -13,6 +13,7 @@
 #include "components/themes/BaseTheme.h"
 #include "components/themes/dashboard/DashboardTheme.h"
 #include "components/themes/lyra/Lyra3CoversTheme.h"
+#include "components/themes/lyra/LyraCarouselTheme.h"
 #include "components/themes/lyra/LyraTheme.h"
 #include "components/themes/minimal/MinimalTheme.h"
 #include "components/themes/roundedraff/RoundedRaffTheme.h"
@@ -46,10 +47,10 @@ void UITheme::setTheme(CrossPointSettings::UI_THEME type) {
       currentTheme = std::make_unique<RoundedRaffTheme>();
       currentMetrics = &RoundedRaffMetrics::values;
       break;
-    case CrossPointSettings::UI_THEME::LYRA_3_COVERS:
-      LOG_DBG("UI", "Using Lyra 3 Covers theme");
-      currentTheme = std::make_unique<Lyra3CoversTheme>();
-      currentMetrics = &Lyra3CoversMetrics::values;
+    case CrossPointSettings::UI_THEME::CAROUSEL:
+      LOG_DBG("UI", "Using Lyra Carousel theme");
+      currentTheme = std::make_unique<LyraCarouselTheme>();
+      currentMetrics = &LyraCarouselMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::MINIMAL:
       LOG_DBG("UI", "Using Minimal theme");
