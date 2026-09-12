@@ -25,7 +25,7 @@ docs/AUDIT_MAXIMAL.md и firmwares/*/AUDIT.md).
 - Быстрое листание: очередь нажатий, пропуск промежуточных e-ink кадров
 - Статистика чтения: время, сессии, страницы, темп, остаток, серия дней, график
   за 14 дней, утро/день/вечер/ночь, CSV-снапшот после каждой сессии, импорт из
-  inkMOD; сетка 3x2 и dashboard на главном экране
+  предыдущих версий прошивок; сетка 3x2 и dashboard на главном экране
 - Клиппинги с экспортом в My Clippings.txt
 - Словари StarDict; RU-EN и EN-RU скачиваются по Wi-Fi прямо с устройства
 - Быстрая блокировка экрана
@@ -103,4 +103,4 @@ build.bat    # Windows; основная цель теперь env x4pro (ESP32-
 ## Лицензия
 
 MIT, как и исходный CrossPoint. Спасибо авторам CrossPoint, FreeInk SDK,
-inkMOD, vCodex, CrossInk, witchhunt, YACP и сообществу 4PDA.
+vCodex, CrossInk, witchhunt, YACP и сообществу 4PDA.
