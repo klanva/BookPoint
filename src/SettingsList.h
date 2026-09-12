@@ -318,6 +318,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                            "wifiAutoOffMinutes", StrId::STR_CAT_SYSTEM),
         SettingInfo::Toggle(StrId::STR_BATTERY_LOG, &CrossPointSettings::batteryLogEnabled, "batteryLogEnabled",
                             StrId::STR_CAT_SYSTEM),
+        // Idle light sleep (X4 Pro only). Off by default: needs on-device
+        // battery measurements before it can become the default.
+        SettingInfo::Toggle(StrId::STR_LIGHT_SLEEP_IDLE, &CrossPointSettings::lightSleepIdle, "lightSleepIdle",
+                            StrId::STR_CAT_SYSTEM),
         // Time. Works on both device classes: X3 via the DS3231 RTC, X4 via
         // the NTP-set software clock.
         SettingInfo::Enum(StrId::STR_CLOCK_FORMAT, &CrossPointSettings::clockFormat,

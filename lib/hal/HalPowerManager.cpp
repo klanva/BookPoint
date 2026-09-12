@@ -5,6 +5,8 @@
 #include <PowerManager.h>
 #include <WiFi.h>
 #include <esp_sleep.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <soc/soc_caps.h>
 
 #include <cassert>
@@ -64,6 +66,92 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   }
 
   // Otherwise, no change needed
+}
+
+// Light-sleep the CPU for one slice. Port of witchhunt's race-to-sleep idle
+// loop (their HalPowerManager::lightSleep), adapted for the X4 Pro: digital
+// buttons give true GPIO wake sources (the C3 Xteink boards sample an ADC
+// ladder that cannot wake the chip, so witchhunt must poll on timer wake
+// alone). A lit frontlight is not a blocker here: the x4pro env builds LEDC
+// with FREEINK_FRONTLIGHT_LS, whose KEEP_ALIVE channels drive the pads through
+// light sleep (witchhunt's flicker concern applies to plain LEDC builds).
+//
+// No pad holds are taken for the switched rails (GPIO1 peripheral rail, GPIO5
+// SD enable, GPIO2 touch enable): in light sleep digital pads latch their
+// driven level natively, and an overlooked gpio_hold_en silently defeats every
+// later digitalWrite on that pad — a failure mode worse than the theoretical
+// rail sag it guards against. Revisit only with on-device evidence (SD
+// unmounts, touch dying after idle).
+bool HalPowerManager::tryLightSleepSlice(const HalGPIO& gpio) {
+  if (!BoardConfig::isX4Pro()) return false;
+  // A performance Lock means a render (or similar) is mid-flight; light sleep
+  // freezes the whole chip, so it would stall that task. Read without the
+  // mutex, like setPowerSaving(): a stale value costs one declined slice.
+  if (currentLockMode != None) return false;
+  // Light sleep drops a WiFi association and kills an enumerated USB-CDC link.
+  if (WiFi.getMode() != WIFI_MODE_NULL) return false;
+  if (gpio.isUsbConnected()) return false;
+  // Raw button state is inside the debounce window: commit needs a second
+  // matching sample, so poll again quickly instead of halting the chip.
+  if (gpio.isDebouncePending()) return false;
+
+  const auto& input = BoardConfig::ACTIVE.input;
+  const auto& touch = BoardConfig::ACTIVE.touch;
+
+  struct WakePin {
+    gpio_num_t num;
+    bool activeHigh;
+  };
+  // Buttons are active-LOW (powerActiveHigh applies to the power pin only);
+  // the GT911 INT line idles LOW and reports touches HIGH.
+  WakePin wakePins[] = {
+      {static_cast<gpio_num_t>(input.up), false},
+      {static_cast<gpio_num_t>(input.down), false},
+      {static_cast<gpio_num_t>(input.power), input.powerActiveHigh},
+      {static_cast<gpio_num_t>(touch.irq), !touch.irqActiveLow},
+  };
+
+  // Timer wake bounds the poll cadence; GPIO wakes make any button or touch
+  // land within the same slice. A pin already held at its wake level (finger
+  // resting on a button) would re-trigger the instant the chip sleeps, so it
+  // is skipped — the poll loop still samples it.
+  esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(LIGHT_SLEEP_SLICE_MS) * 1000ULL);
+  bool anyGpioWake = false;
+  for (const WakePin& w : wakePins) {
+    if (w.num < 0) continue;
+    if (digitalRead(w.num) == (w.activeHigh ? HIGH : LOW)) continue;
+    gpio_wakeup_enable(w.num, w.activeHigh ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+    anyGpioWake = true;
+  }
+  if (anyGpioWake) esp_sleep_enable_gpio_wakeup();
+
+  const unsigned long sleepStart = millis();
+  const esp_err_t err = esp_light_sleep_start();
+  const unsigned long sleptMs = millis() - sleepStart;
+
+  // Disarm immediately: an armed timer wake persists across sleep calls and
+  // would carry into startDeepSleep(), waking the device on USB power after
+  // one slice. gpio_wakeup_disable() clears only the wake-enable bit — the
+  // level intr type survives it and is live ammunition for any later-installed
+  // GPIO ISR service, so clear the type explicitly. Safe here: InputManager is
+  // pure polling and owns no interrupts on these pins.
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  for (const WakePin& w : wakePins) {
+    if (w.num < 0) continue;
+    gpio_wakeup_disable(w.num);
+    gpio_set_intr_type(w.num, GPIO_INTR_DISABLE);
+  }
+
+  if (err != ESP_OK) {
+    LOG_DBG("PWR", "Light sleep rejected: %d", static_cast<int>(err));
+    return false;
+  }
+
+  // esp_light_sleep_start() corrects esp_timer (millis() stays wall-clock
+  // honest) but NOT the FreeRTOS tick, which simply stops for the duration.
+  // Step it forward so blocked tasks come due on wall-clock time.
+  xTaskCatchUpTicks(pdMS_TO_TICKS(sleptMs));
+  return true;
 }
 
 void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {

@@ -17,6 +17,15 @@ class HalFrontlight {
   void setWarmth(uint8_t warmPercent);
   void setOn(bool on);
 
+  // Deep-sleep leakage cut (FREEINK_FRONTLIGHT_LS builds only): drive the LED
+  // pads LOW and hold them, release the LEDC KEEP_ALIVE clock. Call from the
+  // sleep path before deep sleep; releaseOnWake() must run at boot before
+  // begin() re-attaches the channels.
+#ifdef FREEINK_FRONTLIGHT_LS
+  void park() { manager.park(); }
+  void releaseOnWake() { manager.releaseOnWake(); }
+#endif
+
   uint8_t brightness() const { return lastBrightness; }
   uint8_t warmth() const { return manager.colorTemperature(); }
   bool isOn() const { return lit; }

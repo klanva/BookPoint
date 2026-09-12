@@ -32,11 +32,26 @@ class HalPowerManager {
 #endif
   static constexpr unsigned long IDLE_POWER_SAVING_MS = 3000;  // ms
   static constexpr unsigned long BATTERY_POLL_MS = 1500;       // ms
+  // Idle-light-sleep thresholds (witchhunt race-to-sleep): after this much
+  // inactivity the idle loop stops busy-delaying and sleeps in slices.
+  static constexpr unsigned long IDLE_LIGHT_SLEEP_MS = 1000;  // ms
+  static constexpr unsigned long LIGHT_SLEEP_SLICE_MS = 50;   // one slice
 
   void begin();
 
   // Control CPU frequency for power saving
   void setPowerSaving(bool enabled);
+
+  // Sleep the CPU for one slice between input polls (light sleep, RAM and
+  // peripherals retained). X4 Pro only: requires digital buttons as true GPIO
+  // wake sources and known rail hold levels. The caller must not hold a Lock,
+  // have Wi-Fi up or USB connected — tryLightSleepSlice re-checks those (plus
+  // mid-debounce input) itself and declines (returns false) if any is active.
+  // A lit frontlight is fine on builds with FREEINK_FRONTLIGHT_LS: the KEEP_ALIVE
+  // channels keep the PWM running through light sleep. millis() stays
+  // wall-clock correct; the FreeRTOS tick is stepped forward so blocked tasks
+  // come due on time.
+  bool tryLightSleepSlice(const HalGPIO& gpio);
 
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode

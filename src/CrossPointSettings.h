@@ -364,6 +364,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // (0 = off). Diagnostic tool for overnight drain reports.
   uint8_t batteryLogEnabled = 0;
 
+  // Idle light sleep (X4 Pro): after a second of inactivity the CPU sleeps in
+  // 50 ms slices between input polls instead of busy-delaying, cutting idle
+  // current (witchhunt race-to-sleep, measured 9.68 -> 2.78 mA on X3). A lit
+  // frontlight keeps working through slices: the x4pro LEDC channels are built
+  // with KEEP_ALIVE so the PWM survives light sleep. Skipped while Wi-Fi is up
+  // or USB is connected. Off by default.
+  uint8_t lightSleepIdle = 0;
+
   // Footnote display in the EPUB reader.
   enum FOOTNOTE_DISPLAY {
     FOOTNOTE_BOTTOM = 0,  // footnote text rendered at the bottom of the page (paper-style)

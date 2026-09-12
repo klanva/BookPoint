@@ -302,6 +302,12 @@ void enterDeepSleep(bool fromTimeout = false) {
     WiFi.mode(WIFI_OFF);
   }
 
+#ifdef FREEINK_FRONTLIGHT_LS
+  // The deep-sleep path holds the peripheral rail (GPIO1) HIGH for fast wake,
+  // so the frontlight driver IC stays powered; the KEEP_ALIVE pads would keep
+  // drawing quiescent + leakage current all night. Park cuts it at the source.
+  Frontlight.park();
+#endif
   halTiltSensor.deepSleep();
   display.deepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
@@ -545,6 +551,12 @@ void setup() {
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots preserve the live state so they do not unexpectedly go dark.
   const bool restoreLightOn = SETTINGS.frontlightOn != 0 && (SETTINGS.frontlightRestoreOnWake != 0 || isSilentReboot);
+#ifdef FREEINK_FRONTLIGHT_LS
+  // A previous deep sleep's park() latched the LED pads LOW and the hold
+  // survives the wake reset; release it or begin() cannot re-attach the
+  // channels (release is unconditional, see FrontlightManager::releaseOnWake).
+  Frontlight.releaseOnWake();
+#endif
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
 
   switch (wakeupReason) {
@@ -878,7 +890,21 @@ void loop() {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
-    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS) {
+    const unsigned long idleMs = millis() - lastActivityTime;
+    // Race-to-sleep (witchhunt): idle time is spent in light-sleep slices at
+    // the normal clock instead of busy-delaying at a downclocked one - the
+    // sleep-floor current is paid per millisecond either way, so short fast
+    // wake windows cost less charge than long slow ones. A lit frontlight is
+    // fine: the x4pro env builds LEDC with FREEINK_FRONTLIGHT_LS, whose
+    // KEEP_ALIVE channels keep driving the pads through light sleep (the SDK
+    // holds RC_FAST alive while lit), so there is no slice flicker to gate on.
+    if (SETTINGS.lightSleepIdle && idleMs >= HalPowerManager::IDLE_LIGHT_SLEEP_MS) {
+      powerManager.setPowerSaving(false);
+      if (!powerManager.tryLightSleepSlice(gpio)) {
+        // Declined (render Lock, WiFi, USB, mid-debounce): poll at 100 Hz.
+        delay(10);
+      }
+    } else if (idleMs >= HalPowerManager::IDLE_POWER_SAVING_MS) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       delay(50);

@@ -29,3 +29,4 @@ lib/EpdFont/scripts/output/
 /sdkconfig.*
 sdkconfig.sticky
 flake.*
+.ghtoken

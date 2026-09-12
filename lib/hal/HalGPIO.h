@@ -76,6 +76,10 @@ class HalGPIO {
   bool wasAnyPressed() const;
   bool wasReleased(uint8_t buttonIndex) const;
   bool wasAnyReleased() const;
+  // A raw edge is still inside the debounce window. Light-sleep-sliced idle
+  // loops must re-poll quickly (skip the slice) while this is set, or a press
+  // shorter than one slice lands in a single sample and is dropped.
+  bool isDebouncePending() const;
   unsigned long getHeldTime() const;
   unsigned long getPowerButtonHeldTime() const;
   bool hasTouch() const;
