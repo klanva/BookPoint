@@ -83,7 +83,7 @@ void ClippingListActivity::openDeleteMenu() {
 }
 
 void ClippingListActivity::loop() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     ActivityResult result;
     result.isCancelled = true;
     setResult(std::move(result));
@@ -92,6 +92,110 @@ void ClippingListActivity::loop() {
   }
 
   const auto& clips = store_.getClippings();
+  const int total = static_cast<int>(clips.size());
+
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Left) {
+    if (total > 0) {
+      const int perPage = pageItems();
+      const int first = (selectedIndex_ / perPage) * perPage;
+      selectedIndex_ = std::min(total - 1, first + perPage);
+      requestUpdate();
+      return;
+    }
+  }
+  if (swipe == MappedInputManager::SwipeDir::Right) {
+    if (total > 0) {
+      const int perPage = pageItems();
+      const int first = (selectedIndex_ / perPage) * perPage;
+      selectedIndex_ = std::max(0, first - perPage);
+      requestUpdate();
+      return;
+    }
+  }
+
+  int lpx = 0, lpy = 0;
+  if (!clips.empty() && mappedInput.wasScreenLongPress(lpx, lpy)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int listStartY = metrics.topPadding + metrics.headerHeight + LIST_GAP;
+    const int perPage = pageItems();
+    const int first = (selectedIndex_ / perPage) * perPage;
+    const int r = (lpy - listStartY) / ROW_HEIGHT;
+    const int idx = first + r;
+    if (r >= 0 && idx < total && lpy < renderer.getScreenHeight() - metrics.buttonHintsHeight) {
+      selectedIndex_ = idx;
+      openDeleteMenu();
+      return;
+    }
+  }
+
+  int tx = 0, ty = 0;
+  if (!clips.empty() && mappedInput.wasScreenTouchDown(tx, ty)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int listStartY = metrics.topPadding + metrics.headerHeight + LIST_GAP;
+    const int perPage = pageItems();
+    const int first = (selectedIndex_ / perPage) * perPage;
+    const int r = (ty - listStartY) / ROW_HEIGHT;
+    const int idx = first + r;
+    if (r >= 0 && idx < total && ty < renderer.getScreenHeight() - metrics.buttonHintsHeight && idx != selectedIndex_) {
+      selectedIndex_ = idx;
+      requestUpdate();
+      return;
+    }
+  }
+
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int hintsTop = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+    if (ty >= hintsTop) {
+      const int w = renderer.getScreenWidth();
+      if (tx < w / 4) {
+        ActivityResult result;
+        result.isCancelled = true;
+        setResult(std::move(result));
+        finish();
+        return;
+      } else if (tx < w / 2) {
+        if (!clips.empty() && selectedIndex_ >= 0 && selectedIndex_ < total) {
+          const auto& clip = clips[static_cast<size_t>(selectedIndex_)];
+          setResult(ClippingJumpResult{clip.spineIndex, clip.pageNumber});
+          finish();
+        }
+        return;
+      } else if (tx < w * 3 / 4) {
+        if (total > 0) {
+          selectedIndex_ = ButtonNavigator::previousIndex(selectedIndex_, total);
+          requestUpdate();
+        }
+        return;
+      } else {
+        if (total > 0) {
+          selectedIndex_ = ButtonNavigator::nextIndex(selectedIndex_, total);
+          requestUpdate();
+        }
+        return;
+      }
+    }
+
+    if (!clips.empty()) {
+      const int listStartY = metrics.topPadding + metrics.headerHeight + LIST_GAP;
+      const int perPage = pageItems();
+      const int first = (selectedIndex_ / perPage) * perPage;
+      const int r = (ty - listStartY) / ROW_HEIGHT;
+      const int idx = first + r;
+      if (r >= 0 && idx < total) {
+        if (idx == selectedIndex_) {
+          const auto& clip = clips[static_cast<size_t>(idx)];
+          setResult(ClippingJumpResult{clip.spineIndex, clip.pageNumber});
+          finish();
+        } else {
+          selectedIndex_ = idx;
+          requestUpdate();
+        }
+        return;
+      }
+    }
+  }
   if (!clips.empty() && !longPressHandled_ && mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() >= DELETE_HOLD_MS) {
     longPressHandled_ = true;
@@ -112,7 +216,6 @@ void ClippingListActivity::loop() {
     return;
   }
 
-  const int total = static_cast<int>(clips.size());
   if (total == 0) return;
 
   navigator_.onNextRelease([this, total] {

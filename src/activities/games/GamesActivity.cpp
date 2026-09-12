@@ -28,23 +28,13 @@ void GamesActivity::onEnter() {
 }
 
 void GamesActivity::loop() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     finish();
     return;
   }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
-    selected_ = (selected_ + GAME_COUNT - 1) % GAME_COUNT;
-    requestUpdate();
-    return;
-  }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
-    selected_ = (selected_ + 1) % GAME_COUNT;
-    requestUpdate();
-    return;
-  }
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
-      mappedInput.wasReleased(MappedInputManager::Button::Power)) {
-    switch (selected_) {
+
+  auto launchGame = [this](int index) {
+    switch (index) {
       case 0:
         startActivityForResult(std::make_unique<Games2048Activity>(renderer, mappedInput),
                                [this](const ActivityResult&) { requestUpdate(); });
@@ -60,6 +50,60 @@ void GamesActivity::loop() {
       default:
         break;
     }
+  };
+
+  int tx = 0, ty = 0;
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int hintsTop = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+    if (ty >= hintsTop) {
+      if (tx < renderer.getScreenWidth() / 2) {
+        finish();
+      } else {
+        launchGame(selected_);
+      }
+      return;
+    }
+
+    const int startY = metrics.topPadding + metrics.headerHeight + 20;
+    const int rowStep = metrics.listRowHeight + 14;
+    for (int i = 0; i < GAME_COUNT; ++i) {
+      const int ry = startY + i * rowStep;
+      if (ty >= ry - 6 && ty < ry + metrics.listRowHeight + 8) {
+        selected_ = i;
+        launchGame(i);
+        return;
+      }
+    }
+  }
+
+  if (mappedInput.wasScreenTouchDown(tx, ty)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int startY = metrics.topPadding + metrics.headerHeight + 20;
+    const int rowStep = metrics.listRowHeight + 14;
+    for (int i = 0; i < GAME_COUNT; ++i) {
+      const int ry = startY + i * rowStep;
+      if (ty >= ry - 6 && ty < ry + metrics.listRowHeight + 8 && i != selected_) {
+        selected_ = i;
+        requestUpdate();
+        return;
+      }
+    }
+  }
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+    selected_ = (selected_ + GAME_COUNT - 1) % GAME_COUNT;
+    requestUpdate();
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+    selected_ = (selected_ + 1) % GAME_COUNT;
+    requestUpdate();
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+      mappedInput.wasReleased(MappedInputManager::Button::Power)) {
+    launchGame(selected_);
   }
 }
 

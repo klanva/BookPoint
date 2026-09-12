@@ -237,7 +237,7 @@ void ChessActivity::onExit() {
 }
 
 void ChessActivity::loop() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     if (showingDifficultySelect) {
       finish();
     } else if (selRow >= 0) {
@@ -254,6 +254,34 @@ void ChessActivity::loop() {
 
   // Difficulty selection screen
   if (showingDifficultySelect) {
+    int tx = 0, ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      const auto& metrics = UITheme::getInstance().getMetrics();
+      const int hintsTop = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+      if (ty >= hintsTop) {
+        if (tx < renderer.getScreenWidth() / 2) {
+          finish();
+        } else {
+          showingDifficultySelect = false;
+          initBoard();
+          requestUpdate();
+        }
+        return;
+      }
+      if (tx < renderer.getScreenWidth() / 3) {
+        difficulty = (Difficulty)(((int)difficulty - 1 + DIFFICULTY_COUNT) % DIFFICULTY_COUNT);
+        requestUpdate();
+      } else if (tx > renderer.getScreenWidth() * 2 / 3) {
+        difficulty = (Difficulty)(((int)difficulty + 1) % DIFFICULTY_COUNT);
+        requestUpdate();
+      } else {
+        showingDifficultySelect = false;
+        initBoard();
+        requestUpdate();
+      }
+      return;
+    }
+
     if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
       difficulty = (Difficulty)(((int)difficulty - 1 + DIFFICULTY_COUNT) % DIFFICULTY_COUNT);
       requestUpdate();
@@ -270,9 +298,10 @@ void ChessActivity::loop() {
     return;
   }
 
-  // Game over: Confirm = back to difficulty select
+  // Game over: Confirm or tap = back to difficulty select
   if (gameOver) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    int tx = 0, ty = 0;
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(tx, ty)) {
       showingDifficultySelect = true;
       requestUpdate();
     }
@@ -283,6 +312,74 @@ void ChessActivity::loop() {
   if (!whiteTurn) return;
 
   bool changed = false;
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  const int boardSize = CELL * BOARD;
+  const int boardX = (pageWidth - boardSize) / 2;
+  const int contentTop = metrics.topPadding + metrics.headerHeight + 4;
+  const int contentBot = pageHeight - metrics.buttonHintsHeight - 4;
+  const int boardY = contentTop + (contentBot - contentTop - boardSize - 24) / 2;
+
+  int tx = 0, ty = 0;
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    if (ty >= renderer.getScreenHeight() - metrics.buttonHintsHeight) {
+      if (tx < renderer.getScreenWidth() / 2) {
+        if (selRow >= 0) {
+          selRow = selCol = -1;
+          changed = true;
+        } else {
+          finish();
+          return;
+        }
+      }
+    } else {
+      const int c = (tx - boardX) / CELL;
+      const int r = (ty - boardY) / CELL;
+      if (r >= 0 && r < BOARD && c >= 0 && c < BOARD) {
+        if (selRow < 0) {
+          if (isWhite(board[r][c])) {
+            selRow = r;
+            selCol = c;
+            cursorRow = r;
+            cursorCol = c;
+            changed = true;
+          }
+        } else {
+          if (r == selRow && c == selCol) {
+            selRow = selCol = -1;
+            changed = true;
+          } else if (isWhite(board[r][c])) {
+            selRow = r;
+            selCol = c;
+            cursorRow = r;
+            cursorCol = c;
+            changed = true;
+          } else if (isValidMove(selRow, selCol, r, c)) {
+            cursorRow = r;
+            cursorCol = c;
+            if (abs(board[r][c]) == KING) {
+              gameOver = true;
+              whiteWins = true;
+            }
+            board[r][c] = board[selRow][selCol];
+            board[selRow][selCol] = EMPTY;
+            if (board[r][c] == PAWN && r == 0) board[r][c] = QUEEN;
+            selRow = selCol = -1;
+            whiteTurn = false;
+            changed = true;
+            if (!gameOver) {
+              requestUpdate();
+              doAiMove();
+              checkGameEnd();
+              whiteTurn = true;
+            }
+          }
+        }
+      }
+    }
+  }
 
   // D-pad cursor
   if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {

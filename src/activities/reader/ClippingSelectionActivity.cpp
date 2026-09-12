@@ -91,6 +91,34 @@ size_t ClippingSelectionActivity::nearestCenterWord() const {
   return bestIndex;
 }
 
+int ClippingSelectionActivity::wordAt(const int tx, const int ty) const {
+  if (!page_ || words_.empty()) return -1;
+  constexpr int SLOP = 4;
+  const int height = std::max(4, renderer.getLineHeight(fontId_));
+
+  for (size_t i = 0; i < words_.size(); ++i) {
+    const auto& ref = words_[i];
+    if (ref.elementIndex < 0 || ref.elementIndex >= static_cast<int>(page_->elements.size())) continue;
+    const auto& element = page_->elements[ref.elementIndex];
+    if (!element || element->getTag() != TAG_PageLine) continue;
+    const auto& line = static_cast<const PageLine&>(*element);
+    const auto& block = line.getBlock();
+    if (!block || ref.wordIndex >= block->wordCount()) continue;
+
+    const char* word = block->wordText(ref.wordIndex);
+    if (!word) continue;
+    const auto style = block->wordStyle(ref.wordIndex);
+    const int x = marginLeft_ + line.xPos + block->wordXpos(ref.wordIndex);
+    const int y = marginTop_ + line.yPos;
+    const int width = std::max(4, renderer.getTextAdvanceX(fontId_, word, style));
+
+    if (tx >= x - SLOP && tx < x + width + SLOP && ty >= y - SLOP && ty < y + height + SLOP) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
 void ClippingSelectionActivity::orderedRange(int& startPage, size_t& startWord, int& endPage, size_t& endWord) const {
   if (anchorPage_ < currentPage_ || (anchorPage_ == currentPage_ && anchorWord_ <= cursor_)) {
     startPage = anchorPage_;
@@ -238,12 +266,80 @@ void ClippingSelectionActivity::loop() {
     return;
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     ActivityResult result;
     result.isCancelled = true;
     setResult(std::move(result));
     finish();
     return;
+  }
+
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Left) {
+    jumpPage(1);
+    return;
+  }
+  if (swipe == MappedInputManager::SwipeDir::Right) {
+    jumpPage(-1);
+    return;
+  }
+
+  int tx = 0;
+  int ty = 0;
+  if (mappedInput.wasScreenTouchDown(tx, ty)) {
+    const int hit = wordAt(tx, ty);
+    if (hit >= 0 && static_cast<size_t>(hit) != cursor_) {
+      cursor_ = static_cast<size_t>(hit);
+      requestUpdate();
+      return;
+    }
+  }
+
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const int hintsTop = renderer.getScreenHeight() - metrics.buttonHintsHeight;
+    if (ty >= hintsTop) {
+      const int w = renderer.getScreenWidth();
+      if (tx < w / 4) {
+        ActivityResult result;
+        result.isCancelled = true;
+        setResult(std::move(result));
+        finish();
+        return;
+      } else if (tx < w / 2) {
+        if (!words_.empty()) {
+          if (!selecting_) {
+            selecting_ = true;
+            anchorPage_ = currentPage_;
+            anchorWord_ = cursor_;
+            requestUpdate();
+          } else {
+            saveSelection();
+          }
+        }
+        return;
+      } else if (tx < w * 3 / 4) {
+        moveHorizontal(-1);
+        return;
+      } else {
+        moveHorizontal(1);
+        return;
+      }
+    }
+
+    const int hit = wordAt(tx, ty);
+    if (hit >= 0) {
+      cursor_ = static_cast<size_t>(hit);
+      if (!selecting_) {
+        selecting_ = true;
+        anchorPage_ = currentPage_;
+        anchorWord_ = cursor_;
+        requestUpdate();
+      } else {
+        saveSelection();
+      }
+      return;
+    }
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||

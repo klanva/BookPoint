@@ -101,7 +101,7 @@ bool Games2048Activity::canMove() const {
 }
 
 void Games2048Activity::loop() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     // Persist best score.
     HalFile f;
     if (Storage.openFileForWrite("2048", kPersistPath, f)) {
@@ -114,26 +114,31 @@ void Games2048Activity::loop() {
     return;
   }
 
+  int tx = 0, ty = 0;
   if (gameOver) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
-        mappedInput.wasReleased(MappedInputManager::Button::Power)) {
+        mappedInput.wasReleased(MappedInputManager::Button::Power) ||
+        mappedInput.wasScreenTapped(tx, ty)) {
       onEnter();  // restart
     }
     return;
   }
 
   bool moved = false;
-  if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Left || mappedInput.wasReleased(MappedInputManager::Button::Left)) {
     moved = slideLeft();
-  } else if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+  } else if (swipe == MappedInputManager::SwipeDir::Right ||
+             mappedInput.wasReleased(MappedInputManager::Button::Right)) {
     rotateRight();
     rotateRight();
     moved = slideLeft();
     rotateRight();
     rotateRight();
-  } else if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+  } else if (swipe == MappedInputManager::SwipeDir::Up || mappedInput.wasReleased(MappedInputManager::Button::Up)) {
     moved = moveUp();
-  } else if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+  } else if (swipe == MappedInputManager::SwipeDir::Down ||
+             mappedInput.wasReleased(MappedInputManager::Button::Down)) {
     rotateRight();
     moved = slideLeft();
     rotateRight();

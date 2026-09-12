@@ -99,13 +99,26 @@ void MinesweeperActivity::onEnter() {
 }
 
 void MinesweeperActivity::loop() {
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     finish();
     return;
   }
 
   // Game over / won: Confirm = new game, Left/Right = difficulty
   if (gameOver || won) {
+    int tx = 0, ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      if (tx < renderer.getScreenWidth() / 3) {
+        difficulty = (Difficulty)(((int)difficulty - 1 + DIFFICULTY_COUNT) % DIFFICULTY_COUNT);
+        requestUpdate();
+      } else if (tx > renderer.getScreenWidth() * 2 / 3) {
+        difficulty = (Difficulty)(((int)difficulty + 1) % DIFFICULTY_COUNT);
+        requestUpdate();
+      } else {
+        onEnter();
+      }
+      return;
+    }
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       onEnter();
       return;
@@ -122,6 +135,85 @@ void MinesweeperActivity::loop() {
   }
 
   bool changed = false;
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  const int gridW = CELL * COLS;
+  const int gridH = CELL * ROWS;
+  const int gridX = (pageWidth - gridW) / 2;
+  const int contentTop = metrics.topPadding + metrics.headerHeight + 4;
+  const int contentBot = pageHeight - metrics.buttonHintsHeight - 4;
+  const int gridY = contentTop + (contentBot - contentTop - gridH - 20) / 2;
+
+  // Touch long press to toggle flag on cell
+  int lpx = 0, lpy = 0;
+  if (mappedInput.wasScreenLongPress(lpx, lpy)) {
+    const int c = (lpx - gridX) / CELL;
+    const int r = (lpy - gridY) / CELL;
+    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+      cursorRow = r;
+      cursorCol = c;
+      if (state[r][c] == CellState::HIDDEN) {
+        state[r][c] = CellState::FLAGGED;
+        flagCount++;
+        changed = true;
+      } else if (state[r][c] == CellState::FLAGGED) {
+        state[r][c] = CellState::HIDDEN;
+        flagCount--;
+        changed = true;
+      }
+    }
+  }
+
+  // Touch tap to reveal cell or chord
+  int tx = 0, ty = 0;
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    if (ty >= renderer.getScreenHeight() - metrics.buttonHintsHeight) {
+      if (tx < renderer.getScreenWidth() / 2) {
+        finish();
+        return;
+      }
+    } else {
+      const int c = (tx - gridX) / CELL;
+      const int r = (ty - gridY) / CELL;
+      if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+        cursorRow = r;
+        cursorCol = c;
+        if (state[r][c] == CellState::HIDDEN) {
+          if (firstMove) {
+            placeMines(r, c);
+            firstMove = false;
+          }
+          if (grid[r][c] == 9) {
+            revealAll();
+            gameOver = true;
+          } else {
+            reveal(r, c);
+            if (checkWin()) { won = true; revealAll(); }
+          }
+          changed = true;
+        } else if (state[r][c] == CellState::REVEALED && grid[r][c] > 0) {
+          if (countAdjacentFlags(r, c) == grid[r][c]) {
+            for (int dr = -1; dr <= 1; dr++)
+              for (int dc = -1; dc <= 1; dc++) {
+                int nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && state[nr][nc] == CellState::HIDDEN) {
+                  if (grid[nr][nc] == 9) { revealAll(); gameOver = true; }
+                  else reveal(nr, nc);
+                }
+              }
+            if (!gameOver && checkWin()) { won = true; revealAll(); }
+            changed = true;
+          }
+        } else if (state[r][c] == CellState::FLAGGED) {
+          state[r][c] = CellState::HIDDEN;
+          flagCount--;
+          changed = true;
+        }
+      }
+    }
+  }
 
   // D-pad moves cursor — use direct button checks (not ButtonNavigator which
   // bundles Left with Up and Right with Down, stealing horizontal events)

@@ -255,7 +255,7 @@ void BmpViewerActivity::loop() {
     return true;
   };
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
     activityManager.goToFileBrowser(filePath);
     return;
   }
@@ -268,6 +268,21 @@ void BmpViewerActivity::loop() {
   if (swipe == MappedInputManager::SwipeDir::Right) {
     openSibling(-1);
     return;
+  }
+
+  int tx = 0, ty = 0;
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    const int w = renderer.getScreenWidth();
+    if (tx < w / 3) {
+      openSibling(-1);
+      return;
+    } else if (tx > w * 2 / 3) {
+      openSibling(1);
+      return;
+    } else {
+      if (canSetSleepCover()) doSetSleepCover();
+      return;
+    }
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {

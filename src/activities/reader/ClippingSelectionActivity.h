@@ -40,6 +40,7 @@ class ClippingSelectionActivity final : public Activity {
   static constexpr unsigned long PAGE_JUMP_HOLD_MS = 550;
   static constexpr int FAST_VERTICAL_STEPS = 5;
 
+  int wordAt(int tx, int ty) const;
   bool loadPage(int pageNumber, bool selectLastWord = false);
   void moveHorizontal(int delta);
   void moveVertical(int direction);
