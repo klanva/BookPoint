@@ -117,6 +117,12 @@ fui::KeyboardLayoutId layoutForLanguage(const Language language) {
       return fui::KeyboardLayoutId::QwertzDe;
     case Language::ES:
       return fui::KeyboardLayoutId::SpanishEs;
+    case Language::RU:
+      return fui::KeyboardLayoutId::CyrillicRu;
+    case Language::BE:
+      return fui::KeyboardLayoutId::CyrillicBe;
+    case Language::KK:
+      return fui::KeyboardLayoutId::CyrillicKk;
     default:
       return fui::KeyboardLayoutId::QwertyEn;
   }
@@ -155,12 +161,12 @@ void KeyboardEntryActivity::onEnter() {
 void KeyboardEntryActivity::onExit() { Activity::onExit(); }
 
 const fui::KeyboardLayout& KeyboardEntryActivity::currentLayout() const {
-  if (symbols) return fui::builtinKeyboardLayout(layoutId, shifted, true);
+  if (symbols) return fui::builtinKeyboardLayout(layoutId, shifted, true, false, true);
   if (inputType == InputType::Url) {
     if (urlPanel) return URL_SNIPPET_LAYOUT;
     return shifted ? URL_SHIFT_LAYOUT : URL_LAYOUT;
   }
-  return fui::builtinKeyboardLayout(layoutId, shifted, false, /*numberRow=*/true);
+  return fui::builtinKeyboardLayout(layoutId, shifted, false, /*numberRow=*/true, /*langKey=*/true);
 }
 
 const fui::KeyboardKey* KeyboardEntryActivity::selectedKey() const {
@@ -287,6 +293,18 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
       urlPanel = !urlPanel;
       symbols = false;
       shifted = false;
+      clampSelection();
+      return true;
+    case fui::QWERTY_KEY_LANG:
+      delPressCount = 0;
+      hintVisible = false;
+      if (layoutId == fui::KeyboardLayoutId::CyrillicRu) {
+        layoutId = fui::KeyboardLayoutId::QwertyEn;
+      } else {
+        layoutId = fui::KeyboardLayoutId::CyrillicRu;
+      }
+      shifted = false;
+      symbols = false;
       clampSelection();
       return true;
     case fui::QWERTY_KEY_ENTER:
@@ -926,6 +944,7 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   const fui::KeyboardLayout& layout = currentLayout();
   props.layout = &layout;
   props.keyAction = ACTION_KEY;  // one action id; loop() dispatches on key value
+  props.langAction = ACTION_KEY;
   props.okLabel = tr(STR_OK_BUTTON);
   props.shiftLabel = tr(STR_KEY_SHIFT);
   // Match the label to the layer the mode key leads back from: the symbols
