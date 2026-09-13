@@ -64,6 +64,10 @@ from tests.e2e.contracts import (
     ProgressiveJpegDecoderModel,
     FootnoteModalModel,
     ScreensaverGalleryModel,
+    ZeroOverlapModel,
+    PremiumTypographySuiteModel,
+    FlagshipErgonomicsModel,
+    ZeroBrickRiskModel,
 )
 
 try:
@@ -886,8 +890,136 @@ class Tier2BoundaryTests(unittest.TestCase):
                 f"Failed to normalize irregular version '{v}' to 'v2.1.0'",
             )
 
+    # ==========================================================================
+    # FEATURE 14: BOOKPOINT OS v2.2.0 BOUNDARY VALUE ANALYSIS (R1 - R4)
+    # ==========================================================================
+
+    def test_f14_b01_zero_overlap_boundary_extreme_title_lengths_and_empty_author(self):
+        """F14.B1: Hero card boundary stacks with empty author, 0/1/4 title lines, and extreme titles (R1)."""
+        # Empty author increases clearance
+        res_no_author = ZeroOverlapModel.validate_hero_card_stack(title_lines_count=2, has_author=False, has_stats=True, has_streak=True)
+        res_with_author = ZeroOverlapModel.validate_hero_card_stack(title_lines_count=2, has_author=True, has_stats=True, has_streak=True)
+        self.assertTrue(res_no_author["is_valid"])
+        self.assertGreater(res_no_author["clearance_px"], res_with_author["clearance_px"])
+
+        # Extreme 100-character title with Cyrillic
+        giant_title = "Очень длинное название книги, которое занимает невероятное количество символов и строк в читалке"
+        trunc_title = ZeroOverlapModel.safe_utf8_truncate(giant_title, max_chars=25)
+        self.assertEqual(len(trunc_title), 25)
+        self.assertTrue(trunc_title.endswith("…"))
+        self.assertEqual(trunc_title.encode("utf-8").decode("utf-8"), trunc_title)
+
+        # Empty string truncate
+        self.assertEqual(ZeroOverlapModel.safe_utf8_truncate("", max_chars=20), "")
+
+    def test_f14_b02_reader_overlay_margins_boundary_12px_and_display_edges(self):
+        """F14.B2: Reader overlay boundary margins strictly at 11px (fails), 12px (passes), and 14px (passes) (R1)."""
+        w, h = 480, 800
+
+        # Margin 11px (fails strict >= 12px requirement)
+        card_11px = (11, 11, w - 22, 56)
+        self.assertFalse(ZeroOverlapModel.validate_reader_overlay_margins(card_11px, w, h, min_margin=12))
+
+        # Margin 12px (exact boundary passes)
+        card_12px = (12, 12, w - 24, 56)
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(card_12px, w, h, min_margin=12))
+
+        # Margin 14px (default flagship passes)
+        card_14px = (14, 14, w - 28, 56)
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(card_14px, w, h, min_margin=12))
+
+        # Negative coordinate fails
+        card_neg = (-2, 14, w - 28, 56)
+        self.assertFalse(ZeroOverlapModel.validate_reader_overlay_margins(card_neg, w, h, min_margin=12))
+
+        # Overflow off right edge fails
+        card_overflow = (14, 14, w, 56)
+        self.assertFalse(ZeroOverlapModel.validate_reader_overlay_margins(card_overflow, w, h, min_margin=12))
+
+    def test_f14_b03_typography_unicode_boundary_codepoints_and_unsupported_chars(self):
+        """F14.B3: Typography Unicode boundary codepoints and unsupported character rejection (R2)."""
+        # Exact range boundaries
+        self.assertTrue(PremiumTypographySuiteModel.is_codepoint_supported(0x0400))  # Start of Cyrillic
+        self.assertTrue(PremiumTypographySuiteModel.is_codepoint_supported(0x04FF))  # End of Cyrillic
+        self.assertTrue(PremiumTypographySuiteModel.is_codepoint_supported(0x2014))  # Em-dash
+        self.assertTrue(PremiumTypographySuiteModel.is_codepoint_supported(0x2026))  # Ellipsis
+        self.assertTrue(PremiumTypographySuiteModel.is_codepoint_supported(0x00AB))  # Left guillemet «
+        self.assertTrue(PremiumTypographySuiteModel.is_codepoint_supported(0x00BB))  # Right guillemet »
+
+        # Codepoint outside defined intervals (e.g. Emoji 0x1F600 or Private Use Area 0xE000)
+        self.assertFalse(PremiumTypographySuiteModel.is_codepoint_supported(0x1F600))
+        self.assertFalse(PremiumTypographySuiteModel.is_codepoint_supported(0xE000))
+
+        # Text validation with unsupported emoji correctly flags incomplete coverage
+        text_with_emoji = "Книга с эмодзи 😀 в заголовке"
+        res = PremiumTypographySuiteModel.validate_text_codepoints(text_with_emoji)
+        self.assertFalse(res["is_fully_covered"])
+        self.assertGreaterEqual(len(res["unsupported_samples"]), 1)
+
+    def test_f14_b04_dynamic_pace_boundary_dwell_seconds_clamping(self):
+        """F14.B4: Dynamic reading pace boundary dwell thresholds (4s rejected, 5s accepted, 299s accepted, 300s rejected) (R3)."""
+        # 4s is below MIN_PACE_SAMPLE_SECONDS (5s) -> rejected
+        self.assertFalse(FlagshipErgonomicsModel.is_valid_forward_pace_sample(4, is_forward_turn=True))
+
+        # 5s is exactly MIN_PACE_SAMPLE_SECONDS -> accepted
+        self.assertTrue(FlagshipErgonomicsModel.is_valid_forward_pace_sample(5, is_forward_turn=True))
+
+        # 299s is below IDLE_THRESHOLD_SECONDS (300s) -> accepted
+        self.assertTrue(FlagshipErgonomicsModel.is_valid_forward_pace_sample(299, is_forward_turn=True))
+
+        # 300s is at IDLE_THRESHOLD_SECONDS -> rejected
+        self.assertFalse(FlagshipErgonomicsModel.is_valid_forward_pace_sample(300, is_forward_turn=True))
+
+        # Countdown zero remainder boundary
+        self.assertEqual(FlagshipErgonomicsModel.calc_estimated_chapter_minutes(0, 45.0), 0)
+        self.assertEqual(FlagshipErgonomicsModel.format_countdown_string(0, 45.0), "~0 мин")
+
+        # 1 page at 10s ceiling boundary = 1 minute
+        self.assertEqual(FlagshipErgonomicsModel.calc_estimated_chapter_minutes(1, 10.0), 1)
+
+    def test_f14_b05_zero_brick_risk_battery_voltage_boundary_and_headroom_limits(self):
+        """F14.B5: Battery voltage safety threshold boundary (3199 mV rejected, 3200 mV accepted) and headroom limits (R4)."""
+        # Battery voltage 3199 mV is strictly below 3200 mV -> unsafe
+        self.assertFalse(ZeroBrickRiskModel.is_battery_voltage_safe_for_write(3199))
+
+        # Battery voltage 3200 mV is exact threshold -> safe
+        self.assertTrue(ZeroBrickRiskModel.is_battery_voltage_safe_for_write(3200))
+
+        # Battery voltage 3201 mV is safe
+        self.assertTrue(ZeroBrickRiskModel.is_battery_voltage_safe_for_write(3201))
+
+        # Headroom boundary: exact 700 KB (716,800 bytes) remaining
+        bin_at_limit = ZeroBrickRiskModel.APP0_PARTITION_SIZE - ZeroBrickRiskModel.MIN_HEADROOM_BYTES
+        hr_pass = ZeroBrickRiskModel.check_app0_headroom(bin_at_limit)
+        self.assertTrue(hr_pass["meets_requirement"])
+        self.assertEqual(hr_pass["headroom_bytes"], 716800)
+
+        # 1 byte over limit fails requirement
+        hr_fail = ZeroBrickRiskModel.check_app0_headroom(bin_at_limit + 1)
+        self.assertFalse(hr_fail["meets_requirement"])
+        self.assertEqual(hr_fail["headroom_bytes"], 716799)
+
+    def test_f14_b06_i2c_consecutive_failure_threshold_boundaries(self):
+        """F14.B6: I2C consecutive transaction failure boundaries (4 is retry, 5 triggers reset recovery) (R4)."""
+        # Exactly 4 failures -> no recovery triggered yet
+        r4 = ZeroBrickRiskModel.evaluate_i2c_recovery(4)
+        self.assertEqual(r4["action"], "NORMAL_RETRY")
+        self.assertFalse(r4["bus_clear_triggered"])
+        self.assertFalse(r4["hardware_reset_triggered"])
+
+        # Exactly 5 failures -> hardware recovery triggered
+        r5 = ZeroBrickRiskModel.evaluate_i2c_recovery(5)
+        self.assertEqual(r5["action"], "HARDWARE_RECOVERY")
+        self.assertTrue(r5["bus_clear_triggered"])
+        self.assertTrue(r5["hardware_reset_triggered"])
+
+        # 10 failures -> keeps hardware recovery active
+        r10 = ZeroBrickRiskModel.evaluate_i2c_recovery(10)
+        self.assertEqual(r10["action"], "HARDWARE_RECOVERY")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

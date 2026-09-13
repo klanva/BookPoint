@@ -153,7 +153,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     REFRESH_5 = 1,
     REFRESH_10 = 2,
     REFRESH_15 = 3,
-    REFRESH_30 = 4,
+    REFRESH_20 = 4,
+    REFRESH_CHAPTER = 5,
+    REFRESH_30 = 6,
     REFRESH_FREQUENCY_COUNT
   };
 

@@ -1013,7 +1013,7 @@ bool EpubReaderActivity::pageTurn(bool isForwardTurn) {
 
 bool EpubReaderActivity::turnPages(int delta) {
   if (!section || delta == 0) return false;
-  noteReadingDwell();
+  noteReadingDwell(delta > 0);
   clearDeferredReposition();
 
   if (delta > 0) {
@@ -1029,6 +1029,9 @@ bool EpubReaderActivity::turnPages(int delta) {
       RenderLock lock;
       nextPageNumber = 0;
       currentSpineIndex++;
+      if (SETTINGS.refreshFrequency == CrossPointSettings::REFRESH_CHAPTER) {
+        pagesUntilFullRefresh = 1;
+      }
       section.reset();
       lastPageTurnTime = millis();
       return true;
@@ -1048,6 +1051,9 @@ bool EpubReaderActivity::turnPages(int delta) {
       nextPageNumber = 0;
       pendingPageJump = std::numeric_limits<uint16_t>::max();
       currentSpineIndex--;
+      if (SETTINGS.refreshFrequency == CrossPointSettings::REFRESH_CHAPTER) {
+        pagesUntilFullRefresh = 1;
+      }
       section.reset();
       lastPageTurnTime = millis();
       return true;
@@ -1066,6 +1072,9 @@ bool EpubReaderActivity::skipPages(int amount) {
     RenderLock lock;
     nextPageNumber = 0;
     currentSpineIndex++;
+    if (SETTINGS.refreshFrequency == CrossPointSettings::REFRESH_CHAPTER) {
+      pagesUntilFullRefresh = 1;
+    }
     section.reset();
     return true;
   } else {
@@ -1076,6 +1085,9 @@ bool EpubReaderActivity::skipPages(int amount) {
       RenderLock lock;
       nextPageNumber = 0;
       currentSpineIndex--;
+      if (SETTINGS.refreshFrequency == CrossPointSettings::REFRESH_CHAPTER) {
+        pagesUntilFullRefresh = 1;
+      }
       section.reset();
       return true;
     }
@@ -2275,96 +2287,135 @@ uint16_t EpubReaderActivity::measureFootnotesHeight(const std::vector<FootnoteEn
 void EpubReaderActivity::renderInBookOverlays() {
   if (!inBookOverlaysActive) return;
 
-  // 1. Top Bar: (0, 0, 480, 64)
-  renderer.fillRect(0, 0, 480, 64, false);
-  renderer.drawLine(0, 64, 480, 64);
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  constexpr int kMargin = 14;  // Guaranteed >= 12px margin
+  constexpr int kRadius = 8;
 
-  // Back button [ < ]: (0, 0, 64, 64)
-  renderer.drawRect(8, 8, 48, 48);
-  renderer.drawText(UI_12_FONT_ID, 26, 22, "<");
+  // 1. Top Bar Floating Card: (kMargin, kMargin, pageWidth - 2*kMargin, 56)
+  const int topW = pageWidth - 2 * kMargin;
+  constexpr int topH = 56;
+  renderer.fillRoundedRect(kMargin, kMargin, topW, topH, kRadius, Color::White);
+  renderer.drawRoundedRect(kMargin, kMargin, topW, topH, 1, kRadius, true);
 
-  // TOC button [ TOC ]: (64, 0, 80, 64)
-  renderer.drawRect(68, 8, 72, 48);
-  renderer.drawText(UI_12_FONT_ID, 88, 22, "TOC");
+  // Back button: (kMargin + 6, kMargin + 6, 44, 44)
+  renderer.drawRect(kMargin + 6, kMargin + 6, 44, 44);
+  renderer.drawText(UI_12_FONT_ID, kMargin + 22, kMargin + 18, "<");
 
-  // Title area: (144, 0, 220, 64)
-  std::string title = getBookTitle();
-  if (title.empty()) title = "Книга";
-  if (title.length() > 20) title = title.substr(0, 17) + "...";
-  renderer.drawText(UI_12_FONT_ID, 150, 22, title.c_str());
+  // TOC button: (kMargin + 56, kMargin + 6, 60, 44)
+  renderer.drawRect(kMargin + 56, kMargin + 6, 60, 44);
+  renderer.drawText(UI_12_FONT_ID, kMargin + 72, kMargin + 18, "TOC");
 
-  // Bookmark button: (364, 0, 56, 64)
-  renderer.drawRect(368, 8, 48, 48);
-  renderer.drawText(UI_12_FONT_ID, 384, 22, currentPageBookmarked ? "[*]" : "[ ]");
+  // Right buttons: Search & Bookmark anchored to right edge
+  const int searchX = kMargin + topW - 50;
+  const int bookmarkX = searchX - 54;
+  renderer.drawRect(searchX, kMargin + 6, 44, 44);
+  renderer.drawText(UI_12_FONT_ID, searchX + 16, kMargin + 18, "Q");
+  renderer.drawRect(bookmarkX, kMargin + 6, 44, 44);
+  renderer.drawText(UI_12_FONT_ID, bookmarkX + 12, kMargin + 18, currentPageBookmarked ? "[*]" : "[ ]");
 
-  // Search button: (420, 0, 60, 64)
-  renderer.drawRect(424, 8, 48, 48);
-  renderer.drawText(UI_12_FONT_ID, 436, 22, "Q");
+  // Title: Safely truncated via pixel measurement
+  const int titleX = kMargin + 124;
+  const int maxTitleW = std::max(60, bookmarkX - titleX - 12);
+  std::string rawTitle = getBookTitle();
+  if (rawTitle.empty()) rawTitle = "Книга";
+  const std::string safeTitle = renderer.truncatedText(UI_12_FONT_ID, rawTitle.c_str(), maxTitleW, EpdFontFamily::BOLD);
+  renderer.drawText(UI_12_FONT_ID, titleX, kMargin + 18, safeTitle.c_str(), true, EpdFontFamily::BOLD);
 
-  // 2. Bottom Bar: (0, 672, 480, 128)
-  renderer.fillRect(0, 672, 480, 128, false);
-  renderer.drawLine(0, 672, 480, 672);
+  // 2. Bottom Bar Floating Card: (kMargin, pageHeight - kMargin - 124, topW, 124)
+  constexpr int botH = 124;
+  const int botY = pageHeight - kMargin - botH;
+  renderer.fillRoundedRect(kMargin, botY, topW, botH, kRadius, Color::White);
+  renderer.drawRoundedRect(kMargin, botY, topW, botH, 1, kRadius, true);
 
-  // Info area: (20, 676, 440, 30)
+  // Info area:
   int curP = section ? (section->currentPage + 1) : 1;
   int totP = section ? section->pageCount : 1;
   if (totP < 1) totP = 1;
   int pct = (curP * 100) / totP;
   int remP = totP - curP;
-  int estMin = (remP <= 0) ? 0 : std::max(1, static_cast<int>(std::ceil(remP * 1.0f)));
+
+  // Dynamic reading pace calculation
+  uint32_t paceSec = bookStats.avgSecondsPerForwardPage;
+  if (paceSec == 0) {
+    uint16_t sessionPace = 0;
+    if (readingTracker.sessionPaceAverage(sessionPace) && sessionPace > 0) paceSec = sessionPace;
+  }
+  if (paceSec == 0 && bookStats.totalPagesTurned > 0 && bookStats.totalReadingSeconds > 0) {
+    paceSec = static_cast<uint32_t>(bookStats.totalReadingSeconds / bookStats.totalPagesTurned);
+  }
+  const float secPerPage = (paceSec >= 5 && paceSec <= 300) ? static_cast<float>(paceSec) : 45.0f;
+  int estMin = (remP <= 0) ? 0 : std::max(1, static_cast<int>(std::ceil((remP * secPerPage) / 60.0f)));
+
   char infoBuf[80];
   snprintf(infoBuf, sizeof(infoBuf), "Стр. %d/%d (%d%%) • ~%d мин до конца главы", curP, totP, pct, estMin);
-  renderer.drawText(SMALL_FONT_ID, 24, 682, infoBuf);
+  renderer.drawText(SMALL_FONT_ID, kMargin + 14, botY + 10, infoBuf);
 
-  // Scrubber: (30, 708, 420, 26)
-  renderer.drawRect(30, 718, 420, 6);
-  int thumbX = 30 + (totP > 1 ? ((curP - 1) * 408 / (totP - 1)) : 0);
-  renderer.fillRect(thumbX, 715, 12, 12, true);
+  // Scrubber:
+  const int scrubX = kMargin + 16;
+  const int scrubW = topW - 32;
+  renderer.drawRect(scrubX, botY + 36, scrubW, 6);
+  int thumbX = scrubX + (totP > 1 ? ((curP - 1) * (scrubW - 12) / (totP - 1)) : 0);
+  renderer.fillRect(thumbX, botY + 33, 12, 12, true);
 
-  // Action Buttons:
-  // Aa: (20, 742, 95, 48)
-  renderer.drawRect(20, 742, 95, 48);
-  renderer.drawText(UI_12_FONT_ID, 52, 756, "Aa");
+  // Action Buttons (each >= 44x44px):
+  // Aa: (kMargin + 10, botY + 66, 95, 48)
+  renderer.drawRect(kMargin + 10, botY + 66, 95, 48);
+  renderer.drawText(UI_12_FONT_ID, kMargin + 42, botY + 80, "Aa");
 
-  // TOC: (125, 742, 110, 48)
-  renderer.drawRect(125, 742, 110, 48);
-  renderer.drawText(UI_12_FONT_ID, 160, 756, "TOC");
+  // TOC: (kMargin + 115, botY + 66, 110, 48)
+  renderer.drawRect(kMargin + 115, botY + 66, 110, 48);
+  renderer.drawText(UI_12_FONT_ID, kMargin + 150, botY + 80, "TOC");
 
-  // Footnotes: (245, 742, 100, 48)
-  renderer.drawRect(245, 742, 100, 48);
-  renderer.drawText(UI_12_FONT_ID, 265, 756, "Сноски");
+  // Footnotes: (kMargin + 235, botY + 66, 100, 48)
+  renderer.drawRect(kMargin + 235, botY + 66, 100, 48);
+  renderer.drawText(UI_12_FONT_ID, kMargin + 255, botY + 80, "Сноски");
 
-  // Bookmarks: (355, 742, 105, 48)
-  renderer.drawRect(355, 742, 105, 48);
-  renderer.drawText(UI_12_FONT_ID, 368, 756, "Закладки");
+  // Bookmarks: (kMargin + 345, botY + 66, 105, 48)
+  renderer.drawRect(kMargin + 345, botY + 66, 105, 48);
+  renderer.drawText(UI_12_FONT_ID, kMargin + 358, botY + 80, "Закладки");
 
-  // 3. Typography Popup Aa: (20, 350, 440, 310)
+  // 3. Typography Popup Aa: (20, 320, 440, 340)
   if (typographyPopupActive) {
-    renderer.fillRect(20, 350, 440, 310, false);
-    renderer.drawRect(20, 350, 440, 310);
-    renderer.drawText(UI_12_FONT_ID, 40, 366, "Типографика");
+    renderer.fillRect(20, 320, 440, 340, false);
+    renderer.drawRect(20, 320, 440, 340);
 
-    // Section 1: Font size controls: A- at (120, 350, 56, 44), A+ at (260, 350, 56, 44)
-    renderer.drawText(SMALL_FONT_ID, 35, 362, "Размер:");
-    renderer.drawRect(120, 350, 56, 44);
-    renderer.drawText(UI_12_FONT_ID, 138, 362, "A-");
+    // Header: clean, non-overlapping title
+    renderer.drawText(UI_12_FONT_ID, 36, 332, "Типографика");
+    renderer.drawLine(20, 356, 460, 356);
+
+    // Section 1: Font size controls: A- at (120, 366, 56, 44), A+ at (260, 366, 56, 44)
+    renderer.drawText(SMALL_FONT_ID, 35, 378, "Размер:");
+    renderer.drawRect(120, 366, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 138, 378, "A-");
 
     char szBuf[16];
     snprintf(szBuf, sizeof(szBuf), "%d pt", SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14);
-    renderer.drawText(UI_12_FONT_ID, 194, 362, szBuf);
+    renderer.drawText(UI_12_FONT_ID, 194, 378, szBuf);
 
-    renderer.drawRect(260, 350, 56, 44);
-    renderer.drawText(UI_12_FONT_ID, 278, 362, "A+");
+    renderer.drawRect(260, 366, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 278, 378, "A+");
 
     // Section 2: Font family selection chips: (30, 410, 130, 44), (170, 410, 130, 44), (310, 410, 130, 44)
+    const char* activeFamily = SETTINGS.sdFontFamilyName[0] != '\0' ? SETTINGS.sdFontFamilyName : "Noto Serif";
+
+    // Chip 1: JetBrains Mono
+    bool jbActive = strcmp(activeFamily, "JetBrains Mono") == 0;
+    if (jbActive) renderer.fillRect(30, 410, 130, 44, true);
     renderer.drawRect(30, 410, 130, 44);
-    renderer.drawText(SMALL_FONT_ID, 42, 424, "JetBrains Mono");
+    renderer.drawText(SMALL_FONT_ID, 42, 424, "JetBrains Mono", !jbActive);
 
+    // Chip 2: Roboto / Inter
+    bool robotoActive = (strcmp(activeFamily, "Roboto Condensed") == 0 || strcmp(activeFamily, "Inter") == 0);
+    if (robotoActive) renderer.fillRect(170, 410, 130, 44, true);
     renderer.drawRect(170, 410, 130, 44);
-    renderer.drawText(SMALL_FONT_ID, 178, 424, "Roboto Cond");
+    renderer.drawText(SMALL_FONT_ID, 178, 424, "Roboto / Inter", !robotoActive);
 
+    // Chip 3: OpenDyslexic
+    bool odActive = strcmp(activeFamily, "OpenDyslexic") == 0;
+    if (odActive) renderer.fillRect(310, 410, 130, 44, true);
     renderer.drawRect(310, 410, 130, 44);
-    renderer.drawText(SMALL_FONT_ID, 324, 424, "OpenDyslexic");
+    renderer.drawText(SMALL_FONT_ID, 324, 424, "OpenDyslexic", !odActive);
 
     // Section 3: Line spacing steppers: (120, 470, 56, 44) and (260, 470, 56, 44)
     renderer.drawText(SMALL_FONT_ID, 35, 482, "Интервал:");
@@ -2388,6 +2439,16 @@ void EpubReaderActivity::renderInBookOverlays() {
 
     renderer.drawRect(260, 530, 56, 44);
     renderer.drawText(UI_12_FONT_ID, 284, 542, "+");
+
+    // Section 5: Full Suite Stepper (Y: 600..644): left (30, 600, 44, 44), right (406, 600, 44, 44)
+    renderer.drawRect(30, 600, 44, 44);
+    renderer.drawText(UI_12_FONT_ID, 46, 612, "<");
+    renderer.drawRect(80, 600, 320, 44);
+    char suiteBuf[64];
+    snprintf(suiteBuf, sizeof(suiteBuf), "Шрифт: %s", activeFamily);
+    renderer.drawText(SMALL_FONT_ID, 95, 614, suiteBuf);
+    renderer.drawRect(406, 600, 44, 44);
+    renderer.drawText(UI_12_FONT_ID, 422, 612, ">");
   }
 
   // 4. Footnote Modal Card Popup: (20, 584, 440, 200)
@@ -2417,7 +2478,7 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
   if (typographyPopupActive) {
     // Popup bounds: (20, 350, 440, 310)
     // 1. Font Size: A- (120, 350, 56, 44) and legacy (130, 420, 50, 40)
-    if ((tx >= 120 && tx <= 176 && ty >= 350 && ty <= 394) ||
+    if ((tx >= 120 && tx <= 176 && ty >= 350 && ty <= 410) ||
         (tx >= 130 && tx <= 180 && ty >= 420 && ty <= 460)) {
       uint8_t cur = SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14;
       if (cur > 14) {
@@ -2425,6 +2486,7 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
         SETTINGS.fontPointSize = cur;
         SETTINGS.saveToFile();
         RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
         if (section) {
           rememberCurrentContentOffset();
           cachedSpineIndex = currentSpineIndex;
@@ -2437,7 +2499,7 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       return true;
     }
     // Font Size: A+ (260, 350, 56, 44) and legacy (240, 420, 50, 40)
-    if ((tx >= 260 && tx <= 316 && ty >= 350 && ty <= 394) ||
+    if ((tx >= 260 && tx <= 316 && ty >= 350 && ty <= 410) ||
         (tx >= 240 && tx <= 290 && ty >= 420 && ty <= 460)) {
       uint8_t cur = SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14;
       if (cur < 36) {
@@ -2445,6 +2507,7 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
         SETTINGS.fontPointSize = cur;
         SETTINGS.saveToFile();
         RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
         if (section) {
           rememberCurrentContentOffset();
           cachedSpineIndex = currentSpineIndex;
@@ -2456,13 +2519,14 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       }
       return true;
     }
-    // 2. Font Family Chips (Y: 410..454)
-    if (ty >= 410 && ty <= 454) {
+    // 2. Font Family Chips (Y: 410..465)
+    if (ty >= 410 && ty <= 465) {
       if (tx >= 30 && tx <= 160) {
         snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "JetBrains Mono");
         SETTINGS.fontFamily = CrossPointSettings::NOTOSANS;
         SETTINGS.saveToFile();
         RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
         if (section) {
           rememberCurrentContentOffset();
           cachedSpineIndex = currentSpineIndex;
@@ -2474,10 +2538,11 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
         return true;
       }
       if (tx >= 170 && tx <= 300) {
-        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "Roboto Condensed");
+        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "Inter");
         SETTINGS.fontFamily = CrossPointSettings::NOTOSANS;
         SETTINGS.saveToFile();
         RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
         if (section) {
           rememberCurrentContentOffset();
           cachedSpineIndex = currentSpineIndex;
@@ -2489,10 +2554,11 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
         return true;
       }
       if (tx >= 310 && tx <= 440) {
-        SETTINGS.sdFontFamilyName[0] = '\0';
-        SETTINGS.fontFamily = CrossPointSettings::LEGACY_OPENDYSLEXIC;
+        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "OpenDyslexic");
+        SETTINGS.fontFamily = CrossPointSettings::NOTOSERIF;
         SETTINGS.saveToFile();
         RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
         if (section) {
           rememberCurrentContentOffset();
           cachedSpineIndex = currentSpineIndex;
@@ -2505,7 +2571,7 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       }
     }
     // 3. Line Spacing: minus (120, 470, 56, 44), plus (260, 470, 56, 44)
-    if (ty >= 470 && ty <= 514) {
+    if (ty >= 470 && ty <= 524) {
       if (tx >= 120 && tx <= 176) {
         if (SETTINGS.lineSpacing > 0) {
           SETTINGS.lineSpacing--;
@@ -2540,7 +2606,7 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       }
     }
     // 4. Margins: minus (120, 530, 56, 44), plus (260, 530, 56, 44)
-    if (ty >= 530 && ty <= 574) {
+    if (ty >= 530 && ty <= 584) {
       if (tx >= 120 && tx <= 176) {
         if (SETTINGS.screenMargin >= 10) {
           SETTINGS.screenMargin -= 10;
@@ -2579,6 +2645,56 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       }
     }
 
+    // 5. Full Suite Stepper (Y: 600..644): left (30..74), right (406..450)
+    if (ty >= 600 && ty <= 644) {
+      static const char* const kSuiteFamilies[] = {
+          "Literata", "PT Serif", "Alegreya", "Inter", "AtkinsonHyperlegibleNext", "JetBrains Mono", "OpenDyslexic"
+      };
+      constexpr size_t kSuiteCount = sizeof(kSuiteFamilies) / sizeof(kSuiteFamilies[0]);
+      if (tx >= 30 && tx <= 74) {
+        int curIdx = 0;
+        for (size_t i = 0; i < kSuiteCount; ++i) {
+          if (strcmp(SETTINGS.sdFontFamilyName, kSuiteFamilies[i]) == 0) { curIdx = i; break; }
+        }
+        int newIdx = (curIdx + kSuiteCount - 1) % kSuiteCount;
+        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "%s", kSuiteFamilies[newIdx]);
+        SETTINGS.fontFamily = CrossPointSettings::NOTOSERIF;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+      if (tx >= 406 && tx <= 450) {
+        int curIdx = 0;
+        for (size_t i = 0; i < kSuiteCount; ++i) {
+          if (strcmp(SETTINGS.sdFontFamilyName, kSuiteFamilies[i]) == 0) { curIdx = i; break; }
+        }
+        int newIdx = (curIdx + 1) % kSuiteCount;
+        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "%s", kSuiteFamilies[newIdx]);
+        SETTINGS.fontFamily = CrossPointSettings::NOTOSERIF;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        sdFontSystem.ensureLoaded(renderer);
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+    }
+
     // Tap outside popup: dismiss
     if (tx < 20 || tx > 460 || ty < 350 || ty > 660) {
       typographyPopupActive = false;
@@ -2605,70 +2721,79 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
     return true;
   }
 
-  // Check Top Bar: (0, 0, 480, 64)
-  if (ty < 64) {
-    if (tx < 64) {
+  const int pageWidth = renderer.getScreenWidth();
+  const int pageHeight = renderer.getScreenHeight();
+  constexpr int kMargin = 14;
+  const int topW = pageWidth - 2 * kMargin;
+  constexpr int topH = 56;
+  constexpr int botH = 124;
+  const int botY = pageHeight - kMargin - botH;
+
+  // Check Top Bar: floating card (kMargin, kMargin, topW, 56) or legacy (ty < 64)
+  if ((tx >= kMargin && tx <= kMargin + topW && ty >= kMargin && ty <= kMargin + topH) || (ty < 64)) {
+    if ((tx >= kMargin && tx <= kMargin + 50) || (ty < 64 && tx < 64)) {
       // Back button
       inBookOverlaysActive = false;
       finish();
       return true;
     }
-    if (tx >= 64 && tx < 144) {
+    if ((tx >= kMargin + 56 && tx <= kMargin + 116) || (ty < 64 && tx >= 64 && tx < 144)) {
       // TOC button
       inBookOverlaysActive = false;
       onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER);
       return true;
     }
-    if (tx >= 364 && tx < 420) {
+    if (tx >= kMargin + topW - 50 || (ty < 64 && tx >= 420)) {
+      // Search button
+      inBookOverlaysActive = false;
+      startActivityForResult(std::make_unique<BookSearchActivity>(renderer, mappedInput), [](const ActivityResult&) {});
+      return true;
+    }
+    if ((tx >= kMargin + topW - 104 && tx < kMargin + topW - 50) || (ty < 64 && tx >= 364 && tx < 420)) {
       // Bookmark button
       addBookmark();
       updateBookmarkFlag();
       requestUpdate();
       return true;
     }
-    if (tx >= 420) {
-      // Search button
-      inBookOverlaysActive = false;
-      startActivityForResult(std::make_unique<BookSearchActivity>(renderer, mappedInput), [](const ActivityResult&) {});
-      return true;
-    }
     return true;
   }
 
-  // Check Bottom Bar: (0, 672, 480, 128)
-  if (ty >= 672) {
-    if (tx >= 20 && tx < 115 && ty >= 742) {
-      // Aa Typography
+  // Check Bottom Bar: floating card (kMargin, botY, topW, botH) or legacy (ty >= 672)
+  if ((tx >= kMargin && tx <= kMargin + topW && ty >= botY && ty <= botY + botH) || (ty >= 672)) {
+    // Scrubber
+    if (((ty >= botY + 30 && ty <= botY + 60) || (ty >= 700 && ty <= 738)) && section && section->pageCount > 0) {
+      const int scrubLeft = kMargin + 16;
+      const int scrubRight = kMargin + topW - 16;
+      float frac = (scrubRight > scrubLeft) ? static_cast<float>(tx - scrubLeft) / static_cast<float>(scrubRight - scrubLeft) : 0.0f;
+      frac = std::clamp(frac, 0.0f, 1.0f);
+      int targetP = static_cast<int>(frac * (section->pageCount - 1));
+      section->currentPage = targetP;
+      requestUpdate();
+      return true;
+    }
+    // Aa Typography: (kMargin + 10, botY + 66, 95, 48) or legacy (tx: 20..115, ty >= 742)
+    if ((tx >= kMargin + 10 && tx < kMargin + 110 && ty >= botY + 60) || (tx >= 20 && tx < 115 && ty >= 742)) {
       typographyPopupActive = !typographyPopupActive;
       requestUpdate();
       return true;
     }
-    if (tx >= 125 && tx < 235 && ty >= 742) {
-      // TOC
+    // TOC: (kMargin + 115, botY + 66, 110, 48) or legacy (tx: 125..235, ty >= 742)
+    if ((tx >= kMargin + 115 && tx < kMargin + 230 && ty >= botY + 60) || (tx >= 125 && tx < 235 && ty >= 742)) {
       inBookOverlaysActive = false;
       onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER);
       return true;
     }
-    if (tx >= 245 && tx < 345 && ty >= 742) {
-      // Footnotes
+    // Footnotes: (kMargin + 235, botY + 66, 100, 48) or legacy (tx: 245..345, ty >= 742)
+    if ((tx >= kMargin + 235 && tx < kMargin + 340 && ty >= botY + 60) || (tx >= 245 && tx < 345 && ty >= 742)) {
       footnotePopupActive = !footnotePopupActive;
       requestUpdate();
       return true;
     }
-    if (tx >= 355 && ty >= 742) {
-      // Bookmarks
+    // Bookmarks: (kMargin + 345, botY + 66, 105, 48) or legacy (tx >= 355 && ty >= 742)
+    if ((tx >= kMargin + 345 && ty >= botY + 60) || (tx >= 355 && ty >= 742)) {
       inBookOverlaysActive = false;
       onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::BOOKMARKS);
-      return true;
-    }
-    if (ty >= 700 && ty <= 738 && section && section->pageCount > 0) {
-      // Scrubber
-      float frac = static_cast<float>(tx - 30) / 420.0f;
-      if (frac < 0.0f) frac = 0.0f;
-      if (frac > 1.0f) frac = 1.0f;
-      int targetP = static_cast<int>(frac * (section->pageCount - 1));
-      section->currentPage = targetP;
-      requestUpdate();
       return true;
     }
     return true;

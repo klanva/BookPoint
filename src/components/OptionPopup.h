@@ -203,7 +203,7 @@ class OptionPopup {
     props.styles.active = props.styles.normal;
     props.styles.disabled = props.styles.normal;
     props.buttonHeight =
-        fui::clampI16(target.lineHeight(fui::GfxRendererTarget::FONT_BODY) + metrics.optionPopupSelectionVPadding * 2);
+        fui::clampI16(std::max<int16_t>(44, target.lineHeight(fui::GfxRendererTarget::FONT_BODY) + metrics.optionPopupSelectionVPadding * 2));
 
     // Fixed fraction of the screen, clamped by the theme's side margins; the
     // old max-text-width sizing is gone, long labels wrap inside the buttons.

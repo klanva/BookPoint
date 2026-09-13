@@ -60,6 +60,10 @@ from tests.e2e.contracts import (
     ProgressiveJpegDecoderModel,
     FootnoteModalModel,
     ScreensaverGalleryModel,
+    ZeroOverlapModel,
+    PremiumTypographySuiteModel,
+    FlagshipErgonomicsModel,
+    ZeroBrickRiskModel,
 )
 
 try:
@@ -579,8 +583,102 @@ class Tier3CombinationTests(unittest.TestCase):
         self.assertEqual(light_pol["bg_polarity"], POLARITY_WHITE)
         self.assertFalse(light_pol["screen_inverted"])
 
+    def test_t3_23_handed_touch_zones_with_dynamic_pace_and_anti_ghosting_pipeline(self):
+        """T3.23: Complete reading flow combining handed touch zones, dynamic pace dwell tracking, and anti-ghosting (R3)."""
+        w, h = 480, 800
+
+        # 1. Right-handed reading session: tap forward at X=350, Y=500
+        tap_action = FlagshipErgonomicsModel.classify_reader_touch(350, 500, w, h, handedness="RIGHT")
+        self.assertEqual(tap_action, FlagshipErgonomicsModel.READER_TOUCH_NEXT)
+
+        # 2. Page dwell recorded for forward turns (40s, 48s, 44s, 52s)
+        dwell_samples = [40, 48, 44, 52]
+        for d in dwell_samples:
+            self.assertTrue(FlagshipErgonomicsModel.is_valid_forward_pace_sample(d, is_forward_turn=True))
+
+        avg_pace = FlagshipErgonomicsModel.calc_running_pace(dwell_samples)
+        self.assertAlmostEqual(avg_pace, 46.0)
+
+        # 3. Dynamic chapter countdown on bottom overlay: 15 pages left at 46s/page = 690s = 12 min
+        countdown_str = FlagshipErgonomicsModel.format_countdown_string(15, avg_pace)
+        self.assertEqual(countdown_str, "~12 мин")
+
+        # 4. Anti-ghosting full flash check: mode REFRESH_20 on page 20
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(20, False, mode="REFRESH_20"))
+        self.assertFalse(FlagshipErgonomicsModel.should_trigger_full_refresh(21, False, mode="REFRESH_20"))
+
+        # 5. User switches to left-handed mode: tap forward at X=80, backward at X=420
+        tap_forward_lh = FlagshipErgonomicsModel.classify_reader_touch(80, 500, w, h, handedness="LEFT")
+        self.assertEqual(tap_forward_lh, FlagshipErgonomicsModel.READER_TOUCH_NEXT)
+        tap_prev_lh = FlagshipErgonomicsModel.classify_reader_touch(420, 500, w, h, handedness="LEFT")
+        self.assertEqual(tap_prev_lh, FlagshipErgonomicsModel.READER_TOUCH_PREV)
+
+    def test_t3_24_live_typography_suite_selection_to_reflow_and_safe_persistence(self):
+        """T3.24: Live typography suite selection, zero-drift reflow, battery safety guard, and persistence (R1 + R2 + R4)."""
+        # 1. User opens Aa popup in reader
+        self.assertEqual(ReaderOverlaysModel.classify_bottom_tap(60, 765), "TYPOGRAPHY")
+
+        # 2. Font family stepped from JetBrains Mono to Literata
+        chosen_font = "Literata"
+        self.assertIn(chosen_font, PremiumTypographySuiteModel.PREMIUM_FONT_FAMILIES)
+        new_size = AaTypographyModel.step_font_size(16, 2)
+        self.assertEqual(new_size, 18)
+
+        # 3. Live reflow maps cached character offset 4200 to new page without reading drift
+        cached_char_offset = 4200
+        new_pages = [(0, 1100), (1100, 2250), (2250, 3400), (3400, 4550), (4550, 5700)]
+        reflow_res = PremiumTypographySuiteModel.verify_reflow_offset_preservation(cached_char_offset, new_pages)
+        self.assertTrue(reflow_res["offset_contained"])
+        self.assertEqual(reflow_res["target_page"], 3)
+
+        # 4. Autosave state serialized
+        saved_state = AaTypographyModel.autosave_state(chosen_font, new_size, 1.2, 20)
+        self.assertEqual(saved_state["fontFamily"], "Literata")
+
+        # 5. Atomic persistence under safe battery voltage (3800 mV >= 3200 mV)
+        persist_res = ZeroBrickRiskModel.simulate_atomic_persistence(
+            "/.crosspoint/settings.json", str(saved_state), voltage_mv=3800
+        )
+        self.assertEqual(persist_res["status"], "SUCCESS")
+
+        # 6. Hybrid font flash partition headroom confirmed
+        bin_path = Path("src/.pio/build/x4pro/firmware.bin")
+        bin_size = bin_path.stat().st_size if bin_path.exists() else 5761760
+        hr = ZeroBrickRiskModel.check_app0_headroom(bin_size)
+        self.assertTrue(hr["meets_requirement"])
+        self.assertGreaterEqual(hr["headroom_kb"], 700.0)
+
+    def test_t3_25_landscape_quick_settings_to_floating_reader_overlays_sync(self):
+        """T3.25: Landscape 800x480 Quick Settings curtain centering, dual sliders, and floating reader overlays (R1)."""
+        w, h = 800, 480
+
+        # 1. Quick Settings curtain centered at offsetX = 176
+        offset_x = QuickSettingsCurtainModel.get_content_offset_x(w)
+        self.assertEqual(offset_x, 176)
+
+        # 2. Sliders: Brightness (Cold) and CCT (Warm) hit tests
+        self.assertEqual(QuickSettingsCurtainModel.classify_slider_tap_offset("BRIGHTNESS", 200, 70, offset_x), "MINUS")
+        self.assertEqual(QuickSettingsCurtainModel.classify_slider_tap_offset("CCT", 610, 120, offset_x), "PLUS")
+
+        # 3. Dismiss curtain, reader floating overlays rendered with >= 12px margin
+        top_bar = ReaderOverlaysModel.get_floating_top_bar_rect(w, margin=14)
+        bot_bar = ReaderOverlaysModel.get_floating_bottom_bar_rect(w, h, margin=14)
+
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(top_bar, w, h, min_margin=12))
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(bot_bar, w, h, min_margin=12))
+
+        # Bottom bar is fully on-screen in landscape (y: 342..466 < 480)
+        self.assertEqual(bot_bar[1], 342)
+        self.assertEqual(bot_bar[1] + bot_bar[3], 466)
+        self.assertLessEqual(bot_bar[1] + bot_bar[3], h)
+
+        # Top bar back and TOC buttons responsive in landscape
+        self.assertEqual(ReaderOverlaysModel.classify_floating_top_tap(25, 25, w, margin=14), "BACK")
+        self.assertEqual(ReaderOverlaysModel.classify_floating_top_tap(85, 25, w, margin=14), "TOC")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

@@ -13,7 +13,7 @@
   <a href="https://www.espressif.com/"><img src="https://img.shields.io/badge/Platform-ESP32--S3-blue.svg?style=flat-square" alt="Platform"></a>
   <img src="https://img.shields.io/badge/Display-800x480%20E--Ink-black.svg?style=flat-square" alt="Display">
   <img src="https://img.shields.io/badge/Touch-GT911%20Capacitive-teal.svg?style=flat-square" alt="Touch">
-  <img src="https://img.shields.io/badge/Tests-200%2F200%20Passed-success.svg?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-226%2F226%20Passed-success.svg?style=flat-square" alt="Tests">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/klanva/BookPoint/releases"><img src="https://img.shields.io/github/v/release/klanva/BookPoint?style=flat-square&color=orange" alt="Release"></a>
 </p>
@@ -131,7 +131,7 @@ pio run -e x4pro
 ```bash
 python tests/e2e/run_e2e_tests.py --all
 ```
-*(200 тестов охватывают функциональное покрытие, интеграцию аппаратных шин, парсеры медиа и сенсорные жесты)*.
+*(226 тестов охватывают функциональное покрытие, интеграцию аппаратных шин, парсеры медиа и сенсорные жесты)*.
 
 ---
 

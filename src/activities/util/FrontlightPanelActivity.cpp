@@ -172,9 +172,12 @@ void FrontlightPanelActivity::loop() {
       close();
       return;
     }
+    const int pageWidth = renderer.getScreenWidth();
+    const int offsetX = (pageWidth > 480) ? (pageWidth - 448) / 2 : 0;
+
     // Check 4 control pills:
-    // WIFI: (20, 155, 210, 46)
-    if (tapX >= 20 && tapX <= 230 && tapY >= 155 && tapY <= 201) {
+    // WIFI: (offsetX + 20, 155, 210, 46)
+    if (tapX >= offsetX + 20 && tapX <= offsetX + 230 && tapY >= 155 && tapY <= 201) {
       if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
@@ -184,40 +187,40 @@ void FrontlightPanelActivity::loop() {
       requestUpdate();
       return;
     }
-    // DARK_MODE: (250, 155, 210, 46)
-    if (tapX >= 250 && tapX <= 460 && tapY >= 155 && tapY <= 201) {
+    // DARK_MODE: (offsetX + 250, 155, 210, 46)
+    if (tapX >= offsetX + 250 && tapX <= offsetX + 460 && tapY >= 155 && tapY <= 201) {
       SETTINGS.screenInverted = (SETTINGS.screenInverted ? 0 : 1);
       SETTINGS.saveToFile();
       requestUpdate();
       return;
     }
-    // ROTATION_LOCK: (20, 215, 210, 46)
-    if (tapX >= 20 && tapX <= 230 && tapY >= 215 && tapY <= 261) {
+    // ROTATION_LOCK: (offsetX + 20, 215, 210, 46)
+    if (tapX >= offsetX + 20 && tapX <= offsetX + 230 && tapY >= 215 && tapY <= 261) {
       SETTINGS.orientation = (SETTINGS.orientation == CrossPointSettings::PORTRAIT ? CrossPointSettings::LANDSCAPE_CW : CrossPointSettings::PORTRAIT);
       SETTINGS.saveToFile();
       requestUpdate();
       return;
     }
-    // SLEEP: (250, 215, 210, 46)
-    if (tapX >= 250 && tapX <= 460 && tapY >= 215 && tapY <= 261) {
+    // SLEEP: (offsetX + 250, 215, 210, 46)
+    if (tapX >= offsetX + 250 && tapX <= offsetX + 460 && tapY >= 215 && tapY <= 261) {
       close();
       activityManager.goToQuickLock();
       return;
     }
 
     // Discrete step slider buttons (>= 44px) & track seek:
-    // Brightness: minus (16, 54, 44, 44), plus (420, 54, 44, 44)
-    if (tapX >= 16 && tapX <= 60 && tapY >= 54 && tapY <= 98) {
+    // Brightness: minus (offsetX + 16, 54, 44, 44), plus (offsetX + 420, 54, 44, 44)
+    if (tapX >= offsetX + 16 && tapX <= offsetX + 60 && tapY >= 54 && tapY <= 98) {
       adjustBrightness(-10);
       return;
     }
-    if (tapX >= 420 && tapX <= 464 && tapY >= 54 && tapY <= 98) {
+    if (tapX >= offsetX + 420 && tapX <= offsetX + 464 && tapY >= 54 && tapY <= 98) {
       adjustBrightness(10);
       return;
     }
-    // Brightness track direct touch seek (68, 54, 344, 44)
-    if (tapX >= 68 && tapX <= 412 && tapY >= 54 && tapY <= 98) {
-      float frac = static_cast<float>(tapX - 68) / 344.0f;
+    // Brightness track direct touch seek (offsetX + 68, 54, 344, 44)
+    if (tapX >= offsetX + 68 && tapX <= offsetX + 412 && tapY >= 54 && tapY <= 98) {
+      float frac = static_cast<float>(tapX - (offsetX + 68)) / 344.0f;
       int val = static_cast<int>(std::round(frac * 100.0f));
       if (val < 0) val = 0;
       if (val > 100) val = 100;
@@ -234,18 +237,18 @@ void FrontlightPanelActivity::loop() {
       return;
     }
 
-    // CCT / Warmth: minus (16, 104, 44, 44), plus (420, 104, 44, 44)
-    if (tapX >= 16 && tapX <= 60 && tapY >= 104 && tapY <= 148) {
+    // CCT / Warmth: minus (offsetX + 16, 104, 44, 44), plus (offsetX + 420, 104, 44, 44)
+    if (tapX >= offsetX + 16 && tapX <= offsetX + 60 && tapY >= 104 && tapY <= 148) {
       adjustWarmth(-10);
       return;
     }
-    if (tapX >= 420 && tapX <= 464 && tapY >= 104 && tapY <= 148) {
+    if (tapX >= offsetX + 420 && tapX <= offsetX + 464 && tapY >= 104 && tapY <= 148) {
       adjustWarmth(10);
       return;
     }
-    // CCT track direct touch seek (68, 104, 344, 44)
-    if (tapX >= 68 && tapX <= 412 && tapY >= 104 && tapY <= 148) {
-      float frac = static_cast<float>(tapX - 68) / 344.0f;
+    // CCT track direct touch seek (offsetX + 68, 104, 344, 44)
+    if (tapX >= offsetX + 68 && tapX <= offsetX + 412 && tapY >= 104 && tapY <= 148) {
+      float frac = static_cast<float>(tapX - (offsetX + 68)) / 344.0f;
       int val = static_cast<int>(std::round(frac * 100.0f));
       if (val < 0) val = 0;
       if (val > 100) val = 100;
@@ -310,60 +313,64 @@ void FrontlightPanelActivity::render(RenderLock&&) {
   const int pageWidth = renderer.getScreenWidth();
   renderer.fillRect(0, 0, pageWidth, panelBottom, false);
 
-  renderer.drawText(UI_12_FONT_ID, 20, 38, "Центр управления", true);
+  const int offsetX = (pageWidth > 480) ? (pageWidth - 448) / 2 : 0;
+
+  renderer.drawText(UI_12_FONT_ID, offsetX + 20, 38, "Центр управления", true);
 
   // Brightness row at Y: 54..98
-  renderer.drawRect(16, 54, 44, 44, true);
-  renderer.drawText(UI_12_FONT_ID, 33, 67, "-", true);
-  renderer.drawRect(68, 72, 344, 8, true);
+  renderer.drawText(SMALL_FONT_ID, offsetX + 68, 56, "Холодный", true);
+  renderer.drawRect(offsetX + 16, 54, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, offsetX + 33, 67, "-", true);
+  renderer.drawRect(offsetX + 68, 72, 344, 8, true);
   const int bFill = (static_cast<int>(brightness) * 344) / 100;
-  renderer.fillRect(68, 72, bFill, 8, true);
-  renderer.drawRect(420, 54, 44, 44, true);
-  renderer.drawText(UI_12_FONT_ID, 437, 67, "+", true);
+  renderer.fillRect(offsetX + 68, 72, bFill, 8, true);
+  renderer.drawRect(offsetX + 420, 54, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, offsetX + 437, 67, "+", true);
 
   // CCT row at Y: 104..148
-  renderer.drawRect(16, 104, 44, 44, true);
-  renderer.drawText(UI_12_FONT_ID, 33, 117, "-", true);
-  renderer.drawRect(68, 122, 344, 8, true);
+  renderer.drawText(SMALL_FONT_ID, offsetX + 68, 106, "Теплый", true);
+  renderer.drawRect(offsetX + 16, 104, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, offsetX + 33, 117, "-", true);
+  renderer.drawRect(offsetX + 68, 122, 344, 8, true);
   const int cctFill = (static_cast<int>(warmth) * 344) / 100;
-  renderer.fillRect(68, 122, cctFill, 8, true);
-  renderer.drawRect(420, 104, 44, 44, true);
-  renderer.drawText(UI_12_FONT_ID, 437, 117, "+", true);
+  renderer.fillRect(offsetX + 68, 122, cctFill, 8, true);
+  renderer.drawRect(offsetX + 420, 104, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, offsetX + 437, 117, "+", true);
 
   // 4 Control Pills
-  // WIFI: (20, 155, 210, 46)
+  // WIFI: (offsetX + 20, 155, 210, 46)
   const bool wifiOn = (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF);
   if (wifiOn) {
-    renderer.fillRect(20, 155, 210, 46, true);
-    renderer.drawText(SMALL_FONT_ID, 45, 170, "Wi-Fi (Вкл)", false);
+    renderer.fillRect(offsetX + 20, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, offsetX + 45, 170, "Wi-Fi (Вкл)", false);
   } else {
-    renderer.drawRect(20, 155, 210, 46, true);
-    renderer.drawText(SMALL_FONT_ID, 45, 170, "Wi-Fi (Выкл)", true);
+    renderer.drawRect(offsetX + 20, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, offsetX + 45, 170, "Wi-Fi (Выкл)", true);
   }
 
-  // DARK_MODE: (250, 155, 210, 46)
+  // DARK_MODE: (offsetX + 250, 155, 210, 46)
   const bool darkOn = (SETTINGS.screenInverted != 0);
   if (darkOn) {
-    renderer.fillRect(250, 155, 210, 46, true);
-    renderer.drawText(SMALL_FONT_ID, 275, 170, "Ночной режим (Вкл)", false);
+    renderer.fillRect(offsetX + 250, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, offsetX + 275, 170, "Ночной режим (Вкл)", false);
   } else {
-    renderer.drawRect(250, 155, 210, 46, true);
-    renderer.drawText(SMALL_FONT_ID, 275, 170, "Ночной режим (Выкл)", true);
+    renderer.drawRect(offsetX + 250, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, offsetX + 275, 170, "Ночной режим (Выкл)", true);
   }
 
-  // ROTATION_LOCK: (20, 215, 210, 46)
+  // ROTATION_LOCK: (offsetX + 20, 215, 210, 46)
   const bool rotOn = (SETTINGS.orientation != CrossPointSettings::PORTRAIT);
   if (rotOn) {
-    renderer.fillRect(20, 215, 210, 46, true);
-    renderer.drawText(SMALL_FONT_ID, 45, 230, "Автоповорот (Вкл)", false);
+    renderer.fillRect(offsetX + 20, 215, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, offsetX + 45, 230, "Автоповорот (Вкл)", false);
   } else {
-    renderer.drawRect(20, 215, 210, 46, true);
-    renderer.drawText(SMALL_FONT_ID, 45, 230, "Автоповорот (Выкл)", true);
+    renderer.drawRect(offsetX + 20, 215, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, offsetX + 45, 230, "Автоповорот (Выкл)", true);
   }
 
-  // SLEEP: (250, 215, 210, 46)
-  renderer.drawRect(250, 215, 210, 46, true);
-  renderer.drawText(SMALL_FONT_ID, 275, 230, "Режим сна", true);
+  // SLEEP: (offsetX + 250, 215, 210, 46)
+  renderer.drawRect(offsetX + 250, 215, 210, 46, true);
+  renderer.drawText(SMALL_FONT_ID, offsetX + 275, 230, "Режим сна", true);
 
   // Battery stats & Clock/Date at Y: 290 and 320
   char statsBuf[64];
@@ -387,8 +394,8 @@ void FrontlightPanelActivity::render(RenderLock&&) {
     snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% • %s • %s", percent, timeStr, dateStr);
   }
   snprintf(uptimeBuf, sizeof(uptimeBuf), "Время работы: %uч %uм", (unsigned)hours, (unsigned)mins);
-  renderer.drawText(SMALL_FONT_ID, 20, 290, statsBuf, true);
-  renderer.drawText(SMALL_FONT_ID, 20, 320, uptimeBuf, true);
+  renderer.drawText(SMALL_FONT_ID, offsetX + 20, 290, statsBuf, true);
+  renderer.drawText(SMALL_FONT_ID, offsetX + 20, 320, uptimeBuf, true);
 
   renderer.drawLine(0, panelBottom - 1, pageWidth, panelBottom - 1);
   renderer.displayBuffer();

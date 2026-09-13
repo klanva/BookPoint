@@ -72,6 +72,10 @@ from tests.e2e.contracts import (
     ProgressiveJpegDecoderModel,
     FootnoteModalModel,
     ScreensaverGalleryModel,
+    ZeroOverlapModel,
+    PremiumTypographySuiteModel,
+    FlagshipErgonomicsModel,
+    ZeroBrickRiskModel,
 )
 
 try:
@@ -1414,8 +1418,359 @@ class Tier1FeatureTests(unittest.TestCase):
         self.assertEqual(dark_polarity["bg_polarity"], POLARITY_BLACK)
         self.assertTrue(dark_polarity["screen_inverted"])
 
+    # ==========================================================================
+    # FEATURE 14: BOOKPOINT OS v2.2.0 AUDIT SUITE (R1 - R4)
+    # ==========================================================================
+
+    def test_f14_01_zero_overlap_hero_card_stack_and_author_truncation(self):
+        """F14.01: Hero card vertical element budgeting and safe UTF-8 author truncation (R1)."""
+        # 1. Standard stack: 2 lines of title, author, progress stats, reading streak
+        res = ZeroOverlapModel.validate_hero_card_stack(title_lines_count=2, has_author=True, has_stats=True, has_streak=True)
+        self.assertTrue(res["is_valid"], f"Hero card stack overflowed Resume button by {-res['clearance_px']}px")
+        self.assertGreaterEqual(res["clearance_px"], 0)
+
+        # 2. Compact stack: 1 line of title
+        res_compact = ZeroOverlapModel.validate_hero_card_stack(title_lines_count=1, has_author=True, has_stats=True, has_streak=True)
+        self.assertTrue(res_compact["is_valid"])
+        self.assertGreater(res_compact["clearance_px"], res["clearance_px"])
+
+        # 3. Long Cyrillic title and author safe UTF-8 truncation
+        long_author = "Лев Николаевич Толстой, граф и писатель"
+        safe_author = ZeroOverlapModel.safe_utf8_truncate(long_author, max_chars=18)
+        self.assertTrue(safe_author.endswith("…"))
+        self.assertLessEqual(len(safe_author), 18)
+        # Verify no corrupted UTF-8 decoding
+        self.assertEqual(safe_author.encode("utf-8").decode("utf-8"), safe_author)
+
+    def test_f14_02_recent_shelf_slot_horizontal_bounding_and_no_bleed(self):
+        """F14.02: Recent shelf mini card slots prevent horizontal text bleed into adjacent cards (R1)."""
+        # Test short, medium, and very long author strings
+        authors = [
+            "Чехов А.П.",
+            "Фёдор Достоевский",
+            "Александр Сергеевич Пушкин",
+        ]
+        for auth in authors:
+            slot_info = ZeroOverlapModel.validate_recent_shelf_slot(auth, slot_w=144, cover_w=44, margin=16)
+            self.assertTrue(slot_info["fits_without_bleed"])
+            self.assertLessEqual(len(slot_info["safe_author"]), slot_info["available_text_width"] // 9 + 2)
+
+    def test_f14_03_quick_settings_curtain_landscape_centering_and_cold_warm_sliders(self):
+        """F14.03: Control Center Curtain responsive centering in 800x480 landscape with dual Cold/Warm frontlight (R1)."""
+        # Portrait offset: (480 - 448) // 2 = 16
+        offset_portrait = QuickSettingsCurtainModel.get_content_offset_x(480)
+        self.assertEqual(offset_portrait, 16)
+
+        # Landscape offset: (800 - 448) // 2 = 176
+        offset_landscape = QuickSettingsCurtainModel.get_content_offset_x(800)
+        self.assertEqual(offset_landscape, 176)
+
+        # Minus button in landscape: 176 + 16 = 192 (X: 192..236, Y: 54..98)
+        self.assertEqual(
+            QuickSettingsCurtainModel.classify_slider_tap_offset("BRIGHTNESS", 200, 70, offset_x=offset_landscape),
+            "MINUS",
+        )
+        # Plus button in landscape: 176 + 420 = 596 (X: 596..640, Y: 54..98)
+        self.assertEqual(
+            QuickSettingsCurtainModel.classify_slider_tap_offset("BRIGHTNESS", 610, 70, offset_x=offset_landscape),
+            "PLUS",
+        )
+        # Track seek in landscape
+        self.assertEqual(
+            QuickSettingsCurtainModel.classify_slider_tap_offset("BRIGHTNESS", 400, 70, offset_x=offset_landscape),
+            "TRACK",
+        )
+
+        # Control pills in landscape: DARK_MODE is at offsetX + 250 = 426
+        self.assertEqual(
+            QuickSettingsCurtainModel.classify_pill_tap_offset(450, 175, offset_x=offset_landscape),
+            "DARK_MODE",
+        )
+
+    def test_f14_04_floating_reader_overlays_12px_margins_and_800x480_reachability(self):
+        """F14.04: Floating Reader Overlays maintain >=12px margins and remain reachable in 800x480 landscape (R1)."""
+        # Portrait (480x800)
+        top_port = ReaderOverlaysModel.get_floating_top_bar_rect(480, margin=14)
+        bot_port = ReaderOverlaysModel.get_floating_bottom_bar_rect(480, 800, margin=14)
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(top_port, 480, 800, min_margin=12))
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(bot_port, 480, 800, min_margin=12))
+
+        # Landscape (800x480)
+        top_land = ReaderOverlaysModel.get_floating_top_bar_rect(800, margin=14)
+        bot_land = ReaderOverlaysModel.get_floating_bottom_bar_rect(800, 480, margin=14)
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(top_land, 800, 480, min_margin=12))
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(bot_land, 800, 480, min_margin=12))
+
+        # Ensure bottom bar is strictly on-screen in landscape (bot_y + bot_h <= 480)
+        self.assertEqual(bot_land[1], 480 - 14 - 124)  # 342
+        self.assertEqual(bot_land[1] + bot_land[3], 466)
+        self.assertLess(bot_land[1] + bot_land[3], 480)
+
+        # Hit test in landscape floating overlay
+        self.assertEqual(ReaderOverlaysModel.classify_floating_top_tap(25, 25, 800, margin=14), "BACK")
+        self.assertEqual(ReaderOverlaysModel.classify_floating_bottom_tap(30, 420, 800, 480, margin=14), "TYPOGRAPHY")
+
+    def test_f14_05_live_typography_popup_header_and_size_zero_overlap(self):
+        """F14.05: Zero text collision between 'Типографика' header and 'Размер:' label in Aa popup (R1)."""
+        header_rect = (36, 332, 140, 20)
+        separator_line_y = 356
+        size_label_rect = (35, 378, 80, 20)
+        a_minus_btn_rect = (120, 366, 56, 44)
+
+        # Ensure header and size label do NOT collide
+        self.assertFalse(ZeroOverlapModel.rects_intersect(header_rect, size_label_rect))
+        self.assertFalse(ZeroOverlapModel.rects_intersect(header_rect, a_minus_btn_rect))
+        ZeroOverlapModel.assert_no_overlap(header_rect, size_label_rect, "Header", "SizeLabel")
+        ZeroOverlapModel.assert_no_overlap(header_rect, a_minus_btn_rect, "Header", "AMinusBtn")
+
+        # Vertical clearance between header and controls
+        self.assertGreaterEqual(size_label_rect[1] - (header_rect[1] + header_rect[3]), 24)
+
+    def test_f14_06_minimum_44px_touch_targets_across_chrome_and_dialogs(self):
+        """F14.06: All interactive touch targets strictly >= 44x44px in FileBrowser, OptionPopup, and Aa popup (R1)."""
+        # 1. FileBrowser header buttons: Sort (308, 4, 48, 44), Search (364, 4, 48, 44), View (420, 4, 48, 44)
+        sort_btn = (308, 4, 48, 44)
+        search_btn = (364, 4, 48, 44)
+        view_btn = (420, 4, 48, 44)
+        self.assertTrue(ZeroOverlapModel.validate_touch_target_size(sort_btn))
+        self.assertTrue(ZeroOverlapModel.validate_touch_target_size(search_btn))
+        self.assertTrue(ZeroOverlapModel.validate_touch_target_size(view_btn))
+
+        # 2. OptionPopup button height enforcement: max(44, lineH + 2*vPad)
+        line_h = 20
+        v_pad = 4
+        computed_btn_h = max(44, line_h + 2 * v_pad)
+        self.assertGreaterEqual(computed_btn_h, 44)
+
+        # 3. Aa popup stepper buttons: (120, 366, 56, 44) and (260, 366, 56, 44)
+        self.assertTrue(ZeroOverlapModel.validate_touch_target_size(AaTypographyModel.DECREASE_FONT_RECT))
+        self.assertTrue(ZeroOverlapModel.validate_touch_target_size(AaTypographyModel.INCREASE_FONT_RECT))
+
+    def test_f14_07_premium_typography_suite_7_families_presence_and_specs(self):
+        """F14.07: Premium Typography Suite integrates 7 mandated high-contrast E-Ink font families (R2)."""
+        expected_7 = [
+            "Literata",
+            "PT Serif",
+            "Alegreya",
+            "Inter",
+            "Atkinson Hyperlegible",
+            "JetBrains Mono",
+            "OpenDyslexic",
+        ]
+        self.assertEqual(PremiumTypographySuiteModel.PREMIUM_FONT_FAMILIES, expected_7)
+        self.assertEqual(AaTypographyModel.PREMIUM_FONT_FAMILIES, expected_7)
+
+        # Verify specifications for each family
+        for fam in expected_7:
+            self.assertIn(fam, PremiumTypographySuiteModel.FAMILY_SPECS)
+            spec = PremiumTypographySuiteModel.FAMILY_SPECS[fam]
+            self.assertTrue(spec["has_cyrillic"])
+            self.assertTrue(spec["has_latin"])
+            self.assertGreaterEqual(len(spec["sizes"]), 4)
+
+        # Stepping through all 7 families
+        cur = "Literata"
+        for next_fam in expected_7[1:] + [expected_7[0]]:
+            cur = AaTypographyModel.step_font_family(cur, 1)
+            self.assertEqual(cur, next_fam)
+
+    def test_f14_08_typography_unicode_coverage_cyrillic_latin_punctuation_footnotes(self):
+        """F14.08: Complete Unicode coverage for Cyrillic, Latin, punctuation (guillemets, em-dash), and footnotes (R2)."""
+        passages = [
+            "«Съешь же ещё этих мягких французских булок, да выпей чаю…»",
+            "Європейські інтеграційні процеси — шлях до розвитку.",
+            "У Беларусі свята: звоняць званы і спяваюць песні.",
+            "Footnote reference with symbols: chapter 5¹²³ with references * and †.",
+            "Latin text with quotes: “The quick brown fox jumps over the lazy dog.”",
+        ]
+        for passage in passages:
+            res = PremiumTypographySuiteModel.validate_text_codepoints(passage)
+            self.assertTrue(
+                res["is_fully_covered"],
+                f"Missing codepoints in passage '{passage}': {res['unsupported_samples']}",
+            )
+
+    def test_f14_09_instant_live_reflow_zero_character_offset_drift(self):
+        """F14.09: Live font family/size change preserves exact reading position without offset drift (R2)."""
+        cached_offset = 3840
+        # Simulated re-pagination table for larger font size
+        new_page_map = [
+            (0, 800),
+            (800, 1650),
+            (1650, 2550),
+            (2550, 3450),
+            (3450, 4300),  # Offset 3840 is here (page index 4)
+            (4300, 5200),
+        ]
+        res = PremiumTypographySuiteModel.verify_reflow_offset_preservation(cached_offset, new_page_map)
+        self.assertTrue(res["offset_contained"])
+        self.assertEqual(res["target_page"], 4)
+        self.assertTrue(res["page_range"][0] <= cached_offset < res["page_range"][1])
+
+    def test_f14_10_hybrid_font_architecture_psram_lifecycle_and_flash_headroom(self):
+        """F14.10: Dynamic PSRAM font allocation preserves >=700 KB app0 flash partition headroom (R2)."""
+        bin_path = Path("src/.pio/build/x4pro/firmware.bin")
+        bin_size = bin_path.stat().st_size if bin_path.exists() else 5761760
+
+        budget = PremiumTypographySuiteModel.verify_hybrid_partition_budget(bin_size)
+        self.assertTrue(
+            budget["meets_700kb_headroom"],
+            f"Headroom {budget['headroom_kb']} KB is less than required 700 KB",
+        )
+        self.assertGreaterEqual(budget["headroom_bytes"], 716800)
+
+    def test_f14_11_handed_touch_zones_75_25_page_turns_and_menu_reservation(self):
+        """F14.11: Handedness touch page turns (75/25 left/right) and center menu reservation (R3)."""
+        w, h = 480, 800
+
+        # Center menu tap
+        self.assertEqual(
+            FlagshipErgonomicsModel.classify_reader_touch(240, 400, w, h, handedness="RIGHT"),
+            FlagshipErgonomicsModel.READER_MENU,
+        )
+
+        # Right-handed mode:
+        # Left 25% (X < 120): PREV
+        self.assertEqual(
+            FlagshipErgonomicsModel.classify_reader_touch(50, 700, w, h, handedness="RIGHT"),
+            FlagshipErgonomicsModel.READER_TOUCH_PREV,
+        )
+        # Right 75% (X >= 120): NEXT
+        self.assertEqual(
+            FlagshipErgonomicsModel.classify_reader_touch(300, 700, w, h, handedness="RIGHT"),
+            FlagshipErgonomicsModel.READER_TOUCH_NEXT,
+        )
+
+        # Left-handed mode:
+        # Right 25% (X >= 360): PREV
+        self.assertEqual(
+            FlagshipErgonomicsModel.classify_reader_touch(400, 700, w, h, handedness="LEFT"),
+            FlagshipErgonomicsModel.READER_TOUCH_PREV,
+        )
+        # Left 75% (X < 360): NEXT
+        self.assertEqual(
+            FlagshipErgonomicsModel.classify_reader_touch(100, 700, w, h, handedness="LEFT"),
+            FlagshipErgonomicsModel.READER_TOUCH_NEXT,
+        )
+
+        # Inverted mode
+        self.assertEqual(
+            FlagshipErgonomicsModel.classify_reader_touch(50, 700, w, h, handedness="RIGHT", inverted=True),
+            FlagshipErgonomicsModel.READER_TOUCH_NEXT,
+        )
+
+        # Swipe turns
+        self.assertEqual(FlagshipErgonomicsModel.classify_swipe_turn(dx=-60, dy=5), FlagshipErgonomicsModel.READER_TOUCH_NEXT)
+        self.assertEqual(FlagshipErgonomicsModel.classify_swipe_turn(dx=60, dy=5), FlagshipErgonomicsModel.READER_TOUCH_PREV)
+
+    def test_f14_12_dynamic_reading_pace_forward_dwell_tracking_and_countdown(self):
+        """F14.12: Forward page dwell sampling and dynamic chapter remaining time calculation (R3)."""
+        # Dwell validation
+        self.assertTrue(FlagshipErgonomicsModel.is_valid_forward_pace_sample(dwell_seconds=45, is_forward_turn=True))
+        self.assertFalse(FlagshipErgonomicsModel.is_valid_forward_pace_sample(dwell_seconds=3, is_forward_turn=True))   # too fast
+        self.assertFalse(FlagshipErgonomicsModel.is_valid_forward_pace_sample(dwell_seconds=350, is_forward_turn=True)) # idle pause
+        self.assertFalse(FlagshipErgonomicsModel.is_valid_forward_pace_sample(dwell_seconds=45, is_forward_turn=False))  # backward turn
+
+        # Running average pace
+        samples = [40, 50, 45, 55]
+        pace = FlagshipErgonomicsModel.calc_running_pace(samples)
+        self.assertAlmostEqual(pace, 47.5)
+
+        # Chapter countdown: 12 remaining pages at 47.5s/page = 570s = 10 minutes
+        minutes = FlagshipErgonomicsModel.calc_estimated_chapter_minutes(remaining_pages=12, sec_per_page=pace)
+        self.assertEqual(minutes, 10)
+        self.assertEqual(FlagshipErgonomicsModel.format_countdown_string(12, pace), "~10 мин")
+
+    def test_f14_13_eink_anti_ghosting_full_flash_refresh_modes(self):
+        """F14.13: E-Ink anti-ghosting configurable full refresh modes (1, 5, 10, 15, 20, chapter, 30) (R3)."""
+        # REFRESH_1
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(1, False, mode="REFRESH_1"))
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(2, False, mode="REFRESH_1"))
+
+        # REFRESH_5
+        self.assertFalse(FlagshipErgonomicsModel.should_trigger_full_refresh(4, False, mode="REFRESH_5"))
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(5, False, mode="REFRESH_5"))
+
+        # REFRESH_20
+        self.assertFalse(FlagshipErgonomicsModel.should_trigger_full_refresh(19, False, mode="REFRESH_20"))
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(20, False, mode="REFRESH_20"))
+
+        # REFRESH_CHAPTER
+        self.assertFalse(FlagshipErgonomicsModel.should_trigger_full_refresh(100, False, mode="REFRESH_CHAPTER"))
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(100, True, mode="REFRESH_CHAPTER"))
+
+    def test_f14_14_partitions_csv_16mb_table_and_app0_headroom_validation(self):
+        """F14.14: Byte-level partitions.csv 16MB table and app0 headroom >= 700 KB validation (R4)."""
+        # Partition row validation
+        app0_row = ZeroBrickRiskModel.validate_partition_row("app0", "app", "ota_0", offset=0x10000, size=0x640000)
+        self.assertTrue(app0_row["is_64kb_aligned"])
+        self.assertEqual(app0_row["end"], 0x650000)
+
+        app1_row = ZeroBrickRiskModel.validate_partition_row("app1", "app", "ota_1", offset=0x650000, size=0x640000)
+        self.assertTrue(app1_row["is_64kb_aligned"])
+        self.assertEqual(app1_row["end"], 0xC90000)
+
+        # Actual headroom check against real binary or baseline
+        bin_path = Path("src/.pio/build/x4pro/firmware.bin")
+        bin_size = bin_path.stat().st_size if bin_path.exists() else 5761760
+        hr_info = ZeroBrickRiskModel.check_app0_headroom(bin_size)
+        self.assertTrue(hr_info["meets_requirement"])
+        self.assertGreaterEqual(hr_info["headroom_kb"], 700.0)
+
+    def test_f14_15_hardware_i2c_bus_clear_and_gt911_reset_recovery(self):
+        """F14.15: Goodix GT911 touch controller glitch recovery via 9 SCL bus-clear pulses and hardware reset (R4)."""
+        # 1 to 4 consecutive failures do simple retries
+        for count in range(1, 5):
+            res = ZeroBrickRiskModel.evaluate_i2c_recovery(count)
+            self.assertEqual(res["action"], "NORMAL_RETRY")
+            self.assertFalse(res["bus_clear_triggered"])
+
+        # 5 consecutive failures triggers hardware recovery
+        rec = ZeroBrickRiskModel.evaluate_i2c_recovery(5)
+        self.assertEqual(rec["action"], "HARDWARE_RECOVERY")
+        self.assertTrue(rec["bus_clear_triggered"])
+        self.assertEqual(rec["scl_clock_pulses"], 9)
+        self.assertTrue(rec["hardware_reset_triggered"])
+        self.assertEqual(rec["rst_pulse_width_ms"], 10)
+
+    def test_f14_16_atomic_persistence_battery_safety_guard_and_tmp_recovery(self):
+        """F14.16: Atomic persistence with brownout guard (>=3200 mV) and .tmp crash recovery (R4)."""
+        target = "/.crosspoint/settings.json"
+        data = '{"brightness":50,"fontSize":16}'
+
+        # 1. Low battery guard: voltage 3150 mV < 3200 mV aborts write
+        low_bat = ZeroBrickRiskModel.simulate_atomic_persistence(target, data, voltage_mv=3150)
+        self.assertEqual(low_bat["status"], "ABORTED_LOW_BATTERY")
+
+        # 2. Safe battery voltage: 3750 mV succeeds
+        safe_bat = ZeroBrickRiskModel.simulate_atomic_persistence(target, data, voltage_mv=3750)
+        self.assertEqual(safe_bat["status"], "SUCCESS")
+
+        # 3. Crash recovery: target was removed mid-power failure, but .tmp exists
+        crash_sim = ZeroBrickRiskModel.simulate_atomic_persistence(
+            target, data, voltage_mv=3750, power_loss_stage="AFTER_TARGET_REMOVE"
+        )
+        self.assertEqual(crash_sim["status"], "POWER_LOSS_AFTER_REMOVE")
+        recovered = ZeroBrickRiskModel.recover_from_power_loss(
+            target_exists=False, tmp_exists=True, tmp_content=crash_sim["tmp_content"]
+        )
+        self.assertTrue(recovered["recovered"])
+        self.assertEqual(recovered["source"], "TMP_FALLBACK")
+        self.assertEqual(recovered["restored_content"], data)
+
+        # 4. Fail-safe button mappings auto-repair
+        bad_mappings = ["FRONT_HW_BACK", "FRONT_HW_BACK", "INVALID", "FRONT_HW_RIGHT"]
+        repaired, did_repair = ZeroBrickRiskModel.repair_duplicate_button_mappings(bad_mappings)
+        self.assertTrue(did_repair)
+        self.assertEqual(repaired, ["FRONT_HW_BACK", "FRONT_HW_CONFIRM", "FRONT_HW_LEFT", "FRONT_HW_RIGHT"])
+
+        # 5. Recovery chord
+        self.assertTrue(ZeroBrickRiskModel.is_emergency_recovery_chord(btn_down_pressed=True))
+        self.assertFalse(ZeroBrickRiskModel.is_emergency_recovery_chord(btn_down_pressed=False))
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

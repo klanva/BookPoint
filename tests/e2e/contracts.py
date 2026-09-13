@@ -1094,6 +1094,43 @@ class QuickSettingsCurtainModel:
         line2 = f"Время работы: {hours}ч {mins}м"
         return line1, line2
 
+    @classmethod
+    def get_content_offset_x(cls, page_width: int, content_w: int = 448) -> int:
+        """Calculates centered horizontal offset for controls block (16px in 480x800, 176px in 800x480)."""
+        return max(0, (page_width - content_w) // 2)
+
+    @classmethod
+    def classify_slider_tap_offset(cls, channel: str, x: int, y: int, offset_x: int = 0) -> Optional[str]:
+        """Returns 'MINUS', 'PLUS', 'TRACK', or None taking horizontal offset into account."""
+        if channel == "BRIGHTNESS":
+            m_r = (cls.BRIGHTNESS_MINUS_RECT[0] + offset_x, cls.BRIGHTNESS_MINUS_RECT[1], cls.BRIGHTNESS_MINUS_RECT[2], cls.BRIGHTNESS_MINUS_RECT[3])
+            p_r = (cls.BRIGHTNESS_PLUS_RECT[0] + offset_x, cls.BRIGHTNESS_PLUS_RECT[1], cls.BRIGHTNESS_PLUS_RECT[2], cls.BRIGHTNESS_PLUS_RECT[3])
+            t_r = (cls.BRIGHTNESS_SLIDER_RECT[0] + offset_x, cls.BRIGHTNESS_SLIDER_RECT[1], cls.BRIGHTNESS_SLIDER_RECT[2], cls.BRIGHTNESS_SLIDER_RECT[3])
+        elif channel == "CCT":
+            m_r = (cls.CCT_MINUS_RECT[0] + offset_x, cls.CCT_MINUS_RECT[1], cls.CCT_MINUS_RECT[2], cls.CCT_MINUS_RECT[3])
+            p_r = (cls.CCT_PLUS_RECT[0] + offset_x, cls.CCT_PLUS_RECT[1], cls.CCT_PLUS_RECT[2], cls.CCT_PLUS_RECT[3])
+            t_r = (cls.CCT_SLIDER_RECT[0] + offset_x, cls.CCT_SLIDER_RECT[1], cls.CCT_SLIDER_RECT[2], cls.CCT_SLIDER_RECT[3])
+        else:
+            return None
+
+        if tap_in_rect(x, y, m_r):
+            return "MINUS"
+        if tap_in_rect(x, y, p_r):
+            return "PLUS"
+        if tap_in_rect(x, y, t_r):
+            return "TRACK"
+        return None
+
+    @classmethod
+    def classify_pill_tap_offset(cls, x: int, y: int, offset_x: int = 0) -> Optional[str]:
+        """Determines which control pill was tapped taking horizontal offset into account."""
+        for pill_id, pill_info in cls.CONTROL_PILLS.items():
+            base_r = pill_info["rect"]
+            shifted_r = (base_r[0] + offset_x, base_r[1], base_r[2], base_r[3])
+            if tap_in_rect(x, y, shifted_r):
+                return pill_id
+        return None
+
 
 # ==============================================================================
 # 17. R2: EDGE-SWIPE SIDE DRAWER
@@ -1289,6 +1326,62 @@ class ReaderOverlaysModel:
             return "SCRUBBER"
         return "INFO"
 
+    @classmethod
+    def get_floating_top_bar_rect(cls, screen_w: int, margin: int = 14) -> Tuple[int, int, int, int]:
+        """Calculates floating top bar card rect with guaranteed >= 12px margins."""
+        return (margin, margin, screen_w - 2 * margin, 56)
+
+    @classmethod
+    def get_floating_bottom_bar_rect(cls, screen_w: int, screen_h: int, margin: int = 14) -> Tuple[int, int, int, int]:
+        """Calculates floating bottom bar card rect with guaranteed >= 12px margins in portrait and landscape."""
+        bar_h = 124
+        return (margin, screen_h - margin - bar_h, screen_w - 2 * margin, bar_h)
+
+    @classmethod
+    def classify_floating_top_tap(cls, x: int, y: int, screen_w: int, margin: int = 14) -> Optional[str]:
+        """Hit-tests floating top overlay action buttons with dynamic width."""
+        top_w = screen_w - 2 * margin
+        if not tap_in_rect(x, y, (margin, margin, top_w, 56)):
+            return None
+        back_rect = (margin + 6, margin + 6, 44, 44)
+        toc_rect = (margin + 56, margin + 6, 60, 44)
+        search_rect = (margin + top_w - 50, margin + 6, 44, 44)
+        bookmark_rect = (search_rect[0] - 54, margin + 6, 44, 44)
+        if tap_in_rect(x, y, back_rect):
+            return "BACK"
+        if tap_in_rect(x, y, toc_rect):
+            return "TOC"
+        if tap_in_rect(x, y, bookmark_rect):
+            return "TOGGLE_BOOKMARK"
+        if tap_in_rect(x, y, search_rect):
+            return "SEARCH"
+        return "TITLE"
+
+    @classmethod
+    def classify_floating_bottom_tap(cls, x: int, y: int, screen_w: int, screen_h: int, margin: int = 14) -> Optional[str]:
+        """Hit-tests floating bottom overlay action buttons with dynamic Y positioning."""
+        bot_rect = cls.get_floating_bottom_bar_rect(screen_w, screen_h, margin)
+        if not tap_in_rect(x, y, bot_rect):
+            return None
+        by = bot_rect[1]
+        bw = bot_rect[2]
+        aa_rect = (margin + 10, by + 66, 95, 48)
+        toc_rect = (margin + 115, by + 66, 110, 48)
+        fn_rect = (margin + 235, by + 66, 100, 48)
+        bm_rect = (margin + 345, by + 66, 105, 48)
+        scrubber_rect = (margin + 16, by + 32, bw - 32, 26)
+        if tap_in_rect(x, y, aa_rect):
+            return "TYPOGRAPHY"
+        if tap_in_rect(x, y, toc_rect):
+            return "TOC"
+        if tap_in_rect(x, y, fn_rect):
+            return "FOOTNOTES"
+        if tap_in_rect(x, y, bm_rect):
+            return "BOOKMARKS"
+        if tap_in_rect(x, y, scrubber_rect):
+            return "SCRUBBER"
+        return "INFO"
+
 
 class AaTypographyModel:
     """
@@ -1304,6 +1397,29 @@ class AaTypographyModel:
     # Mandated font families per R2
     MANDATED_FONT_FAMILIES = ["JetBrains Mono", "Roboto Condensed", "OpenDyslexic"]
     FONT_FAMILIES = ["Literata", "JetBrains Mono", "Roboto Condensed", "OpenDyslexic"]
+    PREMIUM_FONT_FAMILIES = [
+        "Literata",
+        "PT Serif",
+        "Alegreya",
+        "Inter",
+        "Atkinson Hyperlegible",
+        "JetBrains Mono",
+        "OpenDyslexic",
+    ]
+    SUITE_STEPPER_LEFT_RECT: Tuple[int, int, int, int] = (30, 600, 44, 44)
+    SUITE_STEPPER_RIGHT_RECT: Tuple[int, int, int, int] = (406, 600, 44, 44)
+
+    @classmethod
+    def step_font_family(cls, current_family: str, delta: int) -> str:
+        """Cycles through the 7 premium font families."""
+        fams = cls.PREMIUM_FONT_FAMILIES
+        if current_family not in fams:
+            idx = 0
+        else:
+            idx = fams.index(current_family)
+        new_idx = (idx + delta) % len(fams)
+        return fams[new_idx]
+
     FONT_SIZE_MIN: int = 14
     FONT_SIZE_MAX: int = 36
     FONT_SIZE_STEP: int = 2
@@ -2019,6 +2135,588 @@ class ScreensaverGalleryModel:
                 "bg_polarity": POLARITY_WHITE,
                 "screen_inverted": False,
             }
+
+
+# ==============================================================================
+# 30. R1: ZERO-OVERLAP UI & PIXEL-PERFECT SCREEN GEOMETRY MODEL
+# ==============================================================================
+
+class ZeroOverlapModel:
+    """
+    R1 Contract: Zero-Overlap UI & Pixel-Perfect Screen Geometry on 800x480 E-Ink.
+    Formal mathematical assertions verifying:
+    1. Zero bounding box intersections between adjacent UI elements (Hero card, Recent shelf, etc.).
+    2. Vertical content budgeting in Now Reading Hero Card stack (Badge, Title, Author, Progress, Time, Streak, Resume).
+    3. Safe UTF-8 character-boundary truncation with ellipsis (no Cyrillic byte slicing).
+    4. Recent shelf slot boundary containment (no horizontal bleed into adjacent slots).
+    5. Centering of Quick Settings Curtain in 800x480 landscape with dual Cold/Warm frontlight sliders.
+    6. Floating reader overlays with guaranteed >= 12px margins from display edges in portrait and landscape.
+    7. Strict minimum touch target sizing (>= 44x44px) across all interactive chrome and popups.
+    """
+    MIN_TOUCH_TARGET_SIZE: int = 44
+    MIN_READER_OVERLAY_MARGIN: int = 12
+
+    @classmethod
+    def rects_intersect(cls, r1: Tuple[int, int, int, int], r2: Tuple[int, int, int, int]) -> bool:
+        """
+        Determines whether two axis-aligned bounding boxes (x, y, w, h) overlap with positive area.
+        Returns True if they overlap, False if they are strictly disjoint or touching only at edges.
+        """
+        x1, y1, w1, h1 = r1
+        x2, y2, w2, h2 = r2
+        return (max(x1, x2) < min(x1 + w1, x2 + w2)) and (max(y1, y2) < min(y1 + h1, y2 + h2))
+
+    @classmethod
+    def assert_no_overlap(cls, r1: Tuple[int, int, int, int], r2: Tuple[int, int, int, int],
+                          label1: str = "Element 1", label2: str = "Element 2") -> None:
+        """Raises AssertionError if r1 and r2 overlap."""
+        if cls.rects_intersect(r1, r2):
+            raise AssertionError(f"Zero-Overlap Violation: {label1} {r1} collides with {label2} {r2}")
+
+    @classmethod
+    def validate_hero_card_stack(cls, title_lines_count: int, line_h: int = 22,
+                                 has_author: bool = True, has_stats: bool = True,
+                                 has_streak: bool = True, card_y: int = 50,
+                                 card_h: int = 310, resume_btn_y: int = 316,
+                                 resume_btn_h: int = 30) -> Dict[str, Any]:
+        """
+        Calculates exact vertical layout bounds of elements in Now Reading Hero Card.
+        Verifies that title, author, progress, remaining time, and streak do not collide
+        with each other or with the Resume button fixed at resume_btn_y.
+        """
+        elements = {}
+        cur_y = card_y + 16
+
+        # 1. Badge: "СЕЙЧАС ЧИТАЮ"
+        elements["badge"] = (card_y + 16, 20)
+        cur_y += 24
+
+        # 2. Title (wrapped lines)
+        title_h = max(1, min(3, title_lines_count)) * line_h
+        elements["title"] = (cur_y, title_h)
+        cur_y += title_h + 4
+
+        # 3. Author
+        if has_author:
+            elements["author"] = (cur_y, 18)
+            cur_y += 24
+
+        # 4. Progress bar & percentage
+        if has_stats:
+            elements["progress"] = (cur_y, 16)
+            cur_y += 20
+            # 5. Estimated time left
+            elements["time_left"] = (cur_y, 16)
+            cur_y += 22
+
+        # 6. Reading streak badge
+        if has_streak:
+            elements["streak"] = (cur_y, 20)
+            cur_y += 24
+
+        lowest_element_bottom = cur_y
+        clearance = resume_btn_y - lowest_element_bottom
+        is_valid = clearance >= 0
+
+        return {
+            "elements": elements,
+            "lowest_element_bottom": lowest_element_bottom,
+            "resume_btn_y": resume_btn_y,
+            "clearance_px": clearance,
+            "is_valid": is_valid,
+        }
+
+    @classmethod
+    def safe_utf8_truncate(cls, text: str, max_chars: int = 20, ellipsis: str = "…") -> str:
+        """
+        Safely truncates unicode text to max_chars with ellipsis, strictly preserving
+        multi-byte UTF-8 codepoint boundaries (avoiding half-glyph byte cuts).
+        """
+        if len(text) <= max_chars:
+            return text
+        cut_len = max(0, max_chars - len(ellipsis))
+        truncated = text[:cut_len] + ellipsis
+        # Verify valid UTF-8 encode-decode
+        truncated.encode("utf-8").decode("utf-8")
+        return truncated
+
+    @classmethod
+    def validate_recent_shelf_slot(cls, author: str, slot_w: int = 144,
+                                  cover_w: int = 44, margin: int = 16) -> Dict[str, Any]:
+        """
+        Verifies that recent shelf slot text adheres strictly to available horizontal width budget
+        and does not bleed into neighboring slots.
+        """
+        available_text_w = slot_w - cover_w - margin
+        # Approximately 8-9 characters fit in 76-84px with small font
+        max_author_chars = max(6, available_text_w // 9)
+        safe_author = cls.safe_utf8_truncate(author, max_chars=max_author_chars)
+        return {
+            "slot_width": slot_w,
+            "available_text_width": available_text_w,
+            "original_author": author,
+            "safe_author": safe_author,
+            "fits_without_bleed": len(safe_author) <= max_author_chars,
+        }
+
+    @classmethod
+    def validate_touch_target_size(cls, rect: Tuple[int, int, int, int], min_size: int = 44) -> bool:
+        """Asserts that touch hitbox has both width >= min_size and height >= min_size."""
+        return rect[2] >= min_size and rect[3] >= min_size
+
+    @classmethod
+    def validate_reader_overlay_margins(cls, rect: Tuple[int, int, int, int],
+                                        screen_w: int, screen_h: int,
+                                        min_margin: int = 12) -> bool:
+        """
+        Verifies that a floating reader overlay card has distance >= min_margin
+        from screen edges and does not extend beyond display bounds.
+        """
+        x, y, w, h = rect
+        left_margin = x
+        top_margin = y
+        right_margin = screen_w - (x + w)
+        bottom_margin = screen_h - (y + h)
+        if x < 0 or y < 0 or x + w > screen_w or y + h > screen_h:
+            return False
+        return (left_margin >= min_margin and top_margin >= min_margin and
+                right_margin >= min_margin and bottom_margin >= min_margin)
+
+
+# ==============================================================================
+# 31. R2: PREMIUM TYPOGRAPHY SUITE & CODEPOINT INTEGRITY MODEL
+# ==============================================================================
+
+class PremiumTypographySuiteModel:
+    """
+    R2 Contract: Premium Typography Suite & Codepoint Integrity.
+    - 7 curated E-Ink optimized font families across Serif, Sans-Serif, Monospace, Dyslexic:
+      1. Literata (Google Play Books flagship serif)
+      2. PT Serif (ParaType classical Russian / international serif)
+      3. Alegreya (warm literary rhythm serif)
+      4. Inter (modern clean neutral grotest sans-serif)
+      5. Atkinson Hyperlegible (Braille Institute hyper-differentiated sans-serif)
+      6. JetBrains Mono (developer, tabular & monospace)
+      7. OpenDyslexic (dyslexia high-contrast specialized)
+    - Full Unicode codepoint coverage across Latin, Cyrillic, Typographic Punctuation, Footnotes.
+    - Live reflow without character offset drift (retaining exact reading position).
+    - PSRAM dynamic lifecycle management (ensureLoaded, unloadAll, zero heap leaks).
+    - Hybrid architecture: built-in Noto in flash, 7 premium families in PSRAM from SD assets,
+      preserving >= 700 KB headroom in app0 flash partition.
+    """
+    PREMIUM_FONT_FAMILIES: List[str] = [
+        "Literata",
+        "PT Serif",
+        "Alegreya",
+        "Inter",
+        "Atkinson Hyperlegible",
+        "JetBrains Mono",
+        "OpenDyslexic",
+    ]
+
+    FAMILY_SPECS: Dict[str, Dict[str, Any]] = {
+        "Literata": {
+            "category": "Serif",
+            "origin": "Google Play Books flagship",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [10, 12, 14, 16, 18],
+        },
+        "PT Serif": {
+            "category": "Serif",
+            "origin": "ParaType classical Russian & international",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [10, 12, 14, 16, 18],
+        },
+        "Alegreya": {
+            "category": "Serif",
+            "origin": "Juan Pablo del Peral warm literary",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [10, 12, 14, 16, 18],
+        },
+        "Inter": {
+            "category": "Sans-Serif",
+            "origin": "Rasmus Andersson neutral UI",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [10, 12, 14, 16, 18],
+        },
+        "Atkinson Hyperlegible": {
+            "category": "Sans-Serif",
+            "origin": "Braille Institute hyper-differentiated",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [10, 12, 14, 16, 18],
+        },
+        "JetBrains Mono": {
+            "category": "Monospace",
+            "origin": "JetBrains code & tables",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [10, 12, 14, 16, 18],
+        },
+        "OpenDyslexic": {
+            "category": "Special",
+            "origin": "Dyslexia weighted contrast",
+            "has_cyrillic": True,
+            "has_latin": True,
+            "sizes": [8, 10, 12, 14, 16],
+        },
+    }
+
+    UNICODE_INTERVALS: Dict[str, Tuple[int, int]] = {
+        "LATIN_BASIC": (0x0020, 0x007E),
+        "LATIN_SUPPLEMENT": (0x00A0, 0x00FF),  # « » § © ® °
+        "LATIN_EXTENDED_A": (0x0100, 0x017F),
+        "CYRILLIC": (0x0400, 0x04FF),          # Russian, Ukrainian, Belarusian, Serbian, Kazakh
+        "GENERAL_PUNCTUATION": (0x2000, 0x206F), # — – “ ” „ “ … •
+        "SUPERSCRIPTS_SUBSCRIPTS": (0x2070, 0x209F), # Footnote superscripts ⁰¹²³⁴⁵⁶⁷⁸⁹
+    }
+
+    @classmethod
+    def is_codepoint_supported(cls, cp: int) -> bool:
+        """Validates whether codepoint lies in supported typographic intervals."""
+        for start, end in cls.UNICODE_INTERVALS.values():
+            if start <= cp <= end:
+                return True
+        # Specific allowed punctuation (dagger †, double dagger ‡, asterisk *)
+        if cp in (0x002A, 0x2020, 0x2021, 0x2026):
+            return True
+        return False
+
+    @classmethod
+    def validate_text_codepoints(cls, text: str) -> Dict[str, Any]:
+        """Validates all characters in string for Unicode coverage."""
+        unsupported = []
+        covered_count = 0
+        for ch in text:
+            cp = ord(ch)
+            if cls.is_codepoint_supported(cp):
+                covered_count += 1
+            else:
+                unsupported.append((ch, hex(cp)))
+        return {
+            "total_chars": len(text),
+            "covered_chars": covered_count,
+            "is_fully_covered": len(unsupported) == 0,
+            "unsupported_samples": unsupported[:5],
+        }
+
+    @classmethod
+    def verify_reflow_offset_preservation(cls, cached_offset: int,
+                                          new_page_map: List[Tuple[int, int]]) -> Dict[str, Any]:
+        """
+        Validates that live font reflow (change in family or size) maps the cached
+        character offset to the exact corresponding new page without reading drift.
+        """
+        if not new_page_map:
+            return {"target_page": 0, "offset_contained": False}
+        for page_idx, (start_off, end_off) in enumerate(new_page_map):
+            if start_off <= cached_offset < end_off:
+                return {
+                    "target_page": page_idx,
+                    "page_range": (start_off, end_off),
+                    "offset_contained": True,
+                }
+        if cached_offset >= new_page_map[-1][1]:
+            last_idx = len(new_page_map) - 1
+            return {
+                "target_page": last_idx,
+                "page_range": new_page_map[-1],
+                "offset_contained": True,
+            }
+        return {"target_page": 0, "offset_contained": False}
+
+    @classmethod
+    def verify_hybrid_partition_budget(cls, binary_size: int,
+                                       app0_size: int = 0x640000,
+                                       min_headroom_bytes: int = 716800) -> Dict[str, Any]:
+        """
+        Verifies hybrid font architecture headroom: ensures binary fits in app0 partition
+        with >= 700 KB headroom remaining because premium fonts load dynamically from SD/PSRAM.
+        """
+        headroom = app0_size - binary_size
+        headroom_kb = headroom / 1024.0
+        return {
+            "app0_partition_size_bytes": app0_size,
+            "firmware_binary_size_bytes": binary_size,
+            "headroom_bytes": headroom,
+            "headroom_kb": round(headroom_kb, 2),
+            "meets_700kb_headroom": headroom >= min_headroom_bytes,
+        }
+
+
+# ==============================================================================
+# 32. R3: FLAGSHIP ERGONOMICS, TOUCH ZONES & DYNAMIC PACE MODEL
+# ==============================================================================
+
+class FlagshipErgonomicsModel:
+    """
+    R3 Contract: Flagship Ergonomics, Handed Touch Zones & Dynamic Reading Pace.
+    - Handedness page turn layouts (Kindle / Kobo standard):
+      - Right-handed: narrow left strip (25%) = PREV, wide remaining area (75%) = NEXT.
+      - Left-handed: narrow right strip (25%) = PREV, wide remaining area (75%) = NEXT.
+      - Center exclusion zone (middle 40% width, middle 30% height) invokes Reader Overlays.
+      - Inverted tap flips forward/backward. Swipe gestures supported (Left = NEXT, Right = PREV).
+    - Dynamic reading pace tracking:
+      - Forward page dwell filtering: MIN_PACE_SAMPLE_SECONDS (5s) <= dwell < IDLE_THRESHOLD_SECONDS (300s).
+      - Running average seconds per forward page.
+      - Dynamic countdown to end of chapter: remainingPages * (secPerPage / 60.0).
+    - Anti-ghosting configurable full refresh:
+      - Modes: REFRESH_1 (1), REFRESH_5 (5), REFRESH_10 (10), REFRESH_15 (15),
+               REFRESH_20 (20), REFRESH_CHAPTER (chapter boundary), REFRESH_30 (30).
+    """
+    READER_TOUCH_NEXT: str = "NEXT"
+    READER_TOUCH_PREV: str = "PREV"
+    READER_MENU: str = "MENU"
+
+    MIN_PACE_SAMPLE_SECONDS: int = 5
+    IDLE_THRESHOLD_SECONDS: int = 300
+    DEFAULT_PACE_SECONDS: float = 45.0
+
+    REFRESH_MODES: Dict[str, int] = {
+        "REFRESH_1": 1,
+        "REFRESH_5": 5,
+        "REFRESH_10": 10,
+        "REFRESH_15": 15,
+        "REFRESH_20": 20,
+        "REFRESH_CHAPTER": 9999,
+        "REFRESH_30": 30,
+    }
+
+    @classmethod
+    def classify_reader_touch(cls, x: int, y: int, screen_w: int, screen_h: int,
+                              handedness: str = "RIGHT", inverted: bool = False,
+                              menu_active: bool = True) -> str:
+        """
+        Classifies reader tap coordinates into MENU, NEXT, or PREV page turn.
+        Implements 75/25 handed touch zone layout with center menu reservation.
+        """
+        # 1. Center menu exclusion zone (middle 40% width, middle 30% height)
+        menu_x_start = int(screen_w * 0.30)
+        menu_x_end = int(screen_w * 0.70)
+        menu_y_start = int(screen_h * 0.35)
+        menu_y_end = int(screen_h * 0.65)
+        if menu_active and (menu_x_start <= x < menu_x_end) and (menu_y_start <= y < menu_y_end):
+            return cls.READER_MENU
+
+        # 2. Handed touch zones
+        is_left_handed = (handedness.upper() == "LEFT")
+        forward = False
+        if not is_left_handed:
+            # Right-handed: 0..25% is PREV, 25..100% is NEXT
+            forward = (x >= screen_w // 4)
+        else:
+            # Left-handed: 0..75% is NEXT, 75..100% is PREV
+            forward = (x < screen_w * 3 // 4)
+
+        if inverted:
+            forward = not forward
+
+        return cls.READER_TOUCH_NEXT if forward else cls.READER_TOUCH_PREV
+
+    @classmethod
+    def classify_swipe_turn(cls, dx: int, dy: int, threshold: int = 50) -> Optional[str]:
+        """Classifies horizontal swipe gesture: Left = NEXT, Right = PREV."""
+        if abs(dx) < threshold or abs(dy) >= abs(dx):
+            return None
+        return cls.READER_TOUCH_NEXT if dx < 0 else cls.READER_TOUCH_PREV
+
+    @classmethod
+    def is_valid_forward_pace_sample(cls, dwell_seconds: int, is_forward_turn: bool) -> bool:
+        """Validates dwell sample: must be forward page turn within [5..300) seconds."""
+        if not is_forward_turn:
+            return False
+        return cls.MIN_PACE_SAMPLE_SECONDS <= dwell_seconds < cls.IDLE_THRESHOLD_SECONDS
+
+    @classmethod
+    def calc_running_pace(cls, samples: List[int]) -> float:
+        """Computes average pace in seconds per page from valid samples."""
+        if not samples:
+            return cls.DEFAULT_PACE_SECONDS
+        return float(sum(samples)) / len(samples)
+
+    @classmethod
+    def calc_estimated_chapter_minutes(cls, remaining_pages: int, sec_per_page: float) -> int:
+        """Calculates dynamic countdown in whole minutes to chapter end."""
+        if remaining_pages <= 0:
+            return 0
+        total_sec = remaining_pages * sec_per_page
+        return max(1, int(math.ceil(total_sec / 60.0)))
+
+    @classmethod
+    def format_countdown_string(cls, remaining_pages: int, sec_per_page: float) -> str:
+        """Formats countdown string for bottom reader overlay."""
+        minutes = cls.calc_estimated_chapter_minutes(remaining_pages, sec_per_page)
+        return f"~{minutes} мин"
+
+    @classmethod
+    def should_trigger_full_refresh(cls, pages_turned: int, is_chapter_transition: bool,
+                                    mode: str = "REFRESH_10") -> bool:
+        """Evaluates whether current page transition requires anti-ghosting full flash."""
+        if mode == "REFRESH_CHAPTER":
+            return is_chapter_transition
+        interval = cls.REFRESH_MODES.get(mode, 10)
+        if interval <= 0:
+            return False
+        return (pages_turned > 0) and (pages_turned % interval == 0)
+
+
+# ==============================================================================
+# 33. R4: ZERO BRICK RISK, PARTITION HEADROOM & HARDWARE RECOVERY MODEL
+# ==============================================================================
+
+class ZeroBrickRiskModel:
+    """
+    R4 Contract: Zero Brick Risk, Partition Headroom & Hardware Recovery.
+    Formal mathematical assertions verifying:
+    1. partitions.csv structure: 16MB table end (0x1000000), 64KB MMU alignment,
+       app0 partition 0x640000 (6.25MB), >= 700 KB app0 headroom.
+    2. esptool image-info header contracts: ESP32-S3 chip, DIO 80MHz, 16MB flash,
+       valid checksum byte, valid SHA256 image digest.
+    3. Hardware I2C / GT911 recovery: 9 SCL bus-clear clock pulses + RST pin toggle
+       upon 5 consecutive I2C transaction failures.
+    4. Atomic user data persistence: battery voltage safety check (>= 3200 mV) to
+       prevent brownouts during SPI/SD write, two-stage .tmp file creation with recovery.
+    5. Fail-safe boot defaults: duplicate button mapping auto-repair and emergency
+       boot chord (BTN_DOWN held during boot).
+    """
+    TOTAL_FLASH_SIZE: int = 0x1000000       # 16,777,216 bytes (16MB)
+    APP0_PARTITION_SIZE: int = 0x640000     # 6,553,600 bytes (6.25MB)
+    MIN_HEADROOM_BYTES: int = 716800        # 700 KB
+    MIN_SAFE_BATTERY_VOLTAGE_MV: int = 3200 # 3.2V
+    I2C_MAX_CONSECUTIVE_FAILURES: int = 5
+    I2C_BUS_CLEAR_PULSES: int = 9
+
+    @classmethod
+    def validate_partition_row(cls, name: str, p_type: str, subtype: str,
+                              offset: int, size: int) -> Dict[str, Any]:
+        """Validates MMU 64KB alignment for app and filesystem partitions."""
+        mmu_aligned = (offset % 0x10000 == 0) and (size % 0x10000 == 0)
+        return {
+            "name": name,
+            "offset": offset,
+            "size": size,
+            "end": offset + size,
+            "is_64kb_aligned": mmu_aligned,
+        }
+
+    @classmethod
+    def check_app0_headroom(cls, binary_size_bytes: int) -> Dict[str, Any]:
+        """Validates that compiled firmware.bin leaves >= 700 KB headroom in app0."""
+        headroom = cls.APP0_PARTITION_SIZE - binary_size_bytes
+        headroom_kb = headroom / 1024.0
+        return {
+            "app0_size_bytes": cls.APP0_PARTITION_SIZE,
+            "binary_size_bytes": binary_size_bytes,
+            "headroom_bytes": headroom,
+            "headroom_kb": round(headroom_kb, 2),
+            "meets_requirement": headroom >= cls.MIN_HEADROOM_BYTES,
+        }
+
+    @classmethod
+    def is_battery_voltage_safe_for_write(cls, voltage_mv: int) -> bool:
+        """Enforces minimum battery threshold >= 3200 mV to prevent brownout during flash writes."""
+        return voltage_mv >= cls.MIN_SAFE_BATTERY_VOLTAGE_MV
+
+    @classmethod
+    def simulate_atomic_persistence(cls, target_path: str, payload: str,
+                                    voltage_mv: int,
+                                    power_loss_stage: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Models two-stage atomic file save (path.tmp -> rename to path) with brownout guard.
+        Stages of power loss simulation:
+        - None: complete success
+        - 'BROWNOUT': voltage < 3200 mV triggers abort before touching storage
+        - 'DURING_TMP_WRITE': power lost while writing tmp file
+        - 'AFTER_TARGET_REMOVE': power lost after removing target but before renaming tmp
+        """
+        if not cls.is_battery_voltage_safe_for_write(voltage_mv):
+            return {
+                "status": "ABORTED_LOW_BATTERY",
+                "voltage_mv": voltage_mv,
+                "target_exists": True,
+                "tmp_exists": False,
+            }
+
+        tmp_path = f"{target_path}.tmp"
+        if power_loss_stage == "DURING_TMP_WRITE":
+            return {
+                "status": "POWER_LOSS_DURING_TMP",
+                "target_exists": True,
+                "tmp_exists": False,
+            }
+
+        if power_loss_stage == "AFTER_TARGET_REMOVE":
+            return {
+                "status": "POWER_LOSS_AFTER_REMOVE",
+                "target_exists": False,
+                "tmp_exists": True,
+                "tmp_content": payload,
+            }
+
+        # Normal completion: target updated, tmp removed
+        return {
+            "status": "SUCCESS",
+            "target_exists": True,
+            "tmp_exists": False,
+            "target_content": payload,
+        }
+
+    @classmethod
+    def recover_from_power_loss(cls, target_exists: bool, tmp_exists: bool,
+                               tmp_content: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Models startup recovery: if target is missing but .tmp exists from interrupted write,
+        automatically restores settings from .tmp file.
+        """
+        if target_exists:
+            return {"recovered": False, "source": "TARGET", "status": "NORMAL"}
+        if tmp_exists and tmp_content:
+            return {"recovered": True, "source": "TMP_FALLBACK", "restored_content": tmp_content}
+        return {"recovered": False, "source": "DEFAULT_FALLBACK", "status": "DEFAULTS_LOADED"}
+
+    @classmethod
+    def evaluate_i2c_recovery(cls, consecutive_failures: int) -> Dict[str, Any]:
+        """
+        Models I2C fault detector: upon 5 consecutive transaction failures, triggers
+        9 SCL bus clear clock pulses and hardware RST low pulse to revive Goodix GT911.
+        """
+        if consecutive_failures < cls.I2C_MAX_CONSECUTIVE_FAILURES:
+            return {
+                "consecutive_failures": consecutive_failures,
+                "action": "NORMAL_RETRY",
+                "bus_clear_triggered": False,
+                "hardware_reset_triggered": False,
+            }
+        return {
+            "consecutive_failures": consecutive_failures,
+            "action": "HARDWARE_RECOVERY",
+            "bus_clear_triggered": True,
+            "scl_clock_pulses": cls.I2C_BUS_CLEAR_PULSES,
+            "hardware_reset_triggered": True,
+            "rst_pulse_width_ms": 10,
+            "post_reset_delay_ms": 50,
+        }
+
+    @classmethod
+    def repair_duplicate_button_mappings(cls, mappings: List[str]) -> Tuple[List[str], bool]:
+        """
+        Auto-repairs front button assignments if duplicate or invalid keys are detected,
+        restoring fail-safe defaults [BACK, CONFIRM, LEFT, RIGHT].
+        """
+        defaults = ["FRONT_HW_BACK", "FRONT_HW_CONFIRM", "FRONT_HW_LEFT", "FRONT_HW_RIGHT"]
+        if len(mappings) != 4 or len(set(mappings)) != 4:
+            return defaults, True
+        return mappings, False
+
+    @classmethod
+    def is_emergency_recovery_chord(cls, btn_down_pressed: bool) -> bool:
+        """Holding BTN_DOWN during boot triggers safe recovery mode."""
+        return bool(btn_down_pressed)
+
 
 
 

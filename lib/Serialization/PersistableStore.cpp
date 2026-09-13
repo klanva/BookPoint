@@ -1,5 +1,6 @@
 #include "PersistableStore.h"
 
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <ObfuscationUtils.h>
@@ -8,6 +9,12 @@
 #include <limits>
 
 bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& doc) {
+  const uint16_t vBat = powerManager.getBatteryVoltageMv();
+  if (vBat > 0 && vBat < 3200) {
+    LOG_ERR("PERSIST", "Brownout guard: battery voltage %u mV < 3200 mV, aborting write to %s", vBat, path);
+    return false;
+  }
+
   Storage.mkdir("/.crosspoint");
   String json;
   serializeJson(doc, json);
@@ -28,17 +35,39 @@ bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& 
 }
 
 bool PersistableStoreBase::readDocFromFile(const char* path, JsonDocument& doc) {
+  char tmpPath[128];
+  snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", path);
+
+  const char* readPath = path;
   if (!Storage.exists(path)) {
-    return false;  // Expected on first boot — not an error.
+    if (Storage.exists(tmpPath)) {
+      LOG_INF("PERSIST", "Primary %s missing, attempting recovery from %s", path, tmpPath);
+      readPath = tmpPath;
+    } else {
+      return false;  // Expected on first boot — not an error.
+    }
   }
-  String json = Storage.readFile(path);
+  String json = Storage.readFile(readPath);
   if (json.isEmpty()) {
-    LOG_ERR("PERSIST", "Failed to read %s (empty)", path);
-    return false;
+    if (readPath == path && Storage.exists(tmpPath)) {
+      LOG_INF("PERSIST", "Primary %s empty, attempting recovery from %s", path, tmpPath);
+      json = Storage.readFile(tmpPath);
+    }
+    if (json.isEmpty()) {
+      LOG_ERR("PERSIST", "Failed to read %s (empty)", readPath);
+      return false;
+    }
   }
   auto error = deserializeJson(doc, json);
   if (error) {
-    LOG_ERR("PERSIST", "JSON parse error in %s: %s", path, error.c_str());
+    LOG_ERR("PERSIST", "JSON parse error in %s: %s", readPath, error.c_str());
+    if (readPath == path && Storage.exists(tmpPath)) {
+      LOG_INF("PERSIST", "Attempting JSON recovery from %s", tmpPath);
+      String tmpJson = Storage.readFile(tmpPath);
+      if (!tmpJson.isEmpty() && !deserializeJson(doc, tmpJson)) {
+        return true;
+      }
+    }
     return false;
   }
   return true;

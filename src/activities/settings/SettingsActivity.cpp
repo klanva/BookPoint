@@ -816,7 +816,8 @@ void SettingsActivity::render(RenderLock&&) {
       // Section title
       renderer.drawText(UI_12_FONT_ID, 80, cy + 25, cards[i].title);
       // Section description
-      renderer.drawText(SMALL_FONT_ID, 80, cy + 65, cards[i].desc);
+      const std::string safeDesc = renderer.truncatedText(SMALL_FONT_ID, cards[i].desc, 335);
+      renderer.drawText(SMALL_FONT_ID, 80, cy + 65, safeDesc.c_str());
       // Right chevron
       renderer.drawText(UI_12_FONT_ID, 425, cy + 50, ">");
     }

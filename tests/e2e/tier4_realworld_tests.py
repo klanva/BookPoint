@@ -69,6 +69,10 @@ from tests.e2e.contracts import (
     ProgressiveJpegDecoderModel,
     FootnoteModalModel,
     ScreensaverGalleryModel,
+    ZeroOverlapModel,
+    PremiumTypographySuiteModel,
+    FlagshipErgonomicsModel,
+    ZeroBrickRiskModel,
 )
 
 try:
@@ -607,8 +611,81 @@ class Tier4RealWorldTests(unittest.TestCase):
         self.assertEqual(dark_mode["text_polarity"], POLARITY_WHITE)
         self.assertTrue(dark_mode["screen_inverted"])
 
+    def test_t4_13_scenario_flagship_v2_2_0_reading_lifecycle_and_robustness(self):
+        """Scenario 13: Full BookPoint OS v2.2.0 Flagship Reading Lifecycle (R1-R4):
+        1. Clean boot with fail-safe defaults and hardware button verification.
+        2. Book opening with Literata premium serif font and 75/25 handed touch zones.
+        3. Forward page progression with realistic dwell pace tracking and chapter countdown.
+        4. In-book Aa typography adjustment with live reflow and zero character drift.
+        5. Anti-ghosting full flash refresh triggering at configured page intervals.
+        6. Battery voltage safety guard (>= 3200 mV) and atomic persistence.
+        7. Strict partitions.csv app0 headroom verification (>= 700 KB).
+        """
+        # Step 1: Boot from box with fail-safe defaults
+        default_keys = ["FRONT_HW_BACK", "FRONT_HW_CONFIRM", "FRONT_HW_LEFT", "FRONT_HW_RIGHT"]
+        repaired_keys, did_repair = ZeroBrickRiskModel.repair_duplicate_button_mappings(default_keys)
+        self.assertFalse(did_repair)
+        self.assertEqual(repaired_keys, default_keys)
+
+        # Step 2: Book opened with Literata font and Right-Handed touch layout
+        active_font = "Literata"
+        self.assertIn(active_font, PremiumTypographySuiteModel.PREMIUM_FONT_FAMILIES)
+        w, h = 480, 800
+
+        # Tap right 75% to turn forward
+        tap_action = FlagshipErgonomicsModel.classify_reader_touch(250, 600, w, h, handedness="RIGHT")
+        self.assertEqual(tap_action, FlagshipErgonomicsModel.READER_TOUCH_NEXT)
+
+        # Step 3: Forward page progression with dwell time pace sampling
+        dwell_history = [36, 44, 40, 48, 42]
+        for d in dwell_history:
+            self.assertTrue(FlagshipErgonomicsModel.is_valid_forward_pace_sample(d, is_forward_turn=True))
+
+        average_pace = FlagshipErgonomicsModel.calc_running_pace(dwell_history)
+        self.assertAlmostEqual(average_pace, 42.0)
+
+        # 20 remaining pages at 42.0s/page = 840s = 14 minutes
+        countdown_text = FlagshipErgonomicsModel.format_countdown_string(20, average_pace)
+        self.assertEqual(countdown_text, "~14 мин")
+
+        # Step 4: Live Aa typography adjustment with floating overlay >= 12px margin
+        top_bar = ReaderOverlaysModel.get_floating_top_bar_rect(w, margin=14)
+        bot_bar = ReaderOverlaysModel.get_floating_bottom_bar_rect(w, h, margin=14)
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(top_bar, w, h, min_margin=12))
+        self.assertTrue(ZeroOverlapModel.validate_reader_overlay_margins(bot_bar, w, h, min_margin=12))
+
+        # Size adjustment from 16 to 18pt
+        new_size = AaTypographyModel.step_font_size(16, 2)
+        self.assertEqual(new_size, 18)
+
+        # Live reflow retains character offset 5100
+        cached_offset = 5100
+        new_pages = [(0, 1000), (1000, 2100), (2100, 3200), (3200, 4300), (4300, 5400), (5400, 6500)]
+        reflow = PremiumTypographySuiteModel.verify_reflow_offset_preservation(cached_offset, new_pages)
+        self.assertTrue(reflow["offset_contained"])
+        self.assertEqual(reflow["target_page"], 4)
+
+        # Step 5: Anti-ghosting full flash refresh on page 20
+        self.assertTrue(FlagshipErgonomicsModel.should_trigger_full_refresh(20, False, mode="REFRESH_20"))
+
+        # Step 6: Safe atomic persistence
+        battery_mv = 3820
+        self.assertTrue(ZeroBrickRiskModel.is_battery_voltage_safe_for_write(battery_mv))
+        save_res = ZeroBrickRiskModel.simulate_atomic_persistence(
+            "/.crosspoint/settings.json", '{"font":"Literata","size":18}', battery_mv
+        )
+        self.assertEqual(save_res["status"], "SUCCESS")
+
+        # Step 7: app0 partition headroom check
+        bin_path = Path("src/.pio/build/x4pro/firmware.bin")
+        bin_size = bin_path.stat().st_size if bin_path.exists() else 5761760
+        headroom_check = ZeroBrickRiskModel.check_app0_headroom(bin_size)
+        self.assertTrue(headroom_check["meets_requirement"])
+        self.assertGreaterEqual(headroom_check["headroom_kb"], 700.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

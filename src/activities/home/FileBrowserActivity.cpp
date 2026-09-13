@@ -428,7 +428,7 @@ void FileBrowserActivity::activateSelected(const bool forceDelete) {
 bool FileBrowserActivity::handleCustomInput() {
   int tx = 0, ty = 0;
   if (mappedInput.wasScreenTapped(tx, ty)) {
-    if (mode == Mode::Books && ty >= 8 && ty < 44) {
+    if (mode == Mode::Books && ty >= 0 && ty <= 50) {
       if (tx >= 308 && tx < 356) {
         // Sort button: cycle sort mode
         SETTINGS.fileSortMode = (SETTINGS.fileSortMode + 1) % CrossPointSettings::FILE_SORT_MODE_COUNT;
@@ -620,14 +620,16 @@ void FileBrowserActivity::buildScreen(UiScreen& screen) {
 
       if (isDir) {
         renderer.drawText(UI_12_FONT_ID, x + 15, y + 50, "[DIR]");
-        renderer.drawText(SMALL_FONT_ID, x + 15, y + 90, title.c_str());
+        const std::string safeDir = renderer.truncatedText(SMALL_FONT_ID, title.c_str(), w - 30);
+        renderer.drawText(SMALL_FONT_ID, x + 15, y + 90, safeDir.c_str());
       } else {
         // Thumbnail rect or placeholder
         renderer.drawRect(x + 15, y + 15, 70, 95);
         renderer.drawText(SMALL_FONT_ID, x + 25, y + 50, "Book");
 
         // Title
-        renderer.drawText(SMALL_FONT_ID, x + 95, y + 20, title.substr(0, 10).c_str());
+        const std::string safeTitle = renderer.truncatedText(SMALL_FONT_ID, title.c_str(), w - 105);
+        renderer.drawText(SMALL_FONT_ID, x + 95, y + 20, safeTitle.c_str());
 
         // Capsule progress bar
         int barX = x + 15;
@@ -694,21 +696,21 @@ void FileBrowserActivity::drawChrome() {
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, folderName.c_str());
 
   if (mode == Mode::Books) {
-    // Sort button at (308, 8, 48, 36)
-    renderer.drawRect(308, 8, 48, 36);
+    // Sort button at (308, 4, 48, 44)
+    renderer.drawRect(308, 4, 48, 44);
     const char* sortStr = "AZ";
     if (SETTINGS.fileSortMode == CrossPointSettings::SORT_BY_DATE) sortStr = "DT";
     else if (SETTINGS.fileSortMode == CrossPointSettings::SORT_BY_AUTHOR) sortStr = "AU";
     else if (SETTINGS.fileSortMode == CrossPointSettings::SORT_BY_PROGRESS) sortStr = "%";
-    renderer.drawText(SMALL_FONT_ID, 318, 16, sortStr);
+    renderer.drawText(SMALL_FONT_ID, 318, 18, sortStr);
 
-    // Search button at (364, 8, 48, 36)
-    renderer.drawRect(364, 8, 48, 36);
-    renderer.drawText(SMALL_FONT_ID, 376, 16, "Srch");
+    // Search button at (364, 4, 48, 44)
+    renderer.drawRect(364, 4, 48, 44);
+    renderer.drawText(SMALL_FONT_ID, 376, 18, "Srch");
 
-    // View toggle button at (420, 8, 48, 36)
-    renderer.drawRect(420, 8, 48, 36);
-    renderer.drawText(SMALL_FONT_ID, 430, 16, (viewMode == 0) ? "Grid" : "List");
+    // View toggle button at (420, 4, 48, 44)
+    renderer.drawRect(420, 4, 48, 44);
+    renderer.drawText(SMALL_FONT_ID, 430, 18, (viewMode == 0) ? "Grid" : "List");
   }
 }
 

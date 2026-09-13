@@ -128,10 +128,17 @@ class EpubReaderActivity final : public ReaderActivity {
 
   void navigateToHref(const std::string& href, bool savePosition = false);
   void restoreSavedPosition();
-  void noteReadingDwell() {
+  void noteReadingDwell(bool isForward = false) {
     if (statsActive) {
       const uint32_t dwell = readingTracker.closePage();
-      if (dwell > 0) bookStats.totalPagesTurned++;
+      if (dwell > 0) {
+        bookStats.totalPagesTurned++;
+        if (isForward && dwell >= ReadingTracker::MIN_PACE_SAMPLE_SECONDS &&
+            dwell < ReadingTracker::IDLE_THRESHOLD_SECONDS) {
+          readingTracker.addForwardPaceSample(dwell);
+          bookStats.recordForwardPageRead(dwell);
+        }
+      }
     }
   }
 

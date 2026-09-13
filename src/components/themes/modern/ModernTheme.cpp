@@ -285,9 +285,10 @@ void ModernTheme::drawHeroCard(const GfxRenderer& renderer, Rect cardRect, const
   renderer.drawText(SMALL_FONT_ID, metaX + 8, curY + 4, badgeText, false, EpdFontFamily::BOLD);
   curY += 28;
 
-  // Book title (up to 3 lines)
+  // Book title (up to 3 lines, capped at 2 if author and stats present)
   const char* titleStr = book->title.empty() ? book->path.c_str() : book->title.c_str();
-  auto titleLines = renderer.wrappedText(UI_12_FONT_ID, titleStr, metaW, 3, EpdFontFamily::BOLD);
+  const int maxTitleLines = (!book->author.empty() && stats != nullptr) ? 2 : 3;
+  auto titleLines = renderer.wrappedText(UI_12_FONT_ID, titleStr, metaW, maxTitleLines, EpdFontFamily::BOLD);
   const int lineH = renderer.getLineHeight(UI_12_FONT_ID);
   for (const auto& line : titleLines) {
     renderer.drawText(UI_12_FONT_ID, metaX, curY, line.c_str(), true, EpdFontFamily::BOLD);
@@ -297,8 +298,9 @@ void ModernTheme::drawHeroCard(const GfxRenderer& renderer, Rect cardRect, const
 
   // Author
   if (!book->author.empty()) {
-    renderer.drawText(UI_10_FONT_ID, metaX, curY, book->author.c_str(), true);
-    curY += renderer.getLineHeight(UI_10_FONT_ID) + 8;
+    const std::string truncAuthor = renderer.truncatedText(UI_10_FONT_ID, book->author.c_str(), metaW);
+    renderer.drawText(UI_10_FONT_ID, metaX, curY, truncAuthor.c_str(), true);
+    curY += renderer.getLineHeight(UI_10_FONT_ID) + 6;
   } else {
     curY += 4;
   }
@@ -405,7 +407,8 @@ void ModernTheme::drawMiniBookCard(const GfxRenderer& renderer, Rect miniRect, c
   }
 
   if (!book.author.empty()) {
-    renderer.drawText(SMALL_FONT_ID, textX, textY + 2, book.author.c_str(), !isSelected);
+    const std::string truncAuthor = renderer.truncatedText(SMALL_FONT_ID, book.author.c_str(), textW);
+    renderer.drawText(SMALL_FONT_ID, textX, textY + 2, truncAuthor.c_str(), !isSelected);
   }
 
   // Progress bar & percentage

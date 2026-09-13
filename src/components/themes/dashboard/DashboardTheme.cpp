@@ -285,7 +285,8 @@ void DashboardTheme::drawStatsColumn(const GfxRenderer& renderer, Rect rect, con
   } else {
     snprintf(progLine, sizeof(progLine), isRu ? "%d%% • Осталось: —" : "%d%% • Left: —", pct);
   }
-  renderer.drawText(SMALL_FONT_ID, rect.x + 10, currentY, progLine);
+  const std::string truncProg = renderer.truncatedText(SMALL_FONT_ID, progLine, rect.width - 20);
+  renderer.drawText(SMALL_FONT_ID, rect.x + 10, currentY, truncProg.c_str());
   currentY += renderer.getLineHeight(SMALL_FONT_ID) + 8;
 
   // Divider line

@@ -92,39 +92,58 @@ inline TouchPageTurn detectTouchPageTurn(GfxRenderer& renderer, const MappedInpu
     return result;
   }
 
+  // Also accept swipe gestures in tap modes
+  const auto swipeDir = input.wasSwipe();
+  if (swipeDir == MappedInputManager::SwipeDir::Left) {
+    result.next = true;
+    return result;
+  } else if (swipeDir == MappedInputManager::SwipeDir::Right) {
+    result.prev = true;
+    return result;
+  }
+
   int x = 0;
   int y = 0;
   if (!input.wasScreenTapped(x, y)) {
     return result;
   }
 
-  const int16_t width = static_cast<int16_t>(renderer.getScreenWidth());
-  const int16_t height = static_cast<int16_t>(renderer.getScreenHeight());
-  // Outer thirds only: the center column contains the reader-menu tap target
-  // (isTouchMenuTap below), so it must not double as a page turn.
-  const int16_t zoneWidth = width / 3;
-  const bool inverted = SETTINGS.touchReaderControls == CrossPointSettings::TOUCH_READER_INVERTED_TAP;
-  const freeink::ui::TapZone zones[] = {
-      {freeink::ui::Rect{0, 0, zoneWidth, height}, inverted ? READER_TOUCH_NEXT : READER_TOUCH_PREV},
-      {freeink::ui::Rect{static_cast<int16_t>(width - zoneWidth), 0, zoneWidth, height},
-       inverted ? READER_TOUCH_PREV : READER_TOUCH_NEXT},
-  };
+  const int width = renderer.getScreenWidth();
+  const int height = renderer.getScreenHeight();
 
-  for (const auto& zone : zones) {
-    if (!zone.enabled || !zone.rect.contains(static_cast<int16_t>(x), static_cast<int16_t>(y))) continue;
-    result.prev = zone.action == READER_TOUCH_PREV;
-    result.next = zone.action == READER_TOUCH_NEXT;
-    break;
+  // Center menu exclusion zone (middle 40% width, middle 30% height)
+  const int menu_x_start = width * 30 / 100;
+  const int menu_x_end = width * 70 / 100;
+  const int menu_y_start = height * 35 / 100;
+  const int menu_y_end = height * 65 / 100;
+  if (SETTINGS.tapForReaderMenu && (x >= menu_x_start && x < menu_x_end) && (y >= menu_y_start && y < menu_y_end)) {
+    return result;
   }
+
+  // 75/25 Handed Touch Zones
+  const bool isLeftHanded = (SETTINGS.handedness == CrossPointSettings::HANDEDNESS_LEFT);
+  const bool inverted = (SETTINGS.touchReaderControls == CrossPointSettings::TOUCH_READER_INVERTED_TAP);
+  bool forward = false;
+  if (!isLeftHanded) {
+    // Right-handed: 0..25% is PREV, 25..100% is NEXT
+    forward = (x >= width / 4);
+  } else {
+    // Left-handed: 0..75% is NEXT, 75..100% is PREV
+    forward = (x < width * 3 / 4);
+  }
+
+  if (inverted) {
+    forward = !forward;
+  }
+
+  result.next = forward;
+  result.prev = !forward;
   result.heldMs = gpio.lastTouchHeldMs();
   return result;
 }
 
-// Tap in the center third of the screen: the tap path into the reader menu on
-// every touch board. The page-turn tap zones are the outer horizontal thirds,
-// so the centered rectangle remains free in tap mode. The opt-out is only
-// surfaced on home-key boards (SettingsList), where the menu stays reachable
-// through the key's long-press function.
+// Tap in the center menu zone of the screen (middle 40% width, middle 30% height):
+// invokes reader overlay / menu.
 inline bool isTouchMenuTap(const GfxRenderer& renderer, const MappedInputManager& input) {
   if (!input.hasTouch()) return false;
   if (!SETTINGS.tapForReaderMenu) return false;
@@ -133,9 +152,11 @@ inline bool isTouchMenuTap(const GfxRenderer& renderer, const MappedInputManager
   if (!input.wasScreenTapped(x, y)) return false;
   const int width = renderer.getScreenWidth();
   const int height = renderer.getScreenHeight();
-  const int zoneWidth = width / 3;
-  const int zoneHeight = height / 3;
-  return x >= zoneWidth && x < width - zoneWidth && y >= zoneHeight && y < height - zoneHeight;
+  const int menu_x_start = width * 30 / 100;
+  const int menu_x_end = width * 70 / 100;
+  const int menu_y_start = height * 35 / 100;
+  const int menu_y_end = height * 65 / 100;
+  return (x >= menu_x_start && x < menu_x_end) && (y >= menu_y_start && y < menu_y_end);
 }
 
 // Reader menu opens on the menu edge-swipe or a center-third tap. On home-key

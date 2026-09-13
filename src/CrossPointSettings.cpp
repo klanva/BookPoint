@@ -358,10 +358,15 @@ int CrossPointSettings::getRefreshFrequency() const {
     case REFRESH_10:
       return 10;
     case REFRESH_15:
-    default:
       return 15;
+    case REFRESH_20:
+      return 20;
+    case REFRESH_CHAPTER:
+      return 9999;
     case REFRESH_30:
       return 30;
+    default:
+      return 15;
   }
 }
 

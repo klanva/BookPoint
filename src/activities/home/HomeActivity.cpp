@@ -346,8 +346,12 @@ void HomeActivity::loop() {
   int downX = 0, downY = 0;
   if (mappedInput.wasScreenTouchDown(downX, downY)) {
     if (isModern) {
-      if (downY >= 720 && downY <= 800) {
-        const int col = std::clamp(downX / 96, 0, 4);
+      const int pageWidth = renderer.getScreenWidth();
+      const int pageHeight = renderer.getScreenHeight();
+      const int dockY = pageHeight - 80;
+      const int colW = std::max(1, pageWidth / 5);
+      if ((downY >= 720 && downY <= 800) || (downY >= dockY && downY <= pageHeight)) {
+        const int col = std::clamp(downX / colW, 0, 4);
         const int targetIdx = 1 + shelfCount + col;
         if (selectorIndex != targetIdx) {
           selectorIndex = targetIdx;
@@ -412,9 +416,13 @@ void HomeActivity::loop() {
         }
         return;
       }
-      // Navigation dock: [0..479, 720..800] -> 5 columns (0: Library, 1: Search, 2: Stats, 3: Apps, 4: Settings)
-      if (tapX >= 0 && tapX <= 479 && tapY >= 720 && tapY <= 800) {
-        const int col = std::clamp(tapX / 96, 0, 4);
+      // Navigation dock: 5 columns (0: Library, 1: Search, 2: Stats, 3: Apps, 4: Settings)
+      const int pageWidth = renderer.getScreenWidth();
+      const int pageHeight = renderer.getScreenHeight();
+      const int dockY = pageHeight - 80;
+      const int colW = std::max(1, pageWidth / 5);
+      if (tapX >= 0 && tapX <= pageWidth && ((tapY >= 720 && tapY <= 800) || (tapY >= dockY && tapY <= pageHeight))) {
+        const int col = std::clamp(tapX / colW, 0, 4);
         switch (col) {
           case 0:
             onFileBrowserOpen();
