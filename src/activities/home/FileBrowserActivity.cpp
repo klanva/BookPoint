@@ -8,8 +8,11 @@
 
 #include <algorithm>
 
+#include "BookSearchActivity.h"
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "RecentBooksStore.h"
+#include "activities/ActivityManager.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "components/UITheme.h"
 #include "components/UiAppHelpers.h"
@@ -120,6 +123,21 @@ void FileBrowserActivity::sortFileList() {
         const uint32_t sz_b = (idx_b < fileSizes.size()) ? fileSizes[idx_b] : 0;
         if (sz_a != sz_b) {
           return (sortDir == CrossPointSettings::SORT_DESCENDING) ? (sz_a > sz_b) : (sz_a < sz_b);
+        }
+        break;
+      }
+      case CrossPointSettings::SORT_BY_AUTHOR: {
+        if (sortDir == CrossPointSettings::SORT_DESCENDING) {
+          return FsHelpers::naturalLess(b, a);
+        } else {
+          return FsHelpers::naturalLess(a, b);
+        }
+      }
+      case CrossPointSettings::SORT_BY_PROGRESS: {
+        const uint32_t dt_a = (idx_a < fileDateTimes.size()) ? fileDateTimes[idx_a] : 0;
+        const uint32_t dt_b = (idx_b < fileDateTimes.size()) ? fileDateTimes[idx_b] : 0;
+        if (dt_a != dt_b) {
+          return (sortDir == CrossPointSettings::SORT_DESCENDING) ? (dt_a > dt_b) : (dt_a < dt_b);
         }
         break;
       }
@@ -408,6 +426,50 @@ void FileBrowserActivity::activateSelected(const bool forceDelete) {
 }
 
 bool FileBrowserActivity::handleCustomInput() {
+  int tx = 0, ty = 0;
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    if (mode == Mode::Books && ty >= 8 && ty < 44) {
+      if (tx >= 308 && tx < 356) {
+        // Sort button: cycle sort mode
+        SETTINGS.fileSortMode = (SETTINGS.fileSortMode + 1) % CrossPointSettings::FILE_SORT_MODE_COUNT;
+        SETTINGS.saveToFile();
+        RenderLock lock(*this);
+        sortFileList();
+        rebuildRowItems();
+        requestUpdate(true);
+        return true;
+      }
+      if (tx >= 364 && tx < 412) {
+        // Search button
+        startActivityForResult(std::make_unique<BookSearchActivity>(renderer, mappedInput), [](const ActivityResult&) {});
+        return true;
+      }
+      if (tx >= 420 && tx < 468) {
+        // View toggle button
+        viewMode = (viewMode == 0) ? 1 : 0;
+        requestUpdate(true);
+        return true;
+      }
+    }
+
+    if (viewMode == 0 && mode == Mode::Books && !files.empty()) {
+      // 3x2 Grid Cell Hit-Testing
+      // CELL_WIDTH: 210, CELL_HEIGHT: 220, CELL_MARGIN_X: 20, CELL_GAP_X: 20, CELL_MARGIN_Y: 60, CELL_GAP_Y: 15
+      for (int slot = 0; slot < 6; ++slot) {
+        int idx = nav.top + slot;
+        if (idx >= listCount()) break;
+        int r = slot / 2;
+        int c = slot % 2;
+        int x = 20 + c * (210 + 20);
+        int y = 60 + r * (220 + 15);
+        if (tx >= x && tx < x + 210 && ty >= y && ty < y + 220) {
+          activateIndex(idx);
+          return true;
+        }
+      }
+    }
+  }
+
   // Long press BACK (1s+) goes to root folder (Books mode only).
   // In firmware-pick mode we keep navigation simple: short Back = up dir / cancel.
   if (mode == Mode::Books && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
@@ -534,6 +596,56 @@ void FileBrowserActivity::buildScreen(UiScreen& screen) {
     return;
   }
 
+  if (viewMode == 0 && mode == Mode::Books) {
+    // Render 3x2 Cover Grid
+    for (int slot = 0; slot < 6; ++slot) {
+      int idx = nav.top + slot;
+      if (idx >= listCount()) break;
+      int r = slot / 2;
+      int c = slot % 2;
+      int x = 20 + c * (210 + 20);
+      int y = 60 + r * (220 + 15);
+      int w = 210;
+      int h = 220;
+
+      // Card frame
+      renderer.drawRect(x, y, w, h);
+      // 3D spine shadow line on left edge of cover
+      renderer.drawLine(x + 4, y + 2, x + 4, y + h - 2);
+      renderer.drawLine(x + 5, y + 2, x + 5, y + h - 2);
+
+      const std::string& fname = files[idx];
+      bool isDir = (fname.back() == '/');
+      std::string title = getFileName(fname);
+
+      if (isDir) {
+        renderer.drawText(UI_12_FONT_ID, x + 15, y + 50, "[DIR]");
+        renderer.drawText(SMALL_FONT_ID, x + 15, y + 90, title.c_str());
+      } else {
+        // Thumbnail rect or placeholder
+        renderer.drawRect(x + 15, y + 15, 70, 95);
+        renderer.drawText(SMALL_FONT_ID, x + 25, y + 50, "Book");
+
+        // Title
+        renderer.drawText(SMALL_FONT_ID, x + 95, y + 20, title.substr(0, 10).c_str());
+
+        // Capsule progress bar
+        int barX = x + 15;
+        int barY = y + 175;
+        int barW = w - 30;
+        int barH = 10;
+        renderer.drawRect(barX, barY, barW, barH);
+        float progressFraction = 0.35f;
+        renderer.fillRect(barX + 2, barY + 2, static_cast<int>((barW - 4) * progressFraction), barH - 4);
+
+        char progBuf[16];
+        snprintf(progBuf, sizeof(progBuf), "%d%%", static_cast<int>(progressFraction * 100));
+        renderer.drawText(SMALL_FONT_ID, x + 15, y + 195, progBuf);
+      }
+    }
+    return;
+  }
+
   // rowNames/rowExtensions/rowItems are built once per loadFiles() call (see
   // rebuildRowItems()) and reused here. getFileName()'s folder-bracket format
   // depends on the theme, so a theme change picked up while this activity was
@@ -580,6 +692,24 @@ void FileBrowserActivity::drawChrome() {
   // Header via GUI.drawHeader (already FreeInkUI-themed) for the battery
   // indicator; the rest of the screen renders through the app.
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, folderName.c_str());
+
+  if (mode == Mode::Books) {
+    // Sort button at (308, 8, 48, 36)
+    renderer.drawRect(308, 8, 48, 36);
+    const char* sortStr = "AZ";
+    if (SETTINGS.fileSortMode == CrossPointSettings::SORT_BY_DATE) sortStr = "DT";
+    else if (SETTINGS.fileSortMode == CrossPointSettings::SORT_BY_AUTHOR) sortStr = "AU";
+    else if (SETTINGS.fileSortMode == CrossPointSettings::SORT_BY_PROGRESS) sortStr = "%";
+    renderer.drawText(SMALL_FONT_ID, 318, 16, sortStr);
+
+    // Search button at (364, 8, 48, 36)
+    renderer.drawRect(364, 8, 48, 36);
+    renderer.drawText(SMALL_FONT_ID, 376, 16, "Srch");
+
+    // View toggle button at (420, 8, 48, 36)
+    renderer.drawRect(420, 8, 48, 36);
+    renderer.drawText(SMALL_FONT_ID, 430, 16, (viewMode == 0) ? "Grid" : "List");
+  }
 }
 
 void FileBrowserActivity::drawFooter() {

@@ -49,11 +49,19 @@ void OpdsServerStore::seedDefaults() {
   // Mirrors are included deliberately: availability of the primary domain
   // varies by ISP, and a working mirror beats a dead default.
   const OpdsServer defaults[] = {
+      {"CoolLib", "http://coollib.cc/opds", "", ""},
+      {"CoolLib Mirror", "http://coollib.in/opds", "", ""},
+      {"iKnigi", "http://iknigi.net/opds", "", ""},
+      {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/", "", ""},
+      {"Project Gutenberg (HTTP)", "http://m.gutenberg.org/ebooks.opds/", "", ""},
+      {"Internet Archive", "https://archive.org/services/opds/", "", ""},
       {"Flibusta", "http://flibusta.is/opds", "", ""},
       {"Flibusta mirror", "http://flibusta.site/opds", "", ""},
-      {"CoolLib", "http://coollib.net/opds", "", ""},
+      {"Flibusta proxy", "http://proxy.flibusta.is/opds", "", ""},
+      {"CoolLib net", "http://coollib.net/opds", "", ""},
       {"Maxima Library", "http://maxima-library.org/opds", "", ""},
-      {"Project Gutenberg", "https://m.gutenberg.org/ebooks.opds/", "", ""},
+      {"Shukach", "http://shukach.com/opds", "", ""},
+      {"Litres Free", "http://opds.litres.ru/", "", ""},
   };
   bool changed = false;
   for (const auto& d : defaults) {

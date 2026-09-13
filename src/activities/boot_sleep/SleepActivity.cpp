@@ -580,7 +580,11 @@ void SleepActivity::renderCustomSleepScreen() const {
 
   std::string selectedPath;
   if (!selectRandomSleepFile("/.sleep", SleepRecentKind::Standard, selectedPath)) {
-    selectRandomSleepFile("/sleep", SleepRecentKind::Standard, selectedPath);
+    if (!selectRandomSleepFile("/sleep", SleepRecentKind::Standard, selectedPath)) {
+      if (!selectRandomSleepFile("/.covers", SleepRecentKind::Standard, selectedPath)) {
+        selectRandomSleepFile("/.crosspoint/sleep", SleepRecentKind::Standard, selectedPath);
+      }
+    }
   }
 
   if (!selectedPath.empty()) {

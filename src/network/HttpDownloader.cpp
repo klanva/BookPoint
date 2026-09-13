@@ -27,8 +27,8 @@ namespace {
 constexpr int HTTP_RX_BUF = 2048;
 constexpr int HTTP_TX_BUF = 512;
 #endif
-// Per-socket-op timeout: 15s provides responsive UX without long hangs
-constexpr int HTTP_TIMEOUT_MS = 15000;
+// Per-socket-op timeout: 8s provides responsive UX without long hangs
+constexpr int HTTP_TIMEOUT_MS = 8000;
 constexpr size_t READ_CHUNK = 1024;
 constexpr int MAX_REDIRECTS = 5;
 
@@ -231,9 +231,11 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
 }  // namespace
 
 bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const std::string& username,
-                              const std::string& password) {
+                              const std::string& password, bool* cancelFlag, ProgressCallback progress) {
   LOG_DBG("HTTP", "Fetching: %s", url.c_str());
   Sink sink;
+  sink.cancelFlag = cancelFlag;
+  sink.progress = std::move(progress);
   sink.write = [&outContent](const uint8_t* data, size_t len) { return outContent.write(data, len) == len; };
   return runGetSecure(url, username, password, sink) == OK;
 }

@@ -57,6 +57,13 @@ class EpubReaderActivity final : public ReaderActivity {
   unsigned long bookmarkMessageTime = 0UL;
   bool pendingReadFolderMove = false;
 
+  // R3: In-Book Overlays & Typography
+  bool inBookOverlaysActive = false;
+  bool typographyPopupActive = false;
+  bool footnotePopupActive = false;
+  void renderInBookOverlays();
+  bool handleInBookOverlaysTouch(int tx, int ty);
+
   // Footnote support
   std::vector<FootnoteEntry> currentPageFootnotes;
   struct SavedPosition {

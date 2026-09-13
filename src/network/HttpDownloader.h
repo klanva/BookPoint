@@ -30,7 +30,8 @@ class HttpDownloader {
                        const std::string& password = "");
 
   static bool fetchUrl(const std::string& url, Stream& stream, const std::string& username = "",
-                       const std::string& password = "");
+                       const std::string& password = "", bool* cancelFlag = nullptr,
+                       ProgressCallback progress = nullptr);
 
   /**
    * Stream the response body to onData as it arrives, without buffering it.

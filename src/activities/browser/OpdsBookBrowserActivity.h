@@ -52,6 +52,7 @@ class OpdsBookBrowserActivity final : public Activity, private UiAppHost {
   // Read by HttpDownloader between chunks; set by the Cancel button handler or
   // a Back press, both pumped from the download's progress callback.
   bool cancelDownload = false;
+  bool cancelFetch = false;
   // Set when the cancel came from the home gesture (consumed by the download
   // callback's own input pump); exit to home after the abort unwinds.
   bool goHomeAfterCancel = false;

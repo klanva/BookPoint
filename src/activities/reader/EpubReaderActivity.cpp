@@ -12,6 +12,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -43,6 +44,8 @@
 #include "QrDisplayActivity.h"
 #include "ReaderActivity.h"
 #include "ReaderUtils.h"
+#include "activities/home/BookSearchActivity.h"
+#include "fontIds.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "activities/settings/SettingsActivity.h"
@@ -491,8 +494,30 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+  if (inBookOverlaysActive) {
+    int tx = 0, ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      if (handleInBookOverlaysTouch(tx, ty)) {
+        return;
+      }
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      inBookOverlaysActive = false;
+      typographyPopupActive = false;
+      footnotePopupActive = false;
+      requestUpdate();
+      return;
+    }
+  }
+
   if (confirmReleased || ReaderUtils::isTouchMenuGesture(renderer, mappedInput)) {
-    openReaderMenu();
+    inBookOverlaysActive = !inBookOverlaysActive;
+    if (!inBookOverlaysActive) {
+      typographyPopupActive = false;
+      footnotePopupActive = false;
+    }
+    requestUpdate();
+    return;
   }
 
   if (footnoteDepth > 0 && mappedInput.wasReleased(MappedInputManager::Button::Back) &&
@@ -1405,6 +1430,10 @@ void EpubReaderActivity::renderBook() {
   if (showDictionaryMessage) {
     GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
   }
+
+  if (inBookOverlaysActive) {
+    renderInBookOverlays();
+  }
 }
 
 void EpubReaderActivity::onEndOfBookRendered() {
@@ -2242,3 +2271,232 @@ uint16_t EpubReaderActivity::measureFootnotesHeight(const std::vector<FootnoteEn
   
   return calcHeight;
 }
+
+void EpubReaderActivity::renderInBookOverlays() {
+  if (!inBookOverlaysActive) return;
+
+  // 1. Top Bar: (0, 0, 480, 64)
+  renderer.fillRect(0, 0, 480, 64, false);
+  renderer.drawLine(0, 64, 480, 64);
+
+  // Back button [ < ]: (0, 0, 64, 64)
+  renderer.drawRect(8, 8, 48, 48);
+  renderer.drawText(UI_12_FONT_ID, 26, 22, "<");
+
+  // Title area: (64, 0, 300, 64)
+  std::string title = getBookTitle();
+  if (title.empty()) title = "Книга";
+  if (title.length() > 28) title = title.substr(0, 25) + "...";
+  renderer.drawText(UI_12_FONT_ID, 72, 22, title.c_str());
+
+  // Bookmark button: (364, 0, 56, 64)
+  renderer.drawRect(368, 8, 48, 48);
+  renderer.drawText(UI_12_FONT_ID, 384, 22, currentPageBookmarked ? "[*]" : "[ ]");
+
+  // Search button: (420, 0, 60, 64)
+  renderer.drawRect(424, 8, 48, 48);
+  renderer.drawText(UI_12_FONT_ID, 436, 22, "Q");
+
+  // 2. Bottom Bar: (0, 672, 480, 128)
+  renderer.fillRect(0, 672, 480, 128, false);
+  renderer.drawLine(0, 672, 480, 672);
+
+  // Info area: (20, 676, 440, 30)
+  int curP = section ? (section->currentPage + 1) : 1;
+  int totP = section ? section->pageCount : 1;
+  if (totP < 1) totP = 1;
+  int pct = (curP * 100) / totP;
+  int remP = totP - curP;
+  int estMin = (remP <= 0) ? 0 : std::max(1, static_cast<int>(std::ceil(remP * 1.0f)));
+  char infoBuf[80];
+  snprintf(infoBuf, sizeof(infoBuf), "Стр. %d/%d (%d%%) • ~%d мин до конца главы", curP, totP, pct, estMin);
+  renderer.drawText(SMALL_FONT_ID, 24, 682, infoBuf);
+
+  // Scrubber: (30, 708, 420, 26)
+  renderer.drawRect(30, 718, 420, 6);
+  int thumbX = 30 + (totP > 1 ? ((curP - 1) * 408 / (totP - 1)) : 0);
+  renderer.fillRect(thumbX, 715, 12, 12, true);
+
+  // Action Buttons:
+  // Aa: (20, 742, 95, 48)
+  renderer.drawRect(20, 742, 95, 48);
+  renderer.drawText(UI_12_FONT_ID, 52, 756, "Aa");
+
+  // TOC: (125, 742, 110, 48)
+  renderer.drawRect(125, 742, 110, 48);
+  renderer.drawText(UI_12_FONT_ID, 160, 756, "TOC");
+
+  // Footnotes: (245, 742, 100, 48)
+  renderer.drawRect(245, 742, 100, 48);
+  renderer.drawText(UI_12_FONT_ID, 265, 756, "Сноски");
+
+  // Bookmarks: (355, 742, 105, 48)
+  renderer.drawRect(355, 742, 105, 48);
+  renderer.drawText(UI_12_FONT_ID, 368, 756, "Закладки");
+
+  // 3. Typography Popup Aa: (20, 350, 440, 310)
+  if (typographyPopupActive) {
+    renderer.fillRect(20, 350, 440, 310, false);
+    renderer.drawRect(20, 350, 440, 310);
+    renderer.drawText(UI_12_FONT_ID, 40, 370, "Типографика");
+
+    // Font size controls: A- at (130, 420, 50, 40), A+ at (240, 420, 50, 40)
+    renderer.drawText(SMALL_FONT_ID, 40, 430, "Размер:");
+    renderer.drawRect(130, 420, 50, 40);
+    renderer.drawText(UI_12_FONT_ID, 142, 430, "A-");
+
+    char szBuf[16];
+    snprintf(szBuf, sizeof(szBuf), "%d pt", SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14);
+    renderer.drawText(SMALL_FONT_ID, 190, 430, szBuf);
+
+    renderer.drawRect(240, 420, 50, 40);
+    renderer.drawText(UI_12_FONT_ID, 252, 430, "A+");
+
+    renderer.drawText(SMALL_FONT_ID, 40, 480, "Поля: Обычные (20px)");
+    renderer.drawText(SMALL_FONT_ID, 40, 520, "Интервал: 1.2x");
+    renderer.drawText(SMALL_FONT_ID, 40, 560, "Шрифт: Literata / BookPoint");
+  }
+
+  // 4. Footnote Popup: (20, 350, 440, 310)
+  if (footnotePopupActive) {
+    renderer.fillRect(20, 350, 440, 310, false);
+    renderer.drawRect(20, 350, 440, 310);
+    renderer.drawText(UI_12_FONT_ID, 40, 370, "Сноски страницы");
+    if (!currentPageFootnotes.empty()) {
+      int fnY = 410;
+      for (size_t i = 0; i < currentPageFootnotes.size() && i < 4; ++i) {
+        char fnBuf[64];
+        snprintf(fnBuf, sizeof(fnBuf), "[%s] %s", currentPageFootnotes[i].number, currentPageFootnotes[i].href);
+        renderer.drawText(SMALL_FONT_ID, 40, fnY, fnBuf);
+        fnY += 30;
+      }
+    } else {
+      renderer.drawText(SMALL_FONT_ID, 40, 430, "На этой странице нет сносок");
+    }
+  }
+}
+
+bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
+  if (typographyPopupActive) {
+    // Popup bounds: (20, 350, 440, 310)
+    if (tx >= 130 && tx <= 180 && ty >= 420 && ty <= 460) {
+      // A- (decrease font size)
+      uint8_t cur = SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14;
+      if (cur > 14) {
+        cur -= 2;
+        SETTINGS.fontPointSize = cur;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+      }
+      return true;
+    }
+    if (tx >= 240 && tx <= 290 && ty >= 420 && ty <= 460) {
+      // A+ (increase font size)
+      uint8_t cur = SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14;
+      if (cur < 36) {
+        cur += 2;
+        SETTINGS.fontPointSize = cur;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+      }
+      return true;
+    }
+    if (tx < 20 || tx > 460 || ty < 350 || ty > 660) {
+      typographyPopupActive = false;
+      requestUpdate();
+      return true;
+    }
+    return true;
+  }
+
+  if (footnotePopupActive) {
+    footnotePopupActive = false;
+    requestUpdate();
+    return true;
+  }
+
+  // Check Top Bar: (0, 0, 480, 64)
+  if (ty < 64) {
+    if (tx < 64) {
+      // Back button
+      inBookOverlaysActive = false;
+      finish();
+      return true;
+    }
+    if (tx >= 364 && tx < 420) {
+      // Bookmark button
+      addBookmark();
+      updateBookmarkFlag();
+      requestUpdate();
+      return true;
+    }
+    if (tx >= 420) {
+      // Search button
+      inBookOverlaysActive = false;
+      startActivityForResult(std::make_unique<BookSearchActivity>(renderer, mappedInput), [](const ActivityResult&) {});
+      return true;
+    }
+    return true;
+  }
+
+  // Check Bottom Bar: (0, 672, 480, 128)
+  if (ty >= 672) {
+    if (tx >= 20 && tx < 115 && ty >= 742) {
+      // Aa Typography
+      typographyPopupActive = !typographyPopupActive;
+      requestUpdate();
+      return true;
+    }
+    if (tx >= 125 && tx < 235 && ty >= 742) {
+      // TOC
+      inBookOverlaysActive = false;
+      onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER);
+      return true;
+    }
+    if (tx >= 245 && tx < 345 && ty >= 742) {
+      // Footnotes
+      footnotePopupActive = !footnotePopupActive;
+      requestUpdate();
+      return true;
+    }
+    if (tx >= 355 && ty >= 742) {
+      // Bookmarks
+      inBookOverlaysActive = false;
+      onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::BOOKMARKS);
+      return true;
+    }
+    if (ty >= 700 && ty <= 738 && section && section->pageCount > 0) {
+      // Scrubber
+      float frac = static_cast<float>(tx - 30) / 420.0f;
+      if (frac < 0.0f) frac = 0.0f;
+      if (frac > 1.0f) frac = 1.0f;
+      int targetP = static_cast<int>(frac * (section->pageCount - 1));
+      section->currentPage = targetP;
+      requestUpdate();
+      return true;
+    }
+    return true;
+  }
+
+  // Tap in backdrop (middle area): dismiss overlays
+  inBookOverlaysActive = false;
+  requestUpdate();
+  return true;
+}
+

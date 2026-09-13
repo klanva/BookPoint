@@ -478,8 +478,8 @@ void WifiSelectionActivity::attemptConnection() {
   uint8_t mac[6] = {};
   const esp_err_t macResult = esp_read_mac(mac, ESP_MAC_WIFI_STA);
   if (macResult == ESP_OK) {
-    char hostname[sizeof("CrossPoint-Reader-") + 12];
-    snprintf(hostname, sizeof(hostname), "CrossPoint-Reader-%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3],
+    char hostname[sizeof("BookPoint-Reader-") + 12];
+    snprintf(hostname, sizeof(hostname), "BookPoint-Reader-%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3],
              mac[4], mac[5]);
     WiFi.setHostname(hostname);
   } else {

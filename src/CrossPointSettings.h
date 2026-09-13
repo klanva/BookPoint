@@ -205,7 +205,16 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     QUICK_RESUME_SLEEP_SCREEN_COUNT
   };
 
-  enum FILE_SORT_MODE { SORT_BY_NAME = 0, SORT_BY_DATE = 1, SORT_BY_SIZE = 2, FILE_SORT_MODE_COUNT };
+  enum HANDEDNESS { HANDEDNESS_RIGHT = 0, HANDEDNESS_LEFT = 1, HANDEDNESS_COUNT };
+
+  enum FILE_SORT_MODE {
+    SORT_BY_NAME = 0,
+    SORT_BY_AUTHOR = 1,
+    SORT_BY_DATE = 2,
+    SORT_BY_PROGRESS = 3,
+    SORT_BY_SIZE = 4,
+    FILE_SORT_MODE_COUNT
+  };
   enum FILE_SORT_DIRECTION { SORT_ASCENDING = 0, SORT_DESCENDING = 1, FILE_SORT_DIRECTION_COUNT };
 
   // File browser sorting settings
@@ -251,6 +260,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;
+  // Handedness: 0 = RIGHT, 1 = LEFT
+  uint8_t handedness = HANDEDNESS_RIGHT;
   // Button layouts (front layout retained for migration only)
   uint8_t frontButtonLayout = BACK_CONFIRM_LEFT_RIGHT;
   uint8_t sideButtonLayout = PREV_NEXT;

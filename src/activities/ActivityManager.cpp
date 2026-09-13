@@ -26,6 +26,7 @@
 #include "util/FrontlightPanelActivity.h"
 #include "util/FullScreenMessageActivity.h"
 #include "util/QuickLockActivity.h"
+#include "util/SideDrawerActivity.h"
 
 static portMUX_TYPE activityManagerSpinlock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -92,15 +93,19 @@ void ActivityManager::loop() {
     }
 
     bool statusBarTap = false;
-    if (mappedInput.hasTouch() &&
-        (currentActivity->name == "Home" || currentActivity->name == "FileBrowser" ||
-         currentActivity->name == "Settings" || currentActivity->name == "NetworkModeSelection")) {
+    if (mappedInput.hasTouch()) {
       int tx = 0;
       int ty = 0;
       statusBarTap = mappedInput.wasScreenTapped(tx, ty) && ty < 44;
     }
     if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
       pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
+      return;
+    }
+
+    if (currentActivity->name != "SideDrawer" && currentActivity->name != "FrontlightPanel" &&
+        (mappedInput.wasSideDrawerGesture() || mappedInput.wasSideTabTap())) {
+      pushActivity(std::make_unique<SideDrawerActivity>(renderer, mappedInput));
       return;
     }
 

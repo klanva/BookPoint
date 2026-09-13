@@ -179,6 +179,7 @@ struct SettingInfo {
 class SettingsActivity final : public UiTabListActivity {
   int selectedCategoryIndex = 0;  // Currently selected category
   int settingsCount = 0;
+  int hubLevel = 1;  // 1 = Modular Cards Hub, 2 = Category Details
 
   // Per-category settings derived from shared list + device-only actions
   std::vector<SettingInfo> displaySettings;

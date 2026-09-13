@@ -21,7 +21,7 @@ class OpdsServerStore : public PersistableStore<OpdsServerStore> {
  private:
   std::vector<OpdsServer> servers;
 
-  static constexpr size_t MAX_SERVERS = 8;
+  static constexpr size_t MAX_SERVERS = 24;
 
   OpdsServerStore() = default;
 

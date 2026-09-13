@@ -264,10 +264,29 @@ bool MappedInputManager::wasEdgeSwipe(const freeink::ui::ScreenEdge edge) const 
 }
 
 bool MappedInputManager::wasBackGesture() const {
-  // Back = left-to-right swipe starting near the left edge. Edge-anchored so that
-  // mid-screen horizontal swipes stay available to activities that consume
-  // SwipeDir::Left/Right (e.g. percent selection, image viewer).
+  if (SETTINGS.handedness == CrossPointSettings::HANDEDNESS_LEFT) {
+    return wasEdgeSwipe(fui::ScreenEdge::Right);
+  }
   return wasEdgeSwipe(fui::ScreenEdge::Left);
+}
+
+bool MappedInputManager::wasSideDrawerGesture() const {
+  if (SETTINGS.handedness == CrossPointSettings::HANDEDNESS_LEFT) {
+    return wasEdgeSwipe(fui::ScreenEdge::Left);
+  }
+  return wasEdgeSwipe(fui::ScreenEdge::Right);
+}
+
+bool MappedInputManager::wasSideTabTap() const {
+  int tx = 0;
+  int ty = 0;
+  if (!wasScreenTapped(tx, ty)) return false;
+  if (ty < 340 || ty > 460) return false;
+  if (SETTINGS.handedness == CrossPointSettings::HANDEDNESS_LEFT) {
+    return tx <= 20;
+  } else {
+    return tx >= 460;
+  }
 }
 
 bool MappedInputManager::wasTopEdgeDownSwipe() const { return wasEdgeSwipe(fui::ScreenEdge::Top); }

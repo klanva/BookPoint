@@ -390,7 +390,46 @@ void SettingsActivity::applyUiSettingChange(uint8_t CrossPointSettings::* valueP
 }
 
 bool SettingsActivity::handleCustomInput() {
-  return optionPopup.handleInput(mappedInput, [this] { requestUpdate(); });
+  if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) {
+    return true;
+  }
+
+  int tx = 0, ty = 0;
+  if (mappedInput.wasScreenTapped(tx, ty)) {
+    if (hubLevel == 1) {
+      // Header Back button: (0, 0, 52, 52)
+      if (tx >= 0 && tx <= 52 && ty >= 0 && ty <= 52) {
+        SETTINGS.saveToFile();
+        onGoHome();
+        return true;
+      }
+      // Check 5 section cards: (20, 60 + i * 140, 440, 126)
+      for (int i = 0; i < 5; ++i) {
+        int cy = 60 + i * 140;
+        if (tx >= 20 && tx <= 460 && ty >= cy && ty <= cy + 126) {
+          hubLevel = 2;
+          if (i == 0) selectCategory(1);  // Reading
+          else if (i == 1) selectCategory(0);  // Display
+          else if (i == 2) { selectCategory(0); openSubmenu(SettingAction::DisplaySleepScreen); }  // Autonomy
+          else if (i == 3) { selectCategory(3); openSubmenu(SettingAction::SystemNetwork); }  // Network
+          else if (i == 4) selectCategory(3);  // System
+          requestUpdate(true);
+          return true;
+        }
+      }
+      return true;
+    } else if (hubLevel == 2) {
+      // Header Back button: (0, 0, 52, 52)
+      if (tx >= 0 && tx <= 52 && ty >= 0 && ty <= 52) {
+        hubLevel = 1;
+        activeSubmenu = SettingAction::None;
+        requestUpdate(true);
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 void SettingsActivity::stepTab(const int direction) {
@@ -422,8 +461,13 @@ bool SettingsActivity::handleButtons() {
   }
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    if (activeSubmenu != SettingAction::None) {
-      closeSubmenu();
+    if (hubLevel == 2) {
+      if (activeSubmenu != SettingAction::None) {
+        closeSubmenu();
+      } else {
+        hubLevel = 1;
+        requestUpdate();
+      }
       return true;
     }
     if (ringPos() > 0) {
@@ -634,7 +678,7 @@ std::string SettingsActivity::settingValueText(const SettingInfo& setting) {
     return "›";
   }
   if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
-    return SETTINGS.*(setting.valuePtr) ? tr(STR_STATE_ON) : tr(STR_STATE_OFF);
+    return SETTINGS.*(setting.valuePtr) ? "[  ●]" : "[●  ]";
   }
   if (setting.type == SettingType::ENUM && setting.valuePtr != nullptr) {
     const uint8_t value = SETTINGS.*(setting.valuePtr);
@@ -743,47 +787,58 @@ void SettingsActivity::render(RenderLock&&) {
   const auto pageWidth = renderer.getScreenWidth();
   const auto& metrics = UITheme::getInstance().getMetrics();
 
+  if (hubLevel == 1) {
+    // Header
+    renderer.drawRect(0, 0, 52, 52);
+    renderer.drawText(UI_12_FONT_ID, 20, 18, "<");
+    renderer.drawText(UI_12_FONT_ID, 65, 18, tr(STR_SETTINGS_TITLE));
+
+    struct SectionCard {
+      const char* title;
+      const char* desc;
+    };
+    const bool isRu = (I18N.getLanguage() == Language::RU);
+    const SectionCard cards[5] = {
+        {isRu ? "Чтение" : "Reading", isRu ? "Шрифты, поля, сноски, словарь" : "Fonts, margins, footnotes, dictionary"},
+        {isRu ? "Экран и подсветка" : "Display & Light", isRu ? "Яркость, CCT, инверсия, частота обновления" : "Brightness, CCT, inversion, refresh"},
+        {isRu ? "Автономность" : "Autonomy", isRu ? "Таймаут сна, глубокий сон, батарея" : "Sleep timeout, deep sleep, battery"},
+        {isRu ? "Сеть и синхронизация" : "Network & Sync", isRu ? "Wi-Fi, Calibre, OPDS, веб-сервер" : "Wi-Fi, Calibre, OPDS, web server"},
+        {isRu ? "Система" : "System", isRu ? "Язык, дата, резервное копирование, об устройстве" : "Language, date, backup, about device"}
+    };
+
+    for (int i = 0; i < 5; ++i) {
+      int cy = 60 + i * 140;
+      // Card rectangle (20, cy, 440, 126)
+      renderer.drawRect(20, cy, 440, 126);
+      // 32x32 contour icon placeholder
+      renderer.drawRect(36, cy + 20, 32, 32);
+      // Section title
+      renderer.drawText(UI_12_FONT_ID, 80, cy + 25, cards[i].title);
+      // Section description
+      renderer.drawText(SMALL_FONT_ID, 80, cy + 65, cards[i].desc);
+      // Right chevron
+      renderer.drawText(UI_12_FONT_ID, 425, cy + 50, ">");
+    }
+
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.displayBuffer();
+    return;
+  }
+
+  // Level 2: inside category
   const char* titleText =
       (activeSubmenu != SettingAction::None) ? getFolderLabel(activeSubmenu) : tr(STR_SETTINGS_TITLE);
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, titleText,
                  CROSSPOINT_VERSION);
+  // Header Back button [ < ] at (0, 0, 52, 52)
+  renderer.drawRect(0, 0, 52, 52);
+  renderer.drawText(UI_12_FONT_ID, 20, 18, "<");
 
   renderUi();
 
   const int ring = ringPos();
-  const char* confirmLabel = nullptr;
-  if (activeSubmenu != SettingAction::None) {
-    if (ring == 0) {
-      confirmLabel = tr(STR_BACK);
-    } else if (ring > 0 && ring <= settingsCount) {
-      const auto& curSetting = (*currentSettings)[ring - 1];
-      if (curSetting.type == SettingType::SUBMENU || curSetting.type == SettingType::ACTION) {
-        confirmLabel = tr(STR_SELECT);
-      } else if (curSetting.nameId == StrId::STR_TIME_TO_SLEEP) {
-        confirmLabel = tr(STR_SELECT);
-      } else {
-        confirmLabel = tr(STR_TOGGLE);
-      }
-    } else {
-      confirmLabel = tr(STR_TOGGLE);
-    }
-  } else {
-    if (ring == 0) {
-      confirmLabel = I18N.get(categoryNames[(selectedCategoryIndex + 1) % categoryCount]);
-    } else if (ring > 0 && ring <= settingsCount) {
-      const auto& curSetting = (*currentSettings)[ring - 1];
-      if (curSetting.type == SettingType::SUBMENU || curSetting.type == SettingType::ACTION) {
-        confirmLabel = tr(STR_SELECT);
-      } else if (curSetting.nameId == StrId::STR_TIME_TO_SLEEP) {
-        confirmLabel = tr(STR_SELECT);
-      } else {
-        confirmLabel = tr(STR_TOGGLE);
-      }
-    } else {
-      confirmLabel = tr(STR_TOGGLE);
-    }
-  }
-
+  const char* confirmLabel = tr(STR_TOGGLE);
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 

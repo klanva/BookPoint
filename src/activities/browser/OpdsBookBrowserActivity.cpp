@@ -106,9 +106,12 @@ void OpdsBookBrowserActivity::onSearchEvent(const fui::ActionEvent&, void* user)
 
 void OpdsBookBrowserActivity::onCancelEvent(const fui::ActionEvent&, void* user) {
   auto* self = static_cast<OpdsBookBrowserActivity*>(user);
-  if (self->state != BrowserState::DOWNLOADING) return;
   self->app.clearTapFlash();
   self->cancelDownload = true;
+  self->cancelFetch = true;
+  if (self->state == BrowserState::LOADING || self->state == BrowserState::CHECK_WIFI) {
+    self->navigateBack();
+  }
 }
 
 void OpdsBookBrowserActivity::loop() {
@@ -143,7 +146,7 @@ void OpdsBookBrowserActivity::loop() {
       } else {
         launchWifiSelection();
       }
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
       errorEnteredAtMs = 0;
       navigateBack();
     }
@@ -151,7 +154,8 @@ void OpdsBookBrowserActivity::loop() {
   }
 
   if (state == BrowserState::CHECK_WIFI || state == BrowserState::LOADING) {
-    if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
+      cancelFetch = true;
       state == BrowserState::CHECK_WIFI ? onGoHome() : navigateBack();
     }
     return;
@@ -162,7 +166,7 @@ void OpdsBookBrowserActivity::loop() {
   if (state == BrowserState::BROWSING) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
       activateSelected();
-    } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    } else if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasBackGesture()) {
       navigateBack();
     } else if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
       if (!searchTemplate.empty() && selectorIndex == 0) launchSearch();
@@ -340,7 +344,19 @@ void OpdsBookBrowserActivity::buildStatusScreen(UiScreen& screen) {
     return;
   }
   // CHECK_WIFI / LOADING (and the brief child-activity handoff states).
-  screen.centeredText(statusMessage.c_str(), centered);
+  const int16_t lh = screen.target().lineHeight(centered.font);
+  const int16_t gap = screen.theme().spaceMd;
+  const fui::Rect body = screen.body();
+  if (body.height > 160) screen.spacer(static_cast<int16_t>(body.height / 4));
+  screen.target().text(screen.takeTop(lh, gap), statusMessage.c_str(), centered);
+
+  screen.spacer(screen.theme().spaceLg);
+  const int16_t btnW = 200;
+  const int16_t btnH = 50;
+  fui::ButtonProps cancel;
+  cancel.label = tr(STR_CANCEL);
+  cancel.action = ACTION_CANCEL;
+  screen.button(cancel, fui::Rect{static_cast<int16_t>(body.x + (body.width - btnW) / 2), static_cast<int16_t>(body.y + body.height / 2 + 10), btnW, btnH});
 }
 
 void OpdsBookBrowserActivity::render(RenderLock&&) {
@@ -383,9 +399,32 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   std::string url = UrlUtils::buildUrl(server.url, path);
   LOG_DBG("OPDS", "Fetching: %s", url.c_str());
   OpdsParser parser;
+  cancelFetch = false;
   {
     OpdsParserStream stream{parser};
-    if (!HttpDownloader::fetchUrl(url, stream, server.username, server.password)) {
+    auto onProgress = [this](size_t, size_t) {
+      mappedInput.update();
+      if (mappedInput.wasReleased(MappedInputManager::Button::Back) ||
+          mappedInput.wasBackGesture() ||
+          mappedInput.wasHomeGesture()) {
+        cancelFetch = true;
+        return;
+      }
+      int tx = 0, ty = 0;
+      if (mappedInput.wasScreenTapped(tx, ty)) {
+        cancelFetch = true;
+        return;
+      }
+      routeTouch(mappedInput);
+    };
+
+    if (!HttpDownloader::fetchUrl(url, stream, server.username, server.password, &cancelFetch, onProgress)) {
+      if (cancelFetch) {
+        LOG_INF("OPDS", "Fetch feed cancelled by user");
+        cancelFetch = false;
+        navigateBack();
+        return;
+      }
       state = BrowserState::ERROR;
       errorMessage = tr(STR_FETCH_FEED_FAILED);
       errorEnteredAtMs = millis();
@@ -403,6 +442,20 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   }
 
   searchTemplate = parser.getSearchTemplate();
+  // Ensure major public libraries have working search even if root feed omits inline search template
+  if (searchTemplate.empty()) {
+    if (server.url.find("gutenberg.org") != std::string::npos) {
+      searchTemplate = "https://m.gutenberg.org/ebooks/search.opds/?query={searchTerms}";
+    } else if (server.url.find("coollib") != std::string::npos) {
+      searchTemplate = "http://coollib.cc/opds/search?searchTerm={searchTerms}";
+    } else if (server.url.find("iknigi") != std::string::npos) {
+      searchTemplate = "http://iknigi.net/opds/search?query={searchTerms}";
+    } else if (server.url.find("flibusta") != std::string::npos) {
+      searchTemplate = "http://flibusta.is/opds/search?searchType=books&searchTerm={searchTerms}";
+    } else if (server.url.find("archive.org") != std::string::npos) {
+      searchTemplate = "https://archive.org/services/opds/?query={searchTerms}";
+    }
+  }
   const auto& nextUrl = parser.getNextPageUrl();
   const auto& prevUrl = parser.getPrevPageUrl();
   const bool feedTruncated = parser.truncated();

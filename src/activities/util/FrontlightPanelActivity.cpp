@@ -3,7 +3,10 @@
 #include <FreeInkUIIcon.h>
 #include <GfxRenderer.h>
 #include <HalFrontlight.h>
+#include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
+#include <WiFi.h>
 
 #include <cstdio>
 
@@ -14,6 +17,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/icons/customListIcons.h"
 #include "components/icons/listIcons.h"
+#include "fontIds.h"
 
 namespace fui = freeink::ui;
 
@@ -151,6 +155,71 @@ bool FrontlightPanelActivity::handleHomeGesture() {
 }
 
 void FrontlightPanelActivity::loop() {
+  if (mappedInput.wasSwipe() == MappedInputManager::SwipeDir::Up) {
+    close();
+    return;
+  }
+
+  int tapX = 0, tapY = 0;
+  if (mappedInput.wasScreenTapped(tapX, tapY)) {
+    if (tapY >= 360) {
+      close();
+      return;
+    }
+    // Check 4 control pills:
+    // WIFI: (20, 155, 210, 46)
+    if (tapX >= 20 && tapX <= 230 && tapY >= 155 && tapY <= 201) {
+      if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+      } else {
+        WiFi.mode(WIFI_STA);
+      }
+      requestUpdate();
+      return;
+    }
+    // DARK_MODE: (250, 155, 210, 46)
+    if (tapX >= 250 && tapX <= 460 && tapY >= 155 && tapY <= 201) {
+      SETTINGS.screenInverted = (SETTINGS.screenInverted ? 0 : 1);
+      SETTINGS.saveToFile();
+      requestUpdate();
+      return;
+    }
+    // ROTATION_LOCK: (20, 215, 210, 46)
+    if (tapX >= 20 && tapX <= 230 && tapY >= 215 && tapY <= 261) {
+      SETTINGS.orientation = (SETTINGS.orientation == CrossPointSettings::PORTRAIT ? CrossPointSettings::LANDSCAPE_CW : CrossPointSettings::PORTRAIT);
+      SETTINGS.saveToFile();
+      requestUpdate();
+      return;
+    }
+    // SLEEP: (250, 215, 210, 46)
+    if (tapX >= 250 && tapX <= 460 && tapY >= 215 && tapY <= 261) {
+      close();
+      activityManager.goToQuickLock();
+      return;
+    }
+
+    // Discrete step slider buttons:
+    // Brightness: minus (20, 60, 40, 32), plus (420, 60, 40, 32)
+    if (tapX >= 20 && tapX <= 60 && tapY >= 60 && tapY <= 92) {
+      adjustBrightness(-10);
+      return;
+    }
+    if (tapX >= 420 && tapX <= 460 && tapY >= 60 && tapY <= 92) {
+      adjustBrightness(10);
+      return;
+    }
+    // CCT / Warmth: minus (20, 105, 40, 32), plus (420, 105, 40, 32)
+    if (tapX >= 20 && tapX <= 60 && tapY >= 105 && tapY <= 137) {
+      adjustWarmth(-10);
+      return;
+    }
+    if (tapX >= 420 && tapX <= 460 && tapY >= 105 && tapY <= 137) {
+      adjustWarmth(10);
+      return;
+    }
+  }
+
   const auto touch = routeTouch(mappedInput, false, /*routeHeld=*/true);
   if (touch.routed) {
     if (app.invalidated()) requestUpdate();
@@ -184,19 +253,7 @@ void FrontlightPanelActivity::loop() {
 }
 
 int FrontlightPanelActivity::computePanelBottom() const {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto tokens = uiThemeTokens(uiTarget);
-  const int16_t lineHeight = uiTarget.lineHeight(tokens.bodyText.font);
-  int y = metrics.topPadding + metrics.headerHeight;
-  y += tokens.spaceLg;
-  y += tokens.rowHeight + tokens.spaceSm;
-  y += tokens.rowHeight + tokens.spaceLg;
-  if (Frontlight.hasColorTemperature()) {
-    y += lineHeight + tokens.spaceSm + tokens.rowHeight + tokens.spaceLg;
-  }
-  y += tokens.rowHeight + tokens.spaceLg;
-  y += tokens.spaceLg;
-  return y;
+  return 360;
 }
 
 void FrontlightPanelActivity::panelScreen(UiScreen& screen, void* user) {
@@ -204,90 +261,86 @@ void FrontlightPanelActivity::panelScreen(UiScreen& screen, void* user) {
 }
 
 void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto& theme = screen.theme();
-  const int16_t bottomInset = static_cast<int16_t>(renderer.getScreenHeight() - panelBottom);
-  screen.setContentMargin(
-      fui::Insets{static_cast<int16_t>(metrics.topPadding + metrics.headerHeight), 0, bottomInset, 0});
-
-  const int16_t lineHeight = screen.target().lineHeight(theme.bodyText.font);
-  const int16_t rowHeight = theme.rowHeight;
-  const fui::Insets sideInset{0, static_cast<int16_t>(theme.spaceLg * 2), 0, static_cast<int16_t>(theme.spaceLg * 2)};
-  char line[48];
-
-  screen.spacer(theme.spaceLg);
-
-  const fui::Rect headerRow = screen.takeTop(rowHeight, theme.spaceSm).inset(sideInset);
-  snprintf(line, sizeof(line), "%s  %u%%", tr(STR_BRIGHTNESS), static_cast<unsigned>(brightness));
-  const fui::BitmapRef sunIcon = fui::bitmapFromIcon(lightOn ? icon_sun_filled_32 : icon_sun_32);
-  const int16_t iconWidth = static_cast<int16_t>(sunIcon.width);
-  const int16_t iconHeight = static_cast<int16_t>(sunIcon.height);
-  const int16_t controlWidth = static_cast<int16_t>(iconWidth + theme.spaceLg * 2);
-  const fui::Rect sunHit{static_cast<int16_t>(headerRow.right() - controlWidth), headerRow.y, controlWidth, rowHeight};
-  const fui::Rect sunRect{static_cast<int16_t>(sunHit.x + (controlWidth - iconWidth) / 2),
-                          static_cast<int16_t>(headerRow.y + (rowHeight - iconHeight) / 2), iconWidth, iconHeight};
-  const fui::Rect labelRect{headerRow.x, static_cast<int16_t>(headerRow.y + (rowHeight - lineHeight) / 2),
-                            static_cast<int16_t>(headerRow.width - controlWidth - theme.spaceMd), lineHeight};
-  screen.target().text(labelRect, line, theme.bodyText);
-  screen.frame().hit(sunHit, ACTION_TOGGLE);
-  screen.target().bitmap(sunRect, sunIcon, fui::BitmapMode::Center);
-
-  addStepSlider(screen, screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), brightness, ACTION_BRIGHTNESS,
-                ACTION_BRIGHTNESS_STEP);
-
-  if (Frontlight.hasColorTemperature()) {
-    snprintf(line, sizeof(line), "%s  %u%%", tr(STR_WARMTH), static_cast<unsigned>(warmth));
-    screen.target().text(screen.takeTop(lineHeight, theme.spaceSm).inset(sideInset), line, theme.bodyText);
-    addStepSlider(screen, screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), warmth, ACTION_WARMTH,
-                  ACTION_WARMTH_STEP);
-  }
-
-  fui::ButtonProps lockBtn;
-  lockBtn.label = tr(STR_QUICK_LOCK);
-  lockBtn.action = ACTION_QUICK_LOCK;
-  lockBtn.inputMask = fui::InputTouch;
-  lockBtn.text = theme.bodyText;
-  lockBtn.text.align = fui::TextAlign::Center;
-  fui::button(screen.frame(), screen.takeTop(theme.rowHeight, theme.spaceLg).inset(sideInset), lockBtn);
-
-  screen.spacer(theme.spaceLg);
 }
 
 void FrontlightPanelActivity::addStepSlider(UiScreen& screen, const fui::Rect& row, const uint8_t value,
                                             const fui::ActionId sliderAction, const fui::ActionId stepAction) {
-  const auto& theme = screen.theme();
-  const int16_t stepWidth = row.height;
-  const fui::Rect minusHit{row.x, row.y, stepWidth, row.height};
-  const fui::Rect plusHit{static_cast<int16_t>(row.right() - stepWidth), row.y, stepWidth, row.height};
-
-  fui::TextStyle glyph = theme.bodyText;
-  glyph.align = fui::TextAlign::Center;
-  const int16_t lineHeight = screen.target().lineHeight(glyph.font);
-  const int16_t glyphY = static_cast<int16_t>(row.y + (row.height - lineHeight) / 2);
-  screen.target().text(fui::Rect{minusHit.x, glyphY, stepWidth, lineHeight}, "-", glyph);
-  screen.target().text(fui::Rect{plusHit.x, glyphY, stepWidth, lineHeight}, "+", glyph);
-  screen.frame().hit(minusHit, stepAction, -1, fui::InputTouch);
-  screen.frame().hit(plusHit, stepAction, 1, fui::InputTouch);
-
-  fui::SliderProps props;
-  props.value = value;
-  props.max = 100;
-  props.action = sliderAction;
-  props.inputMask = fui::InputTouch | fui::InputDrag;
-  const int16_t sideGap = static_cast<int16_t>(stepWidth + theme.spaceSm);
-  fui::slider(screen.frame(), row.inset(fui::Insets{0, sideGap, 0, sideGap}), props);
 }
 
 void FrontlightPanelActivity::render(RenderLock&&) {
-  panelBottom = computePanelBottom();
+  panelBottom = 360;
   const int pageWidth = renderer.getScreenWidth();
   renderer.fillRect(0, 0, pageWidth, panelBottom, false);
 
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_FRONTLIGHT));
+  renderer.drawText(UI_12_FONT_ID, 20, 38, "Центр управления", true);
 
-  renderUi();
+  // Brightness row at Y: 60..92
+  renderer.drawRect(20, 60, 40, 32, true);
+  renderer.drawText(UI_12_FONT_ID, 35, 68, "-", true);
+  renderer.drawRect(70, 72, 340, 8, true);
+  const int bFill = (static_cast<int>(brightness) * 340) / 100;
+  renderer.fillRect(70, 72, bFill, 8, true);
+  renderer.drawRect(420, 60, 40, 32, true);
+  renderer.drawText(UI_12_FONT_ID, 433, 68, "+", true);
 
-  renderer.fillRect(0, panelBottom - 2, pageWidth, 2, true);
+  // CCT row at Y: 105..137
+  renderer.drawRect(20, 105, 40, 32, true);
+  renderer.drawText(UI_12_FONT_ID, 35, 113, "-", true);
+  renderer.drawRect(70, 117, 340, 8, true);
+  const int cctFill = (static_cast<int>(warmth) * 340) / 100;
+  renderer.fillRect(70, 117, cctFill, 8, true);
+  renderer.drawRect(420, 105, 40, 32, true);
+  renderer.drawText(UI_12_FONT_ID, 433, 113, "+", true);
+
+  // 4 Control Pills
+  // WIFI: (20, 155, 210, 46)
+  const bool wifiOn = (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF);
+  if (wifiOn) {
+    renderer.fillRect(20, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, 45, 170, "Wi-Fi (Вкл)", false);
+  } else {
+    renderer.drawRect(20, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, 45, 170, "Wi-Fi (Выкл)", true);
+  }
+
+  // DARK_MODE: (250, 155, 210, 46)
+  const bool darkOn = (SETTINGS.screenInverted != 0);
+  if (darkOn) {
+    renderer.fillRect(250, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, 275, 170, "Ночной режим (Вкл)", false);
+  } else {
+    renderer.drawRect(250, 155, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, 275, 170, "Ночной режим (Выкл)", true);
+  }
+
+  // ROTATION_LOCK: (20, 215, 210, 46)
+  const bool rotOn = (SETTINGS.orientation != CrossPointSettings::PORTRAIT);
+  if (rotOn) {
+    renderer.fillRect(20, 215, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, 45, 230, "Автоповорот (Вкл)", false);
+  } else {
+    renderer.drawRect(20, 215, 210, 46, true);
+    renderer.drawText(SMALL_FONT_ID, 45, 230, "Автоповорот (Выкл)", true);
+  }
+
+  // SLEEP: (250, 215, 210, 46)
+  renderer.drawRect(250, 215, 210, 46, true);
+  renderer.drawText(SMALL_FONT_ID, 275, 230, "Режим сна", true);
+
+  // Battery stats at (20, 280, 440, 60)
+  char statsBuf[64];
+  const int percent = powerManager.getBatteryPercentage();
+  const bool isCharging = gpio.isUsbConnected();
+  const uint32_t uptime = millis() / 1000;
+  const uint32_t hours = uptime / 3600;
+  const uint32_t mins = (uptime % 3600) / 60;
+  if (isCharging) {
+    snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% (Зарядка) • Работа: %uч %uм", percent, (unsigned)hours, (unsigned)mins);
+  } else {
+    snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% • Работа: %uч %uм", percent, (unsigned)hours, (unsigned)mins);
+  }
+  renderer.drawText(SMALL_FONT_ID, 20, 305, statsBuf, true);
+
+  renderer.drawLine(0, panelBottom - 1, pageWidth, panelBottom - 1);
   renderer.displayBuffer();
 }

@@ -334,6 +334,9 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Action(StrId::STR_GAMES, SettingAction::Games),
         SettingInfo::Action(StrId::STR_AUTONOMY, SettingAction::Autonomy),
         // --- Controls ---
+        SettingInfo::Enum(StrId::STR_HANDEDNESS, &CrossPointSettings::handedness,
+                          {StrId::STR_HANDEDNESS_RIGHT, StrId::STR_HANDEDNESS_LEFT}, "handedness",
+                          StrId::STR_CAT_CONTROLS),
         SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
                           {StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_DISABLED}, "sideButtonLayout",
                           StrId::STR_CAT_CONTROLS),

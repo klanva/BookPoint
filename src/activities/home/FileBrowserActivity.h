@@ -16,6 +16,7 @@ class FileBrowserActivity final : public UiListActivity {
   bool removeDirFile(const std::string& fullPath);
 
   Mode mode = Mode::Books;
+  uint8_t viewMode = 0;  // 0 = Cover Grid, 1 = Detailed List
 
   // Files state
   std::string basepath = "/";
