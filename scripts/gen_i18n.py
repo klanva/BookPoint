@@ -757,11 +757,10 @@ def _print_language_table(
     sep = "  ".join("-" * w for w in col_widths)
 
     def _safe_print(line: str) -> None:
-        print(
-            line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(
-                sys.stdout.encoding or "utf-8", errors="replace"
-            )
-        )
+        try:
+            print(line.encode("ascii", errors="replace").decode("ascii"))
+        except Exception:
+            pass
 
     _safe_print(fmt.format(*headers))
     _safe_print(sep)

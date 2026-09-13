@@ -19,8 +19,10 @@
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
+#include "activities/games/GamesActivity.h"
 #include "activities/reader/EpubReaderBookmarksActivity.h"
 #include "activities/settings/ReadingStatsActivity.h"
+#include "activities/util/FrontlightPanelActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "stats/GlobalReadingStats.h"
@@ -193,8 +195,50 @@ void HomeActivity::freeCoverBuffer() {
 void HomeActivity::loop() {
   const int menuCount = getMenuItemCount();
   const auto& metrics = UITheme::getInstance().getMetrics();
+  const bool isModern = (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::MODERN);
+  const int shelfCount =
+      (isModern && recentBooks.size() > 1) ? std::min(3, static_cast<int>(recentBooks.size()) - 1) : 0;
+  const int modernTargets = 1 + shelfCount + 5;
+  const int effectiveCount = isModern ? modernTargets : menuCount;
 
-  auto activateSelection = [this] {
+  auto activateSelection = [this, isModern, shelfCount] {
+    if (isModern) {
+      if (selectorIndex == 0) {
+        if (!recentBooks.empty()) {
+          onSelectBook(recentBooks[0].path);
+        }
+        return;
+      }
+      if (selectorIndex >= 1 && selectorIndex <= shelfCount) {
+        const int slot = selectorIndex - 1;
+        if (slot + 1 < static_cast<int>(recentBooks.size())) {
+          onSelectBook(recentBooks[slot + 1].path);
+        }
+        return;
+      }
+      const int dockCol = selectorIndex - (1 + shelfCount);
+      switch (dockCol) {
+        case 0:
+          onFileBrowserOpen();
+          break;
+        case 1:
+          onSearchBooksOpen();
+          break;
+        case 2:
+          onReadingStatsOpen();
+          break;
+        case 3:
+          onAppsOpen();
+          break;
+        case 4:
+          onSettingsOpen();
+          break;
+        default:
+          break;
+      }
+      return;
+    }
+
     if (selectorIndex < recentBooks.size()) {
       onSelectBook(recentBooks[selectorIndex].path);
       return;
@@ -230,24 +274,24 @@ void HomeActivity::loop() {
     }
   };
 
-  buttonNavigator.onNext([this, menuCount] {
-    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+  buttonNavigator.onNext([this, effectiveCount] {
+    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, effectiveCount);
     requestUpdate();
   });
 
-  buttonNavigator.onPrevious([this, menuCount] {
-    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+  buttonNavigator.onPrevious([this, effectiveCount] {
+    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, effectiveCount);
     requestUpdate();
   });
 
   const auto swipe = mappedInput.wasSwipe();
   if (swipe == MappedInputManager::SwipeDir::Up) {
-    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, effectiveCount);
     requestUpdate();
     return;
   }
   if (swipe == MappedInputManager::SwipeDir::Down) {
-    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, effectiveCount);
     requestUpdate();
     return;
   }
@@ -256,6 +300,10 @@ void HomeActivity::loop() {
       const int count = static_cast<int>(recentBooks.size());
       selectorIndex = (selectorIndex + 1) % count;
       coverRendered = false;
+      requestUpdate();
+      return;
+    } else if (isModern) {
+      selectorIndex = ButtonNavigator::previousIndex(selectorIndex, effectiveCount);
       requestUpdate();
       return;
     }
@@ -267,35 +315,75 @@ void HomeActivity::loop() {
       coverRendered = false;
       requestUpdate();
       return;
+    } else if (isModern) {
+      selectorIndex = ButtonNavigator::nextIndex(selectorIndex, effectiveCount);
+      requestUpdate();
+      return;
     }
   }
 
-  // Back is otherwise unused on the home menu: open the most recently read
-  // book directly (recentBooks is most-recent-first and already pruned of
-  // files missing from the SD card).
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back) && !recentBooks.empty()) {
+  // Physical buttons: Left/Up = GPIO0, Right/Down = GPIO7
+  if (mappedInput.wasReleased(MappedInputManager::Button::Left) ||
+      mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, effectiveCount);
+    requestUpdate();
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Right) ||
+      mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, effectiveCount);
+    requestUpdate();
+    return;
+  }
+
+  // Back button / capacitive Home key returns instantly to last reading book
+  if ((mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasHomeGesture()) &&
+      !recentBooks.empty()) {
     onSelectBook(recentBooks[0].path);
     return;
   }
 
-  const int coverTileTop = metrics.homeTopPadding;
-  const int coverTileBottom = metrics.homeTopPadding + metrics.homeCoverTileHeight;
-  const int menuTop = coverTileBottom + metrics.homeMenuTopOffset;
-  const int menuRowHeight = GUI.getMenuRowHeight(renderer);
-  const int menuRowStep = menuRowHeight + metrics.menuSpacing;
-  const int renderedMenuCount =
-      menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
-
   int downX = 0, downY = 0;
   if (mappedInput.wasScreenTouchDown(downX, downY)) {
-    if (downY >= menuTop && menuRowStep > 0) {
-      int menuRow = (downY - menuTop) / menuRowStep;
-      if (menuRow >= 0 && menuRow < renderedMenuCount) {
-        const int touchedIndex =
-            metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
-        if (selectorIndex != touchedIndex) {
-          selectorIndex = touchedIndex;
+    if (isModern) {
+      if (downY >= 720 && downY <= 800) {
+        const int col = std::clamp(downX / 96, 0, 4);
+        const int targetIdx = 1 + shelfCount + col;
+        if (selectorIndex != targetIdx) {
+          selectorIndex = targetIdx;
           requestUpdate();
+        }
+      } else if (downY >= 50 && downY <= 360 && downX >= 14 && downX <= 465) {
+        if (selectorIndex != 0) {
+          selectorIndex = 0;
+          requestUpdate();
+        }
+      } else if (downY >= 372 && downY <= 540 && downX >= 14 && downX <= 465 && shelfCount > 0) {
+        const int slot = (downX - 14) / 154;
+        if (slot >= 0 && slot < shelfCount) {
+          const int targetIdx = 1 + slot;
+          if (selectorIndex != targetIdx) {
+            selectorIndex = targetIdx;
+            requestUpdate();
+          }
+        }
+      }
+    } else {
+      const int coverTileBottom = metrics.homeTopPadding + metrics.homeCoverTileHeight;
+      const int menuTop = coverTileBottom + metrics.homeMenuTopOffset;
+      const int menuRowHeight = GUI.getMenuRowHeight(renderer);
+      const int menuRowStep = menuRowHeight + metrics.menuSpacing;
+      const int renderedMenuCount =
+          menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
+      if (downY >= menuTop && menuRowStep > 0) {
+        int menuRow = (downY - menuTop) / menuRowStep;
+        if (menuRow >= 0 && menuRow < renderedMenuCount) {
+          const int touchedIndex =
+              metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
+          if (selectorIndex != touchedIndex) {
+            selectorIndex = touchedIndex;
+            requestUpdate();
+          }
         }
       }
     }
@@ -303,57 +391,112 @@ void HomeActivity::loop() {
 
   int tapX = 0, tapY = 0;
   if (mappedInput.wasScreenTapped(tapX, tapY)) {
-    // 1. Cover area tap
-    if (tapY >= coverTileTop && tapY < coverTileBottom && !recentBooks.empty()) {
-      if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::CAROUSEL) {
-        const int count = static_cast<int>(recentBooks.size());
-        if (tapX < 150) {
-          selectorIndex = (selectorIndex - 1 + count) % count;
-          coverRendered = false;
-          requestUpdate();
-          return;
-        } else if (tapX >= 330) {
-          selectorIndex = (selectorIndex + 1) % count;
-          coverRendered = false;
-          requestUpdate();
-          return;
-        } else {
-          const int bookIdx = selectorIndex % count;
-          onSelectBook(recentBooks[bookIdx].path);
-          return;
-        }
-      } else if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::DASHBOARD) {
-        if (tapX <= 240) {
+    if (isModern) {
+      // Status bar: ty < 44 -> Quick Settings curtain / Frontlight panel
+      if (tapY < 44) {
+        activityManager.pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
+        return;
+      }
+      // Hero card: [14..465, 50..360] -> opens recentBooks[0].path
+      if (tapX >= 14 && tapX <= 465 && tapY >= 50 && tapY <= 360) {
+        if (!recentBooks.empty()) {
           onSelectBook(recentBooks[0].path);
-          return;
         }
-      } else {
-        const int coverColumnCount = std::max(1, metrics.homeRecentBooksCount);
-        const int recentCount = std::min(static_cast<int>(recentBooks.size()), coverColumnCount);
-        const int coverColumnWidth = (renderer.getScreenWidth() - 2 * metrics.contentSidePadding) / coverColumnCount;
-        int col = (tapX - metrics.contentSidePadding) / coverColumnWidth;
-        if (col >= 0 && col < recentCount) {
-          selectorIndex = col;
+        return;
+      }
+      // Recent shelf: [14..465, 372..540] -> 3 slots, opening recentBooks[slot+1].path
+      if (tapX >= 14 && tapX <= 465 && tapY >= 372 && tapY <= 540 && shelfCount > 0) {
+        const int slot = (tapX - 14) / 154;
+        if (slot >= 0 && slot < shelfCount && (slot + 1) < static_cast<int>(recentBooks.size())) {
+          onSelectBook(recentBooks[slot + 1].path);
+        }
+        return;
+      }
+      // Navigation dock: [0..479, 720..800] -> 5 columns (0: Library, 1: Search, 2: Stats, 3: Apps, 4: Settings)
+      if (tapX >= 0 && tapX <= 479 && tapY >= 720 && tapY <= 800) {
+        const int col = std::clamp(tapX / 96, 0, 4);
+        switch (col) {
+          case 0:
+            onFileBrowserOpen();
+            break;
+          case 1:
+            onSearchBooksOpen();
+            break;
+          case 2:
+            onReadingStatsOpen();
+            break;
+          case 3:
+            onAppsOpen();
+            break;
+          case 4:
+            onSettingsOpen();
+            break;
+        }
+        return;
+      }
+    } else {
+      const int coverTileTop = metrics.homeTopPadding;
+      const int coverTileBottom = metrics.homeTopPadding + metrics.homeCoverTileHeight;
+      const int menuTop = coverTileBottom + metrics.homeMenuTopOffset;
+      const int menuRowHeight = GUI.getMenuRowHeight(renderer);
+      const int menuRowStep = menuRowHeight + metrics.menuSpacing;
+      const int renderedMenuCount =
+          menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
+
+      // 1. Cover area tap
+      if (tapY >= coverTileTop && tapY < coverTileBottom && !recentBooks.empty()) {
+        if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::CAROUSEL) {
+          const int count = static_cast<int>(recentBooks.size());
+          if (tapX < 150) {
+            selectorIndex = (selectorIndex - 1 + count) % count;
+            coverRendered = false;
+            requestUpdate();
+            return;
+          } else if (tapX >= 330) {
+            selectorIndex = (selectorIndex + 1) % count;
+            coverRendered = false;
+            requestUpdate();
+            return;
+          } else {
+            const int bookIdx = selectorIndex % count;
+            onSelectBook(recentBooks[bookIdx].path);
+            return;
+          }
+        } else if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::DASHBOARD) {
+          if (tapX <= 240) {
+            onSelectBook(recentBooks[0].path);
+            return;
+          }
+        } else {
+          const int coverColumnCount = std::max(1, metrics.homeRecentBooksCount);
+          const int recentCount = std::min(static_cast<int>(recentBooks.size()), coverColumnCount);
+          const int coverColumnWidth = (renderer.getScreenWidth() - 2 * metrics.contentSidePadding) / coverColumnCount;
+          int col = (tapX - metrics.contentSidePadding) / coverColumnWidth;
+          if (col >= 0 && col < recentCount) {
+            selectorIndex = col;
+            activateSelection();
+            return;
+          }
+        }
+      }
+
+      // 2. Menu area tap
+      if (tapY >= menuTop && menuRowStep > 0) {
+        int menuRow = (tapY - menuTop) / menuRowStep;
+        if (menuRow >= 0 && menuRow < renderedMenuCount) {
+          const int touchedIndex =
+              metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
+          selectorIndex = touchedIndex;
           activateSelection();
           return;
         }
       }
     }
-
-    // 2. Menu area tap
-    if (tapY >= menuTop && menuRowStep > 0) {
-      int menuRow = (tapY - menuTop) / menuRowStep;
-      if (menuRow >= 0 && menuRow < renderedMenuCount) {
-        const int touchedIndex =
-            metrics.homeContinueReadingInMenu ? menuRow : menuRow + static_cast<int>(recentBooks.size());
-        selectorIndex = touchedIndex;
-        activateSelection();
-        return;
-      }
-    }
   }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+  // Confirm key (Power single-click or confirm button) activates focused item
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
+      mappedInput.wasReleased(MappedInputManager::Button::Power)) {
     activateSelection();
   }
 }
@@ -362,6 +505,9 @@ void HomeActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
+  const bool isModern = (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::MODERN);
+  const int shelfCount =
+      (isModern && recentBooks.size() > 1) ? std::min(3, static_cast<int>(recentBooks.size()) - 1) : 0;
 
   renderer.clearScreen();
   bool bufferRestored = coverBufferStored && restoreCoverBuffer();
@@ -387,8 +533,9 @@ void HomeActivity::render(RenderLock&&) {
 
   // Small streak line at the bottom-right corner of the cover card. Right-aligned
   // so it never collides with the left-side cover art or centered title block.
-  // Suppressed in Dashboard theme where the right column is dedicated to statistics.
-  if (currentStreak > 0 && !recentBooks.empty() && SETTINGS.uiTheme != CrossPointSettings::UI_THEME::DASHBOARD) {
+  // Suppressed in Dashboard and Modern themes where streak is handled natively.
+  if (currentStreak > 0 && !recentBooks.empty() && SETTINGS.uiTheme != CrossPointSettings::UI_THEME::DASHBOARD &&
+      SETTINGS.uiTheme != CrossPointSettings::UI_THEME::MODERN) {
     char streakBuf[48];
     snprintf(streakBuf, sizeof(streakBuf), "%s: %u %s", tr(STR_STATS_STREAK),
              static_cast<unsigned>(currentStreak), tr(STR_STATS_DAYS));
@@ -423,11 +570,15 @@ void HomeActivity::render(RenderLock&&) {
   const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
   const int menuHeight = std::max(0, pageHeight - menuTop - metrics.buttonHintsHeight);
 
+  const int selectedMenuIndex =
+      isModern ? (selectorIndex - (1 + shelfCount))
+               : (metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size());
+
   GUI.drawButtonMenu(
       renderer,
       Rect{0, menuTop, pageWidth, menuHeight},
       static_cast<int>(menuItems.size()),
-      metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size(),
+      selectedMenuIndex,
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
 
@@ -490,3 +641,7 @@ void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
 void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
+
+void HomeActivity::onAppsOpen() {
+  activityManager.pushActivity(std::make_unique<GamesActivity>(renderer, mappedInput));
+}

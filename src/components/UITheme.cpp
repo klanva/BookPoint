@@ -16,6 +16,7 @@
 #include "components/themes/lyra/LyraCarouselTheme.h"
 #include "components/themes/lyra/LyraTheme.h"
 #include "components/themes/minimal/MinimalTheme.h"
+#include "components/themes/modern/ModernTheme.h"
 #include "components/themes/roundedraff/RoundedRaffTheme.h"
 
 UITheme UITheme::instance;
@@ -61,6 +62,11 @@ void UITheme::setTheme(CrossPointSettings::UI_THEME type) {
       LOG_DBG("UI", "Using Dashboard theme");
       currentTheme = std::make_unique<DashboardTheme>();
       currentMetrics = &DashboardMetrics::values;
+      break;
+    case CrossPointSettings::UI_THEME::MODERN:
+      LOG_DBG("UI", "Using Modern theme");
+      currentTheme = std::make_unique<ModernTheme>();
+      currentMetrics = &ModernMetrics::values;
       break;
   }
   metricsValid = false;
