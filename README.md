@@ -1,7 +1,7 @@
 # BookPoint
 
 <p align="center">
-  <img src="docs/images/logo.png" alt="BookPoint Logo" width="120" onerror="this.style.display='none'"/>
+  <img src="docs/images/logo.png" alt="BookPoint Logo" width="180" />
 </p>
 
 <p align="center">
