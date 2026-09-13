@@ -49,7 +49,10 @@ const char* ReleaseJsonParser::getFirmwareUrl() const { return firmwareUrl; }
 size_t ReleaseJsonParser::getFirmwareSize() const { return firmwareSize; }
 
 void ReleaseJsonParser::commitAsset() {
-  if (strcmp(currentAssetName, firmwareAssetName) == 0) {
+  const bool exactMatch = strcmp(currentAssetName, firmwareAssetName) == 0;
+  const bool patternMatch = (strstr(currentAssetName, firmwareAssetName) != nullptr &&
+                             strstr(currentAssetName, ".bin") != nullptr);
+  if (exactMatch || patternMatch) {
     memcpy(firmwareUrl, currentAssetUrl, sizeof(firmwareUrl));
     firmwareSize = currentAssetSize;
     firmwareFound = true;

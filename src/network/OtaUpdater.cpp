@@ -19,7 +19,7 @@
 #include "FirmwareFlasher.h"
 
 namespace {
-constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/klanva/BookPoint/releases/latest";
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
@@ -83,9 +83,18 @@ bool OtaUpdater::isUpdateNewer() const {
 
   const auto currentVersion = CROSSPOINT_VERSION;
 
+  const char* latestStr = latestVersion.c_str();
+  if (latestStr[0] == 'v' || latestStr[0] == 'V') latestStr++;
+  const char* currentStr = currentVersion;
+  if (currentStr[0] == 'v' || currentStr[0] == 'V') currentStr++;
+
   // semantic version check (only match on 3 segments)
-  sscanf(latestVersion.c_str(), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
-  sscanf(currentVersion, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
+  if (sscanf(latestStr, "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch) != 3) {
+    return false;
+  }
+  if (sscanf(currentStr, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch) != 3) {
+    return false;
+  }
 
   /*
    * Compare major versions.
