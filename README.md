@@ -13,7 +13,7 @@
   <a href="https://www.espressif.com/"><img src="https://img.shields.io/badge/Platform-ESP32--S3-blue.svg?style=flat-square" alt="Platform"></a>
   <img src="https://img.shields.io/badge/Display-800x480%20E--Ink-black.svg?style=flat-square" alt="Display">
   <img src="https://img.shields.io/badge/Touch-GT911%20Capacitive-teal.svg?style=flat-square" alt="Touch">
-  <img src="https://img.shields.io/badge/Tests-143%2F143%20Passed-success.svg?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-177%2F177%20Passed-success.svg?style=flat-square" alt="Tests">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License"></a>
   <a href="https://github.com/klanva/BookPoint/releases"><img src="https://img.shields.io/github/v/release/klanva/BookPoint?style=flat-square&color=orange" alt="Release"></a>
 </p>
@@ -22,9 +22,9 @@
 
 ## О проекте
 
-**BookPoint** — независимая прошивка для ридеров линейки **Xteink**, созданная для комфортного, эстетичного и долгого чтения. 
+**BookPoint** — независимая открытая микропрограмма для электронных книг линейки **Xteink**, спроектированная для надежного, быстрого и комфортного чтения. 
 
-В версии **2.0.0** интерфейс полностью переработан с нуля: мы отказались от архаичного вертикального текстового меню CrossPoint и кринжовых эмодзи-иконок. Визуальный язык и архитектура вдохновлены признанными мировыми эталонами не-Android электронных книг: **Kobo OS (Nickel)**, **Kindle OS** и **PocketBook Linux**.
+В архитектуре прошивки реализован специализированный монохромный интерфейс, адаптированный под емкостный сенсор GT911 и аппаратные клавиши ридера Xteink X4 Pro. Графическая концепция ориентирована на эргономику ведущих аппаратных E-Ink платформ (Kobo OS, Kindle OS, PocketBook Linux).
 
 ---
 
@@ -84,10 +84,10 @@
 
 Прошивку можно установить через официальный USB Web-флешер или прямо с microSD-карты.
 
-Готовые бинарники доступны в разделе [Releases](https://github.com/klanva/BookPoint/releases) (файл `BookPoint_2.0.0_x4pro.bin`).
+Готовые бинарники доступны в разделе [Releases](https://github.com/klanva/BookPoint/releases) (файл `BookPoint_2.1.0_x4pro.bin`).
 
 ### Официальные и разблокированные X4 Pro:
-1. Скачайте `BookPoint_2.0.0_x4pro.bin`.
+1. Скачайте `BookPoint_2.1.0_x4pro.bin`.
 2. Подключите ридер к ПК по USB и откройте [Web-флешер CrossPoint](https://crosspointreader.com/#flash-tools).
 3. Выберите файл прошивки и нажмите **Install**.
 4. *Либо скопируйте файл на SD-карту с именем `update.bin` и запустите обновление через меню книги.*
