@@ -8,7 +8,9 @@
 #include <I18n.h>
 #include <WiFi.h>
 
+#include <cmath>
 #include <cstdio>
+#include <ctime>
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
@@ -127,6 +129,8 @@ void FrontlightPanelActivity::adjustBrightness(const int delta) {
     lightOnChanged = true;
     Frontlight.setOn(true);
   }
+  SETTINGS.frontlightBrightness = brightness;
+  SETTINGS.saveToFile();
   requestUpdate();
 }
 
@@ -137,6 +141,8 @@ void FrontlightPanelActivity::adjustWarmth(const int delta) {
   if (next == warmth) return;
   warmth = static_cast<uint8_t>(next);
   Frontlight.setWarmth(warmth);
+  SETTINGS.frontlightWarmth = warmth;
+  SETTINGS.saveToFile();
   requestUpdate();
 }
 
@@ -199,23 +205,55 @@ void FrontlightPanelActivity::loop() {
       return;
     }
 
-    // Discrete step slider buttons:
-    // Brightness: minus (20, 60, 40, 32), plus (420, 60, 40, 32)
-    if (tapX >= 20 && tapX <= 60 && tapY >= 60 && tapY <= 92) {
+    // Discrete step slider buttons (>= 44px) & track seek:
+    // Brightness: minus (16, 54, 44, 44), plus (420, 54, 44, 44)
+    if (tapX >= 16 && tapX <= 60 && tapY >= 54 && tapY <= 98) {
       adjustBrightness(-10);
       return;
     }
-    if (tapX >= 420 && tapX <= 460 && tapY >= 60 && tapY <= 92) {
+    if (tapX >= 420 && tapX <= 464 && tapY >= 54 && tapY <= 98) {
       adjustBrightness(10);
       return;
     }
-    // CCT / Warmth: minus (20, 105, 40, 32), plus (420, 105, 40, 32)
-    if (tapX >= 20 && tapX <= 60 && tapY >= 105 && tapY <= 137) {
+    // Brightness track direct touch seek (68, 54, 344, 44)
+    if (tapX >= 68 && tapX <= 412 && tapY >= 54 && tapY <= 98) {
+      float frac = static_cast<float>(tapX - 68) / 344.0f;
+      int val = static_cast<int>(std::round(frac * 100.0f));
+      if (val < 0) val = 0;
+      if (val > 100) val = 100;
+      brightness = static_cast<uint8_t>(val);
+      Frontlight.setBrightness(brightness);
+      if (!lightOn) {
+        lightOn = true;
+        lightOnChanged = true;
+        Frontlight.setOn(true);
+      }
+      SETTINGS.frontlightBrightness = brightness;
+      SETTINGS.saveToFile();
+      requestUpdate();
+      return;
+    }
+
+    // CCT / Warmth: minus (16, 104, 44, 44), plus (420, 104, 44, 44)
+    if (tapX >= 16 && tapX <= 60 && tapY >= 104 && tapY <= 148) {
       adjustWarmth(-10);
       return;
     }
-    if (tapX >= 420 && tapX <= 460 && tapY >= 105 && tapY <= 137) {
+    if (tapX >= 420 && tapX <= 464 && tapY >= 104 && tapY <= 148) {
       adjustWarmth(10);
+      return;
+    }
+    // CCT track direct touch seek (68, 104, 344, 44)
+    if (tapX >= 68 && tapX <= 412 && tapY >= 104 && tapY <= 148) {
+      float frac = static_cast<float>(tapX - 68) / 344.0f;
+      int val = static_cast<int>(std::round(frac * 100.0f));
+      if (val < 0) val = 0;
+      if (val > 100) val = 100;
+      warmth = static_cast<uint8_t>(val);
+      Frontlight.setWarmth(warmth);
+      SETTINGS.frontlightWarmth = warmth;
+      SETTINGS.saveToFile();
+      requestUpdate();
       return;
     }
   }
@@ -274,23 +312,23 @@ void FrontlightPanelActivity::render(RenderLock&&) {
 
   renderer.drawText(UI_12_FONT_ID, 20, 38, "Центр управления", true);
 
-  // Brightness row at Y: 60..92
-  renderer.drawRect(20, 60, 40, 32, true);
-  renderer.drawText(UI_12_FONT_ID, 35, 68, "-", true);
-  renderer.drawRect(70, 72, 340, 8, true);
-  const int bFill = (static_cast<int>(brightness) * 340) / 100;
-  renderer.fillRect(70, 72, bFill, 8, true);
-  renderer.drawRect(420, 60, 40, 32, true);
-  renderer.drawText(UI_12_FONT_ID, 433, 68, "+", true);
+  // Brightness row at Y: 54..98
+  renderer.drawRect(16, 54, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, 33, 67, "-", true);
+  renderer.drawRect(68, 72, 344, 8, true);
+  const int bFill = (static_cast<int>(brightness) * 344) / 100;
+  renderer.fillRect(68, 72, bFill, 8, true);
+  renderer.drawRect(420, 54, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, 437, 67, "+", true);
 
-  // CCT row at Y: 105..137
-  renderer.drawRect(20, 105, 40, 32, true);
-  renderer.drawText(UI_12_FONT_ID, 35, 113, "-", true);
-  renderer.drawRect(70, 117, 340, 8, true);
-  const int cctFill = (static_cast<int>(warmth) * 340) / 100;
-  renderer.fillRect(70, 117, cctFill, 8, true);
-  renderer.drawRect(420, 105, 40, 32, true);
-  renderer.drawText(UI_12_FONT_ID, 433, 113, "+", true);
+  // CCT row at Y: 104..148
+  renderer.drawRect(16, 104, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, 33, 117, "-", true);
+  renderer.drawRect(68, 122, 344, 8, true);
+  const int cctFill = (static_cast<int>(warmth) * 344) / 100;
+  renderer.fillRect(68, 122, cctFill, 8, true);
+  renderer.drawRect(420, 104, 44, 44, true);
+  renderer.drawText(UI_12_FONT_ID, 437, 117, "+", true);
 
   // 4 Control Pills
   // WIFI: (20, 155, 210, 46)
@@ -327,19 +365,30 @@ void FrontlightPanelActivity::render(RenderLock&&) {
   renderer.drawRect(250, 215, 210, 46, true);
   renderer.drawText(SMALL_FONT_ID, 275, 230, "Режим сна", true);
 
-  // Battery stats at (20, 280, 440, 60)
+  // Battery stats & Clock/Date at Y: 290 and 320
   char statsBuf[64];
+  char uptimeBuf[48];
   const int percent = powerManager.getBatteryPercentage();
   const bool isCharging = gpio.isUsbConnected();
   const uint32_t uptime = millis() / 1000;
   const uint32_t hours = uptime / 3600;
   const uint32_t mins = (uptime % 3600) / 60;
-  if (isCharging) {
-    snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% (Зарядка) • Работа: %uч %uм", percent, (unsigned)hours, (unsigned)mins);
-  } else {
-    snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% • Работа: %uч %uм", percent, (unsigned)hours, (unsigned)mins);
+  time_t rawTime = time(nullptr);
+  struct tm* t = localtime(&rawTime);
+  char timeStr[16] = "12:00";
+  char dateStr[24] = "01.01.2026";
+  if (t) {
+    strftime(timeStr, sizeof(timeStr), "%H:%M", t);
+    strftime(dateStr, sizeof(dateStr), "%d.%m.%Y", t);
   }
-  renderer.drawText(SMALL_FONT_ID, 20, 305, statsBuf, true);
+  if (isCharging) {
+    snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% (Зарядка) • %s • %s", percent, timeStr, dateStr);
+  } else {
+    snprintf(statsBuf, sizeof(statsBuf), "Батарея: %d%% • %s • %s", percent, timeStr, dateStr);
+  }
+  snprintf(uptimeBuf, sizeof(uptimeBuf), "Время работы: %uч %uм", (unsigned)hours, (unsigned)mins);
+  renderer.drawText(SMALL_FONT_ID, 20, 290, statsBuf, true);
+  renderer.drawText(SMALL_FONT_ID, 20, 320, uptimeBuf, true);
 
   renderer.drawLine(0, panelBottom - 1, pageWidth, panelBottom - 1);
   renderer.displayBuffer();

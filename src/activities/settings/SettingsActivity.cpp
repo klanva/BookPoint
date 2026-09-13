@@ -198,6 +198,7 @@ void SettingsActivity::rebuildSettingsLists() {
   if (auto s = findSettingByPtr(&CrossPointSettings::sleepScreen)) displaySleepSettings.push_back(*s);
   if (auto s = findSettingByPtr(&CrossPointSettings::sleepScreenCoverMode)) displaySleepSettings.push_back(*s);
   if (auto s = findSettingByPtr(&CrossPointSettings::sleepScreenCoverFilter)) displaySleepSettings.push_back(*s);
+  if (auto s = findSettingByPtr(&CrossPointSettings::sleepScreensaver)) displaySleepSettings.push_back(*s);
   if (auto s = findSettingByPtr(&CrossPointSettings::quickResumeSleepScreen)) displaySleepSettings.push_back(*s);
   if (auto s = findSettingByPtr(&CrossPointSettings::sleepTimeoutMinutes)) displaySleepSettings.push_back(*s);
 

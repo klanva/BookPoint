@@ -44,11 +44,11 @@ constexpr size_t TEXT_BLOCK_SOFT_FLUSH_WORDS_WITH_CSS = 320;
 constexpr size_t MAX_ANCHORS_PER_CHAPTER = 1024;
 
 constexpr const char* HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};
-constexpr const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote"};
+constexpr const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote", "poem", "epigraph", "cite", "stanza", "v"};
 constexpr const char* BOLD_TAGS[] = {"b", "strong"};
 constexpr const char* ITALIC_TAGS[] = {"i", "em"};
 constexpr const char* UNDERLINE_TAGS[] = {"u", "ins"};
-constexpr const char* LINETHROUGH_TAGS[] = {"del", "s", "strike"};
+constexpr const char* LINETHROUGH_TAGS[] = {"del", "s", "strike", "strikethrough"};
 constexpr const char* IMAGE_TAGS[] = {"img", "image"};
 bool isWhitespace(const char c) { return c == ' ' || c == '\r' || c == '\n' || c == '\t'; }
 
@@ -1366,6 +1366,14 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
         i += 2;    // Skip the next two bytes
         continue;  // Move to the next iteration
       }
+    }
+
+    // Normalize U+0336 (Combining Long Stroke Overlay, UTF-8: 0xCC 0xB6):
+    // Strip combining mark bytes and apply strikethrough styling to the current word run.
+    if (static_cast<uint8_t>(s[i]) == 0xCC && (i + 1 < len) && static_cast<uint8_t>(s[i + 1]) == 0xB6) {
+      self->effectiveTextDecoration = self->effectiveTextDecoration | CssTextDecoration::LineThrough;
+      i += 1;    // Skip 0xB6
+      continue;  // Move to next iteration
     }
 
     // If we're about to run out of space, then cut the word off and start a new one.

@@ -563,6 +563,51 @@ void SleepActivity::onEnter() {
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
+
+  // If a specific curated screensaver theme (1..11) is selected:
+  if (SETTINGS.sleepScreensaver > 0 && SETTINGS.sleepScreensaver <= 11) {
+    const char* themeNames[] = {
+        "",
+        "kindle_typebars",
+        "kindle_fountain_pens",
+        "kindle_antique_engravings",
+        "kindle_celestial_maps",
+        "kindle_pencils",
+        "kindle_author_verne",
+        "kindle_author_dickens",
+        "kindle_author_twain",
+        "kobo_geometric_patterns",
+        "kobo_library_architecture",
+        "kobo_reading_quotes",
+    };
+    char filename[96];
+    snprintf(filename, sizeof(filename), "/.sleep/%02d_%s_%dx%d.bmp",
+             SETTINGS.sleepScreensaver, themeNames[SETTINGS.sleepScreensaver], pageWidth, pageHeight);
+    HalFile specFile;
+    if (Storage.openFileForRead("SLP", filename, specFile)) {
+      Bitmap bitmap(specFile, true);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+        renderBitmapSleepScreen(bitmap);
+        specFile.close();
+        return;
+      }
+      specFile.close();
+    }
+    snprintf(filename, sizeof(filename), "/sleep/%02d_%s_%dx%d.bmp",
+             SETTINGS.sleepScreensaver, themeNames[SETTINGS.sleepScreensaver], pageWidth, pageHeight);
+    if (Storage.openFileForRead("SLP", filename, specFile)) {
+      Bitmap bitmap(specFile, true);
+      if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+        renderBitmapSleepScreen(bitmap);
+        specFile.close();
+        return;
+      }
+      specFile.close();
+    }
+  }
+
   // Look for sleep.bmp on the root of the sd card to determine if we should
   // render a custom sleep screen instead of the default.
   // This takes priority over the /sleep folder.
@@ -629,7 +674,17 @@ void SleepActivity::renderDefaultSleepScreen() const {
 
   renderer.drawCenteredText(UI_10_FONT_ID, textTitleY, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(SMALL_FONT_ID, textSubY, tr(STR_SLEEPING));
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 30, CROSSPOINT_VERSION);
+
+  char verBuf[32];
+  const char* rawVer = CROSSPOINT_VERSION;
+  if (rawVer[0] == 'v' || rawVer[0] == 'V') {
+    snprintf(verBuf, sizeof(verBuf), "v%s", rawVer + 1);
+  } else {
+    snprintf(verBuf, sizeof(verBuf), "v%s", rawVer);
+  }
+  char* dash = strchr(verBuf, '-');
+  if (dash) *dash = '\0';
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 30, verBuf);
 
   // Make sleep screen dark unless light is selected in settings
   if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {

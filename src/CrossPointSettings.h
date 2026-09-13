@@ -34,6 +34,21 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     INVERTED_BLACK_AND_WHITE = 2,
     SLEEP_SCREEN_COVER_FILTER_COUNT
   };
+  enum SCREENSAVER_SELECTION {
+    SCREENSAVER_RANDOM = 0,
+    SCREENSAVER_KINDLE_TYPEBARS = 1,
+    SCREENSAVER_KINDLE_FOUNTAIN_PENS = 2,
+    SCREENSAVER_KINDLE_ENGRAVINGS = 3,
+    SCREENSAVER_KINDLE_CELESTIAL_MAPS = 4,
+    SCREENSAVER_KINDLE_PENCILS = 5,
+    SCREENSAVER_KINDLE_VERNE = 6,
+    SCREENSAVER_KINDLE_DICKENS = 7,
+    SCREENSAVER_KINDLE_TWAIN = 8,
+    SCREENSAVER_KOBO_GEOMETRIC = 9,
+    SCREENSAVER_KOBO_LIBRARY = 10,
+    SCREENSAVER_KOBO_QUOTES = 11,
+    SCREENSAVER_SELECTION_COUNT
+  };
   enum STATUS_BAR_PAGE_COUNT {
     PAGE_COUNT_HIDE = 0,
     PAGE_COUNT_CHAPTER = 1,
@@ -230,6 +245,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t sleepScreenCoverMode = FIT;
   // Sleep screen cover filter
   uint8_t sleepScreenCoverFilter = NO_FILTER;
+  // Screensaver theme selection (0 = Random, 1..11 = Specific theme)
+  uint8_t sleepScreensaver = SCREENSAVER_RANDOM;
   // Status bar settings
   uint8_t statusBarChapterPageCount = 1;
   uint8_t statusBarBookProgressPercentage = 1;

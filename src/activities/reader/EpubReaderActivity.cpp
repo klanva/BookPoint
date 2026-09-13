@@ -2283,11 +2283,15 @@ void EpubReaderActivity::renderInBookOverlays() {
   renderer.drawRect(8, 8, 48, 48);
   renderer.drawText(UI_12_FONT_ID, 26, 22, "<");
 
-  // Title area: (64, 0, 300, 64)
+  // TOC button [ TOC ]: (64, 0, 80, 64)
+  renderer.drawRect(68, 8, 72, 48);
+  renderer.drawText(UI_12_FONT_ID, 88, 22, "TOC");
+
+  // Title area: (144, 0, 220, 64)
   std::string title = getBookTitle();
   if (title.empty()) title = "Книга";
-  if (title.length() > 28) title = title.substr(0, 25) + "...";
-  renderer.drawText(UI_12_FONT_ID, 72, 22, title.c_str());
+  if (title.length() > 20) title = title.substr(0, 17) + "...";
+  renderer.drawText(UI_12_FONT_ID, 150, 22, title.c_str());
 
   // Bookmark button: (364, 0, 56, 64)
   renderer.drawRect(368, 8, 48, 48);
@@ -2338,40 +2342,73 @@ void EpubReaderActivity::renderInBookOverlays() {
   if (typographyPopupActive) {
     renderer.fillRect(20, 350, 440, 310, false);
     renderer.drawRect(20, 350, 440, 310);
-    renderer.drawText(UI_12_FONT_ID, 40, 370, "Типографика");
+    renderer.drawText(UI_12_FONT_ID, 40, 366, "Типографика");
 
-    // Font size controls: A- at (130, 420, 50, 40), A+ at (240, 420, 50, 40)
-    renderer.drawText(SMALL_FONT_ID, 40, 430, "Размер:");
-    renderer.drawRect(130, 420, 50, 40);
-    renderer.drawText(UI_12_FONT_ID, 142, 430, "A-");
+    // Section 1: Font size controls: A- at (120, 350, 56, 44), A+ at (260, 350, 56, 44)
+    renderer.drawText(SMALL_FONT_ID, 35, 362, "Размер:");
+    renderer.drawRect(120, 350, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 138, 362, "A-");
 
     char szBuf[16];
     snprintf(szBuf, sizeof(szBuf), "%d pt", SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14);
-    renderer.drawText(SMALL_FONT_ID, 190, 430, szBuf);
+    renderer.drawText(UI_12_FONT_ID, 194, 362, szBuf);
 
-    renderer.drawRect(240, 420, 50, 40);
-    renderer.drawText(UI_12_FONT_ID, 252, 430, "A+");
+    renderer.drawRect(260, 350, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 278, 362, "A+");
 
-    renderer.drawText(SMALL_FONT_ID, 40, 480, "Поля: Обычные (20px)");
-    renderer.drawText(SMALL_FONT_ID, 40, 520, "Интервал: 1.2x");
-    renderer.drawText(SMALL_FONT_ID, 40, 560, "Шрифт: Literata / BookPoint");
+    // Section 2: Font family selection chips: (30, 410, 130, 44), (170, 410, 130, 44), (310, 410, 130, 44)
+    renderer.drawRect(30, 410, 130, 44);
+    renderer.drawText(SMALL_FONT_ID, 42, 424, "JetBrains Mono");
+
+    renderer.drawRect(170, 410, 130, 44);
+    renderer.drawText(SMALL_FONT_ID, 178, 424, "Roboto Cond");
+
+    renderer.drawRect(310, 410, 130, 44);
+    renderer.drawText(SMALL_FONT_ID, 324, 424, "OpenDyslexic");
+
+    // Section 3: Line spacing steppers: (120, 470, 56, 44) and (260, 470, 56, 44)
+    renderer.drawText(SMALL_FONT_ID, 35, 482, "Интервал:");
+    renderer.drawRect(120, 470, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 144, 482, "-");
+
+    const char* spStr = (SETTINGS.lineSpacing == 0 ? "1.0x" : (SETTINGS.lineSpacing == 1 ? "1.2x" : (SETTINGS.lineSpacing == 2 ? "1.4x" : "1.6x")));
+    renderer.drawText(UI_12_FONT_ID, 195, 482, spStr);
+
+    renderer.drawRect(260, 470, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 284, 482, "+");
+
+    // Section 4: Margin steppers: (120, 530, 56, 44) and (260, 530, 56, 44)
+    renderer.drawText(SMALL_FONT_ID, 35, 542, "Поля:");
+    renderer.drawRect(120, 530, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 144, 542, "-");
+
+    char mgBuf[16];
+    snprintf(mgBuf, sizeof(mgBuf), "%d px", SETTINGS.screenMargin);
+    renderer.drawText(UI_12_FONT_ID, 195, 542, mgBuf);
+
+    renderer.drawRect(260, 530, 56, 44);
+    renderer.drawText(UI_12_FONT_ID, 284, 542, "+");
   }
 
-  // 4. Footnote Popup: (20, 350, 440, 310)
+  // 4. Footnote Modal Card Popup: (20, 584, 440, 200)
   if (footnotePopupActive) {
-    renderer.fillRect(20, 350, 440, 310, false);
-    renderer.drawRect(20, 350, 440, 310);
-    renderer.drawText(UI_12_FONT_ID, 40, 370, "Сноски страницы");
+    renderer.fillRect(20, 584, 440, 200, false);
+    renderer.drawRect(20, 584, 440, 200);
+    renderer.drawText(UI_12_FONT_ID, 36, 600, "Сноска");
+    // Close button [X] at (412, 590, 44, 44)
+    renderer.drawRect(412, 590, 44, 44);
+    renderer.drawText(UI_12_FONT_ID, 428, 604, "X");
+    renderer.drawLine(20, 638, 460, 638);
     if (!currentPageFootnotes.empty()) {
-      int fnY = 410;
-      for (size_t i = 0; i < currentPageFootnotes.size() && i < 4; ++i) {
-        char fnBuf[64];
+      int fnY = 652;
+      for (size_t i = 0; i < currentPageFootnotes.size() && i < 3; ++i) {
+        char fnBuf[96];
         snprintf(fnBuf, sizeof(fnBuf), "[%s] %s", currentPageFootnotes[i].number, currentPageFootnotes[i].href);
-        renderer.drawText(SMALL_FONT_ID, 40, fnY, fnBuf);
-        fnY += 30;
+        renderer.drawText(SMALL_FONT_ID, 36, fnY, fnBuf);
+        fnY += 24;
       }
     } else {
-      renderer.drawText(SMALL_FONT_ID, 40, 430, "На этой странице нет сносок");
+      renderer.drawText(SMALL_FONT_ID, 36, 660, "На этой странице нет сносок");
     }
   }
 }
@@ -2379,8 +2416,9 @@ void EpubReaderActivity::renderInBookOverlays() {
 bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
   if (typographyPopupActive) {
     // Popup bounds: (20, 350, 440, 310)
-    if (tx >= 130 && tx <= 180 && ty >= 420 && ty <= 460) {
-      // A- (decrease font size)
+    // 1. Font Size: A- (120, 350, 56, 44) and legacy (130, 420, 50, 40)
+    if ((tx >= 120 && tx <= 176 && ty >= 350 && ty <= 394) ||
+        (tx >= 130 && tx <= 180 && ty >= 420 && ty <= 460)) {
       uint8_t cur = SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14;
       if (cur > 14) {
         cur -= 2;
@@ -2398,8 +2436,9 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       }
       return true;
     }
-    if (tx >= 240 && tx <= 290 && ty >= 420 && ty <= 460) {
-      // A+ (increase font size)
+    // Font Size: A+ (260, 350, 56, 44) and legacy (240, 420, 50, 40)
+    if ((tx >= 260 && tx <= 316 && ty >= 350 && ty <= 394) ||
+        (tx >= 240 && tx <= 290 && ty >= 420 && ty <= 460)) {
       uint8_t cur = SETTINGS.fontPointSize ? SETTINGS.fontPointSize : 14;
       if (cur < 36) {
         cur += 2;
@@ -2417,6 +2456,130 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       }
       return true;
     }
+    // 2. Font Family Chips (Y: 410..454)
+    if (ty >= 410 && ty <= 454) {
+      if (tx >= 30 && tx <= 160) {
+        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "JetBrains Mono");
+        SETTINGS.fontFamily = CrossPointSettings::NOTOSANS;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+      if (tx >= 170 && tx <= 300) {
+        snprintf(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName), "Roboto Condensed");
+        SETTINGS.fontFamily = CrossPointSettings::NOTOSANS;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+      if (tx >= 310 && tx <= 440) {
+        SETTINGS.sdFontFamilyName[0] = '\0';
+        SETTINGS.fontFamily = CrossPointSettings::LEGACY_OPENDYSLEXIC;
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+    }
+    // 3. Line Spacing: minus (120, 470, 56, 44), plus (260, 470, 56, 44)
+    if (ty >= 470 && ty <= 514) {
+      if (tx >= 120 && tx <= 176) {
+        if (SETTINGS.lineSpacing > 0) {
+          SETTINGS.lineSpacing--;
+          SETTINGS.saveToFile();
+          RenderLock lock;
+          if (section) {
+            rememberCurrentContentOffset();
+            cachedSpineIndex = currentSpineIndex;
+            cachedChapterTotalPageCount = section->pageCount;
+            nextPageNumber = section->currentPage;
+            section.reset();
+          }
+          requestUpdate();
+        }
+        return true;
+      }
+      if (tx >= 260 && tx <= 316) {
+        if (SETTINGS.lineSpacing < 3) {
+          SETTINGS.lineSpacing++;
+          SETTINGS.saveToFile();
+          RenderLock lock;
+          if (section) {
+            rememberCurrentContentOffset();
+            cachedSpineIndex = currentSpineIndex;
+            cachedChapterTotalPageCount = section->pageCount;
+            nextPageNumber = section->currentPage;
+            section.reset();
+          }
+          requestUpdate();
+        }
+        return true;
+      }
+    }
+    // 4. Margins: minus (120, 530, 56, 44), plus (260, 530, 56, 44)
+    if (ty >= 530 && ty <= 574) {
+      if (tx >= 120 && tx <= 176) {
+        if (SETTINGS.screenMargin >= 10) {
+          SETTINGS.screenMargin -= 10;
+        } else {
+          SETTINGS.screenMargin = 0;
+        }
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+      if (tx >= 260 && tx <= 316) {
+        if (SETTINGS.screenMargin <= 30) {
+          SETTINGS.screenMargin += 10;
+        } else {
+          SETTINGS.screenMargin = 40;
+        }
+        SETTINGS.saveToFile();
+        RenderLock lock;
+        if (section) {
+          rememberCurrentContentOffset();
+          cachedSpineIndex = currentSpineIndex;
+          cachedChapterTotalPageCount = section->pageCount;
+          nextPageNumber = section->currentPage;
+          section.reset();
+        }
+        requestUpdate();
+        return true;
+      }
+    }
+
+    // Tap outside popup: dismiss
     if (tx < 20 || tx > 460 || ty < 350 || ty > 660) {
       typographyPopupActive = false;
       requestUpdate();
@@ -2426,6 +2589,17 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
   }
 
   if (footnotePopupActive) {
+    // Close button at (412, 590, 44, 44)
+    if (tx >= 412 && tx <= 456 && ty >= 590 && ty <= 634) {
+      footnotePopupActive = false;
+      requestUpdate();
+      return true;
+    }
+    // Inside modal content: consume
+    if (tx >= 20 && tx <= 460 && ty >= 584 && ty <= 784) {
+      return true;
+    }
+    // Outside: dismiss
     footnotePopupActive = false;
     requestUpdate();
     return true;
@@ -2437,6 +2611,12 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       // Back button
       inBookOverlaysActive = false;
       finish();
+      return true;
+    }
+    if (tx >= 64 && tx < 144) {
+      // TOC button
+      inBookOverlaysActive = false;
+      onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER);
       return true;
     }
     if (tx >= 364 && tx < 420) {

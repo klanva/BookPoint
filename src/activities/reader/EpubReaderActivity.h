@@ -161,6 +161,10 @@ class EpubReaderActivity final : public ReaderActivity {
   bool isAtEndOfBook() const override;
   void onReturnFromEndOfBook() override;
 
+  bool hasActiveOverlay() const override {
+    return inBookOverlaysActive || typographyPopupActive || footnotePopupActive;
+  }
+
   bool skipLoopDelay() override;
 
   ScreenshotInfo getScreenshotInfo() const override;

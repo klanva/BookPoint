@@ -45,6 +45,7 @@ class Activity {
   virtual bool preventAutoSleep() { return false; }
   virtual bool requiresExclusiveStorageLoop() const { return false; }
   virtual bool isReaderActivity() const { return false; }
+  virtual bool hasActiveOverlay() const { return false; }
   // True for the reading surfaces night mode inverts (EPUB/TXT/XTC). Resolved
   // per render by ActivityManager, so menus, overlays, and every other screen
   // keep normal polarity without managing the display flag themselves.

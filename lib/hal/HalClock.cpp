@@ -77,29 +77,29 @@ void adjustDateByDays(uint16_t& year, uint8_t& month, uint8_t& day, const int da
 }  // namespace
 
 void HalClock::begin() {
-  if (!gpio.deviceIsX3()) {
-    // X4 has no DS3231 on the board. Fall back to a software clock backed by the ESP32's
-    // internal timekeeping. It has no value until syncFromNTP() succeeds (see getTime()/
-    // getDate() below, which refuse to report a time before kMinValidEpoch), and it is lost
-    // on every real power loss, unlike a battery-backed RTC.
+  const auto& sensors = BoardConfig::ACTIVE.sensors;
+  const bool hasHwRtc = (sensors.rtcType == BoardConfig::RtcType::Pcf8563 || gpio.deviceIsX3());
+  if (!hasHwRtc) {
+    // Fall back to a software clock backed by the ESP32's internal timekeeping.
     _useHardwareRtc = false;
     _available = true;
-    LOG_INF("CLK", "No DS3231 on this device (X4) - using software clock");
+    LOG_INF("CLK", "No hardware RTC on this device - using software clock");
     return;
   }
 
   _useHardwareRtc = true;
+  const uint8_t rtcAddr = sensors.rtcAddr != 0 ? sensors.rtcAddr : I2C_ADDR_DS3231;
+  const uint8_t regSec = (sensors.rtcType == BoardConfig::RtcType::Pcf8563) ? 0x02 : DS3231_SEC_REG;
 
-  // I2C is already initialised by HalPowerManager::begin() for X3.
-  // Probe the DS3231 by reading the seconds register.
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);
+  // Probe the RTC by reading the seconds register.
+  Wire.beginTransmission(rtcAddr);
+  Wire.write(regSec);
   if (Wire.endTransmission(false) != 0) {
-    LOG_INF("CLK", "DS3231 RTC not found");
+    LOG_INF("CLK", "Hardware RTC not found at 0x%02X", rtcAddr);
     _available = false;
     return;
   }
-  Wire.requestFrom(I2C_ADDR_DS3231, (uint8_t)1);
+  Wire.requestFrom(rtcAddr, (uint8_t)1);
   if (Wire.available() < 1) {
     _available = false;
     return;
@@ -107,7 +107,7 @@ void HalClock::begin() {
   Wire.read();  // discard — just testing connectivity
 
   _available = true;
-  LOG_INF("CLK", "DS3231 RTC found");
+  LOG_INF("CLK", "Hardware RTC found at 0x%02X", rtcAddr);
 
   // Prime the cache with an initial read
   uint8_t h, m;

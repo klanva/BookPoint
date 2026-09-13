@@ -96,7 +96,8 @@ void ActivityManager::loop() {
     if (mappedInput.hasTouch()) {
       int tx = 0;
       int ty = 0;
-      statusBarTap = mappedInput.wasScreenTapped(tx, ty) && ty < 44;
+      const bool readerOverlaysBlock = currentActivity->isReaderActivity() && currentActivity->hasActiveOverlay();
+      statusBarTap = !readerOverlaysBlock && mappedInput.wasScreenTapped(tx, ty) && ty < 44;
     }
     if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
       pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));

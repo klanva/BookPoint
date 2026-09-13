@@ -11,8 +11,17 @@ bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& 
   Storage.mkdir("/.crosspoint");
   String json;
   serializeJson(doc, json);
-  if (!Storage.writeFile(path, json)) {
-    LOG_ERR("PERSIST", "Failed to write %s", path);
+
+  char tmpPath[128];
+  snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", path);
+
+  if (!Storage.writeFile(tmpPath, json)) {
+    LOG_ERR("PERSIST", "Failed to write %s", tmpPath);
+    return false;
+  }
+  Storage.remove(path);
+  if (!Storage.rename(tmpPath, path)) {
+    LOG_ERR("PERSIST", "Failed to rename %s to %s", tmpPath, path);
     return false;
   }
   return true;
