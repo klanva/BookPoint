@@ -629,6 +629,7 @@ void SleepActivity::renderDefaultSleepScreen() const {
 
   renderer.drawCenteredText(UI_10_FONT_ID, textTitleY, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(SMALL_FONT_ID, textSubY, tr(STR_SLEEPING));
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 30, CROSSPOINT_VERSION);
 
   // Make sleep screen dark unless light is selected in settings
   if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {
