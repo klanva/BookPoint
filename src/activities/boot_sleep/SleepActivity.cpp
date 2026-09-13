@@ -26,7 +26,7 @@
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "images/Logo120.h"
+#include "images/Logo.h"
 #include "images/MoonIcon.h"
 #include "stats/BookReadingStats.h"
 #include "stats/GlobalReadingStats.h"
@@ -613,10 +613,22 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
 
+  const auto logo = (pageWidth >= 480 && pageHeight >= 700) ? LogoAsset{Logo240, 240}
+                  : (pageWidth >= 400 && pageHeight >= 400) ? LogoAsset{Logo200, 200}
+                                                            : LogoAsset{Logo120, 120};
+
+  const int yOffset = (logo.size >= 240) ? 55 : (logo.size >= 200 ? 35 : 20);
+  const int logoX = (pageWidth - logo.size) / 2;
+  const int logoY = (pageHeight - logo.size) / 2 - yOffset;
+
   renderer.clearScreen();
-  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_SLEEPING));
+  renderer.drawImage(logo.data, logoX, logoY, logo.size, logo.size);
+
+  const int textTitleY = logoY + logo.size + ((logo.size >= 200) ? 35 : 20);
+  const int textSubY = textTitleY + ((logo.size >= 200) ? 28 : 22);
+
+  renderer.drawCenteredText(UI_10_FONT_ID, textTitleY, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(SMALL_FONT_ID, textSubY, tr(STR_SLEEPING));
 
   // Make sleep screen dark unless light is selected in settings
   if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {

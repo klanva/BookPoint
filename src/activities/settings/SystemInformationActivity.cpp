@@ -10,7 +10,7 @@
 #include "SystemStatus.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "images/Logo120.h"
+#include "images/Logo.h"
 
 static const char* pickUnit(uint64_t maxBytes, double& outDivisor) {
   if (maxBytes >= 1024ULL * 1024 * 1024) {
@@ -204,12 +204,19 @@ void SystemInformationActivity::render(RenderLock&&) {
     drawRow(tr(STR_SD_CARD), "-");
   }
 
-  constexpr int kLogoSize = 120;
   const int hintsTop = contentRect.y + contentRect.height - metrics.buttonHintsHeight;
-  const int logoY = y + (hintsTop - y - kLogoSize) / 2;
-  const int logoX = contentRect.x + (contentRect.width - kLogoSize) / 2;
-  if (logoY >= 0 && logoY + kLogoSize <= hintsTop) {
-    renderer.drawImage(Logo120, logoX, logoY, kLogoSize, kLogoSize);
+  const int availableH = hintsTop - y;
+  const int availableW = contentRect.width;
+  int logoSize = 120;
+  const uint8_t* logoData = Logo120;
+  if (availableH >= 240 && availableW >= 240) {
+    logoSize = 200;
+    logoData = Logo200;
+  }
+  const int logoY = y + (availableH - logoSize) / 2;
+  const int logoX = contentRect.x + (contentRect.width - logoSize) / 2;
+  if (logoY >= 0 && logoY + logoSize <= hintsTop) {
+    renderer.drawImage(logoData, logoX, logoY, logoSize, logoSize);
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), sdStatusReady_ ? "" : tr(STR_UPDATE), "", "");
