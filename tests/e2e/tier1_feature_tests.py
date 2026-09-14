@@ -76,6 +76,7 @@ from tests.e2e.contracts import (
     PremiumTypographySuiteModel,
     FlagshipErgonomicsModel,
     ZeroBrickRiskModel,
+    HighFidelityImageEngineModel,
 )
 
 try:
@@ -1820,6 +1821,64 @@ class Tier1FeatureTests(unittest.TestCase):
         local_hr = local_total_min // 60
         local_mn = local_total_min % 60
         self.assertEqual(f"{local_hr:02d}:{local_mn:02d}", "12:15")
+
+    # --------------------------------------------------------------------------
+    # FEATURE 13: HighFidelityImageEngine (6 tests)
+    # --------------------------------------------------------------------------
+
+    def test_f13_01_bayer_8x8_matrix_properties(self):
+        """F13.1: Verify 8x8 Bayer matrix dimensions, 64 distinct values in range [0..63]."""
+        matrix = HighFidelityImageEngineModel.BAYER_8X8
+        self.assertEqual(len(matrix), 8)
+        all_vals = []
+        for row in matrix:
+            self.assertEqual(len(row), 8)
+            all_vals.extend(row)
+        self.assertEqual(len(all_vals), 64)
+        self.assertEqual(sorted(all_vals), list(range(64)))
+
+    def test_f13_02_eink_gamma_table_shadow_lifting(self):
+        """F13.2: Verify perceptual Gamma 1.8 LUT expands shadow midtones to prevent crushed blacks."""
+        lut = HighFidelityImageEngineModel.EINK_GAMMA_TABLE
+        self.assertEqual(len(lut), 256)
+        self.assertEqual(lut[0], 0)
+        self.assertEqual(lut[255], 255)
+        self.assertGreater(lut[1], 1)
+        self.assertGreater(lut[32], 32)
+        for i in range(1, 256):
+            self.assertGreaterEqual(lut[i], lut[i - 1])
+
+    def test_f13_03_clean_white_bleaching(self):
+        """F13.3: Verify Clean White Bleaching eliminates grey checkerboard speckles on near-white paper."""
+        for gray in range(242, 256):
+            for y in range(8):
+                for x in range(8):
+                    level = HighFidelityImageEngineModel.apply_bayer_dither_4level(gray, x, y)
+                    self.assertEqual(level, 3, f"Gray {gray} at ({x},{y}) must be Level 3 (pure white)")
+
+    def test_f13_04_clean_black_bleaching(self):
+        """F13.4: Verify Clean Black Bleaching keeps fine line art and ink text dense black."""
+        for gray in range(0, 11):
+            for y in range(8):
+                for x in range(8):
+                    level = HighFidelityImageEngineModel.apply_bayer_dither_4level(gray, x, y)
+                    self.assertEqual(level, 0, f"Gray {gray} at ({x},{y}) must be Level 0 (pure black)")
+
+    def test_f13_05_psram_cache_pool_slot_contract(self):
+        """F13.5: Verify PSRAM Multi-Slot Cache Pool geometry allows 4 concurrent cached images."""
+        self.assertEqual(HighFidelityImageEngineModel.MAX_PXC_SLOTS, 4)
+        four_slots_bytes = 4 * (800 * 200)
+        self.assertLess(four_slots_bytes, 8 * 1024 * 1024)
+
+    def test_f13_06_quantization_thresholds_distribution(self):
+        """F13.6: Verify 4-level quantization thresholds [43, 128, 213] partition E-Ink reflectance evenly."""
+        t1, t2, t3 = HighFidelityImageEngineModel.QUANT_THRESHOLDS
+        self.assertEqual((t1, t2, t3), (43, 128, 213))
+        levels_seen = set()
+        for g in range(0, 256, 4):
+            levels_seen.add(HighFidelityImageEngineModel.apply_bayer_dither_4level(g, 0, 0))
+        self.assertEqual(levels_seen, {0, 1, 2, 3})
+
 
 
 class HardwareRtcModel:

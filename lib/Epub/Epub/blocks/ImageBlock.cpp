@@ -6,6 +6,10 @@
 #include <Memory.h>
 #include <Serialization.h>
 
+#if defined(ESP32)
+#include <esp_heap_caps.h>
+#endif
+
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -90,94 +94,164 @@ void rememberImageFailure(const std::string& path) {
   failedImageHashes[failedImageCount++] = imagePathHash(path);
 }
 
-// --- Per-page-render RAM slot for the pixel cache ----------------------------
+// --- Per-page-render RAM slots for the pixel cache ---------------------------
 // The tiled grayscale flow re-renders an image page once for the BW
 // double-refresh and again for every band of both gray planes, and each pass
-// re-read the whole .pxc off SD (~100 ms for a full-page image, ~13 passes).
-// Column clipping cannot reduce the SD traffic: the row stride (~100 B) is
-// smaller than an SD sector, so every sector is touched regardless of the band
-// window. Instead the first pass loads the payload into RAM and later passes
-// render from it. Chunked allocation because a single full-image block (up to
-// 96 KB) rarely fits the fragmented mid-render heap; each chunk is heap-gated
-// and any failure falls back to the streaming path unchanged. The reader
-// releases the slot when the page render completes, so nothing stays resident
-// across page turns.
-constexpr size_t PXC_CHUNK_SHIFT = 14;  // 16 KB chunks
+// re-reads the whole .pxc off SD (~100 ms for a full-page image, ~13 passes).
+// On Xteink X4 Pro, we allocate the entire image payload directly in 8 MB Octal
+// PSRAM in a single read. A multi-slot pool (up to 4 images per page) eliminates
+// SD read thrashing across multi-image pages.
+// Non-PSRAM platforms gracefully fall back to chunked DRAM allocation.
+// The reader releases all slots when the page render completes.
+constexpr size_t MAX_PXC_SLOTS = 4;
+constexpr size_t PXC_CHUNK_SHIFT = 14;  // 16 KB chunks for DRAM fallback
 constexpr size_t PXC_CHUNK_SIZE = 1u << PXC_CHUNK_SHIFT;
-constexpr size_t PXC_MAX_CHUNKS = 6;  // 96 KB: a full-screen 2bpp image
+constexpr size_t PXC_MAX_CHUNKS = 6;    // 96 KB: a full-screen 2bpp image
 constexpr size_t PXC_HEAP_RESERVE = 24 * 1024;
 constexpr size_t PXC_MAX_ALLOC_RESERVE = 8 * 1024;
-// Rows can straddle a chunk boundary; they are reassembled into a stack
-// buffer. (screenWidth + 3) / 4 caps at 200 B for an 800px panel.
 constexpr int PXC_MAX_BYTES_PER_ROW = 208;
 
-std::unique_ptr<uint8_t[]> pxcChunks[PXC_MAX_CHUNKS];
-uint64_t pxcSlotHash = 0;
-uint16_t pxcSlotWidth = 0;
-uint16_t pxcSlotHeight = 0;
+struct PxcSlot {
+  uint64_t hash{0};
+  uint16_t width{0};
+  uint16_t height{0};
+  uint8_t* psramBuf{nullptr};
+  size_t psramSize{0};
+  std::unique_ptr<uint8_t[]> dramChunks[PXC_MAX_CHUNKS];
+  size_t dramChunkCount{0};
 
-void releasePxcSlot() {
-  for (auto& chunk : pxcChunks) chunk.reset();
-  pxcSlotHash = 0;
-  pxcSlotWidth = 0;
-  pxcSlotHeight = 0;
+  bool isLoaded() const { return hash != 0 && (psramBuf != nullptr || dramChunkCount > 0); }
+
+  void reset() {
+#if defined(ESP32)
+    if (psramBuf) {
+      heap_caps_free(psramBuf);
+      psramBuf = nullptr;
+    }
+#else
+    if (psramBuf) {
+      free(psramBuf);
+      psramBuf = nullptr;
+    }
+#endif
+    psramSize = 0;
+    for (auto& chunk : dramChunks) {
+      chunk.reset();
+    }
+    dramChunkCount = 0;
+    hash = 0;
+    width = 0;
+    height = 0;
+  }
+};
+
+PxcSlot pxcSlots[MAX_PXC_SLOTS];
+
+void releasePxcSlots() {
+  for (size_t i = 0; i < MAX_PXC_SLOTS; i++) {
+    pxcSlots[i].reset();
+  }
 }
 
-const uint8_t* pxcRowPtr(size_t rowStart, int bytesPerRow, uint8_t* tempRow) {
+PxcSlot* findPxcSlot(uint64_t hash) {
+  for (size_t i = 0; i < MAX_PXC_SLOTS; i++) {
+    if (pxcSlots[i].hash == hash && pxcSlots[i].isLoaded()) {
+      return &pxcSlots[i];
+    }
+  }
+  return nullptr;
+}
+
+PxcSlot* allocateEmptySlot() {
+  for (size_t i = 0; i < MAX_PXC_SLOTS; i++) {
+    if (!pxcSlots[i].isLoaded()) {
+      return &pxcSlots[i];
+    }
+  }
+  return nullptr;
+}
+
+const uint8_t* pxcRowPtr(const PxcSlot& slot, size_t rowStart, int bytesPerRow, uint8_t* tempRow) {
+  if (slot.psramBuf) {
+    return slot.psramBuf + rowStart;
+  }
   const size_t chunk = rowStart >> PXC_CHUNK_SHIFT;
   const size_t offset = rowStart & (PXC_CHUNK_SIZE - 1);
   if (offset + bytesPerRow <= PXC_CHUNK_SIZE) {
-    return pxcChunks[chunk].get() + offset;
+    return slot.dramChunks[chunk].get() + offset;
   }
   const size_t firstPart = PXC_CHUNK_SIZE - offset;
-  memcpy(tempRow, pxcChunks[chunk].get() + offset, firstPart);
-  memcpy(tempRow + firstPart, pxcChunks[chunk + 1].get(), bytesPerRow - firstPart);
+  memcpy(tempRow, slot.dramChunks[chunk].get() + offset, firstPart);
+  memcpy(tempRow + firstPart, slot.dramChunks[chunk + 1].get(), bytesPerRow - firstPart);
   return tempRow;
 }
 
-// cacheFile is positioned just past the header. True when the slot holds the
-// full pixel payload for this cache path afterward.
-bool loadPxcSlot(uint64_t cacheHash, HalFile& cacheFile, uint16_t cachedWidth, uint16_t cachedHeight, int bytesPerRow) {
-  releasePxcSlot();
+bool loadPxcSlot(PxcSlot& slot, uint64_t cacheHash, HalFile& cacheFile, uint16_t cachedWidth, uint16_t cachedHeight,
+                 int bytesPerRow) {
+  slot.reset();
   if (bytesPerRow > PXC_MAX_BYTES_PER_ROW) {
     return false;
   }
-  size_t remaining = (size_t)bytesPerRow * cachedHeight;
-  const size_t chunkCount = (remaining + PXC_CHUNK_SIZE - 1) >> PXC_CHUNK_SHIFT;
+  const size_t totalBytes = static_cast<size_t>(bytesPerRow) * cachedHeight;
+  if (totalBytes == 0) return false;
+
+#if defined(ESP32)
+  // Preferred fast path: allocate contiguous image payload in Octal PSRAM (8 MB on X4 Pro)
+  uint8_t* psram = static_cast<uint8_t*>(heap_caps_malloc(totalBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (psram) {
+    if (cacheFile.read(psram, totalBytes) == static_cast<int>(totalBytes)) {
+      slot.hash = cacheHash;
+      slot.width = cachedWidth;
+      slot.height = cachedHeight;
+      slot.psramBuf = psram;
+      slot.psramSize = totalBytes;
+      LOG_DBG("IMG", "Loaded %u bytes into PSRAM cache slot (%dx%d)", static_cast<unsigned>(totalBytes),
+              cachedWidth, cachedHeight);
+      return true;
+    }
+    heap_caps_free(psram);
+  }
+#endif
+
+  // Fallback path: chunked DRAM allocation (for non-PSRAM environments)
+  const size_t chunkCount = (totalBytes + PXC_CHUNK_SIZE - 1) >> PXC_CHUNK_SHIFT;
   if (chunkCount == 0 || chunkCount > PXC_MAX_CHUNKS) {
     return false;
   }
+  size_t remaining = totalBytes;
   for (size_t i = 0; i < chunkCount; i++) {
     const size_t want = remaining < PXC_CHUNK_SIZE ? remaining : PXC_CHUNK_SIZE;
     if (ESP.getFreeHeap() < remaining + PXC_HEAP_RESERVE || ESP.getMaxAllocHeap() < want + PXC_MAX_ALLOC_RESERVE) {
-      releasePxcSlot();
+      slot.reset();
       return false;
     }
-    pxcChunks[i] = makeUniqueNoThrow<uint8_t[]>(want);
-    if (!pxcChunks[i] || cacheFile.read(pxcChunks[i].get(), want) != static_cast<int>(want)) {
-      releasePxcSlot();
+    slot.dramChunks[i] = makeUniqueNoThrow<uint8_t[]>(want);
+    if (!slot.dramChunks[i] || cacheFile.read(slot.dramChunks[i].get(), want) != static_cast<int>(want)) {
+      slot.reset();
       return false;
     }
     remaining -= want;
   }
-  pxcSlotHash = cacheHash;
-  pxcSlotWidth = cachedWidth;
-  pxcSlotHeight = cachedHeight;
+  slot.dramChunkCount = chunkCount;
+  slot.hash = cacheHash;
+  slot.width = cachedWidth;
+  slot.height = cachedHeight;
   return true;
 }
 
-void renderRowsFromPxcSlot(GfxRenderer& renderer, int x, int y) {
-  const int bytesPerRow = (pxcSlotWidth + 3) / 4;
+void renderRowsFromPxcSlot(GfxRenderer& renderer, const PxcSlot& slot, int x, int y) {
+  const int bytesPerRow = (slot.width + 3) / 4;
   uint8_t tempRow[PXC_MAX_BYTES_PER_ROW];
 
   DirectPixelWriter pw;
   pw.init(renderer);
 
-  for (int row = 0; row < pxcSlotHeight; row++) {
-    const uint8_t* rowBuffer = pxcRowPtr((size_t)row * bytesPerRow, bytesPerRow, tempRow);
+  for (int row = 0; row < slot.height; row++) {
+    const uint8_t* rowBuffer = pxcRowPtr(slot, static_cast<size_t>(row) * bytesPerRow, bytesPerRow, tempRow);
+    if (!rowBuffer) continue;
     pw.beginRow(y + row);
     int colStart, colEnd;
-    pw.bandColRange(x, pxcSlotWidth, colStart, colEnd);
+    pw.bandColRange(x, slot.width, colStart, colEnd);
     for (int col = colStart; col < colEnd; col++) {
       const int byteIdx = col >> 2;            // col / 4
       const int bitShift = 6 - (col & 3) * 2;  // MSB first within byte
@@ -189,11 +263,11 @@ void renderRowsFromPxcSlot(GfxRenderer& renderer, int x, int y) {
 
 bool renderFromCache(GfxRenderer& renderer, const std::string& cachePath, int x, int y, int expectedWidth,
                      int expectedHeight) {
-  // A later pass of the same page render: the payload is already in RAM, skip
-  // the file entirely.
+  // A later pass of the same page render: if payload is already in any RAM slot, skip file entirely
   const uint64_t cacheHash = imagePathHash(cachePath);
-  if (pxcSlotHash == cacheHash && pxcSlotWidth != 0) {
-    renderRowsFromPxcSlot(renderer, x, y);
+  PxcSlot* existing = findPxcSlot(cacheHash);
+  if (existing != nullptr) {
+    renderRowsFromPxcSlot(renderer, *existing, x, y);
     return true;
   }
 
@@ -216,16 +290,11 @@ bool renderFromCache(GfxRenderer& renderer, const std::string& cachePath, int x,
 
   const int bytesPerRow = (cachedWidth + 3) / 4;  // 2 bits per pixel, 4 pixels per byte
 
-  // First pass of a page render: try to pull the payload into the RAM slot so
-  // the remaining ~12 passes skip SD entirely. Only an EMPTY slot is claimed:
-  // the slot lives until the page render completes, so a populated slot with a
-  // different hash means another image on this same page owns it. Evicting it
-  // here would make 2+ image pages reload each other from SD on every pass
-  // (all the SD traffic of streaming plus the slot alloc churn); instead later
-  // images take the streaming path below, unchanged from pre-cache behavior.
-  if (pxcSlotHash == 0 && loadPxcSlot(cacheHash, cacheFile, cachedWidth, cachedHeight, bytesPerRow)) {
-    renderRowsFromPxcSlot(renderer, x, y);
-    LOG_DBG("IMG", "Cache render complete (payload now in RAM)");
+  // First pass of a page render: load payload into an empty RAM slot
+  PxcSlot* emptySlot = allocateEmptySlot();
+  if (emptySlot != nullptr && loadPxcSlot(*emptySlot, cacheHash, cacheFile, cachedWidth, cachedHeight, bytesPerRow)) {
+    renderRowsFromPxcSlot(renderer, *emptySlot, x, y);
+    LOG_DBG("IMG", "Cache render complete (payload now in RAM slot)");
     return true;
   }
 
@@ -309,7 +378,7 @@ bool ImageBlock::needsDecode() const { return !imageFailedThisSession(imagePath)
 
 void ImageBlock::clearSessionRenderFailures() { failedImageCount = 0; }
 
-void ImageBlock::releaseRenderCache() { releasePxcSlot(); }
+void ImageBlock::releaseRenderCache() { releasePxcSlots(); }
 
 void ImageBlock::renderPlaceholder(GfxRenderer& renderer, const int x, const int y) const {
   renderer.fillRect(x, y, width, height, true);

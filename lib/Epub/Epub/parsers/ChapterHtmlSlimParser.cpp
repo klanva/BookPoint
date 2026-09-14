@@ -569,6 +569,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   if (matches(name, IMAGE_TAGS, std::size(IMAGE_TAGS))) {
     std::string src;
     std::string alt;
+    std::string attrWidth;
+    std::string attrHeight;
     if (atts != nullptr) {
       for (int i = 0; atts[i]; i += 2) {
         if (strcmp(atts[i], "src") == 0) {
@@ -577,6 +579,25 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
           src = atts[i + 1];
         } else if (strcmp(atts[i], "alt") == 0) {
           alt = atts[i + 1];
+        } else if (strcmp(atts[i], "width") == 0) {
+          attrWidth = atts[i + 1];
+        } else if (strcmp(atts[i], "height") == 0) {
+          attrHeight = atts[i + 1];
+        }
+      }
+
+      if (!cssStyle.hasImageWidth() && !attrWidth.empty()) {
+        CssLength len;
+        if (CssParser::tryInterpretLength(attrWidth, len)) {
+          cssStyle.imageWidth = len;
+          cssStyle.defined.imageWidth = 1;
+        }
+      }
+      if (!cssStyle.hasImageHeight() && !attrHeight.empty()) {
+        CssLength len;
+        if (CssParser::tryInterpretLength(attrHeight, len)) {
+          cssStyle.imageHeight = len;
+          cssStyle.defined.imageHeight = 1;
         }
       }
 

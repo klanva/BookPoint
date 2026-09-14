@@ -68,6 +68,13 @@ class CssParser {
   [[nodiscard]] static CssStyle parseInlineStyle(std::string_view styleValue);
 
   /**
+   * Parse a CSS length value.
+   * Returns true only when a numeric length was parsed (e.g. 2em, 50%, 300, 300px). False for auto/inherit/initial.
+   */
+  static bool tryInterpretLength(std::string_view val, CssLength& out);
+  static CssLength interpretLength(std::string_view val);
+
+  /**
    * Check if any rules have been loaded
    */
   [[nodiscard]] bool empty() const { return rulesBySelector_.empty(); }
@@ -152,7 +159,4 @@ class CssParser {
   static CssFontStyle interpretFontStyle(std::string_view val);
   static CssFontWeight interpretFontWeight(std::string_view val);
   static CssTextDecoration interpretDecoration(std::string_view val);
-  static CssLength interpretLength(std::string_view val);
-  /** Returns true only when a numeric length was parsed (e.g. 2em, 50%). False for auto/inherit/initial. */
-  static bool tryInterpretLength(std::string_view val, CssLength& out);
 };
