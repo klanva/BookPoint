@@ -216,6 +216,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     TOUCH_READER_CONTROLS_COUNT
   };
 
+  enum READER_TOUCH_ZONE_LAYOUT {
+    TOUCH_LAYOUT_2_ZONE_HANDED = 0,
+    TOUCH_LAYOUT_3_ZONE = 1,
+    TOUCH_LAYOUT_9_ZONE = 2,
+    TOUCH_LAYOUT_COUNT
+  };
+
   enum QUICK_RESUME_SLEEP_SCREEN {
     QUICK_RESUME_NEVER = 0,
     QUICK_RESUME_AFTER_TIMEOUT = 1,
@@ -365,6 +372,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t tiltPageTurn = TILT_OFF;
   // Touch screen reader zones/gestures on boards with a touch controller.
   uint8_t touchReaderControls = TOUCH_READER_ON;
+  // Touch reader zone layout (0 = 2-zone handed 75/25, 1 = 3-zone, 2 = 9-zone 3x3 grid)
+  uint8_t readerTouchZoneLayout = TOUCH_LAYOUT_3_ZONE;
+  // Center menu zone width percentage (30%..40%, default 35%)
+  uint8_t touchMenuZoneWidthPercent = 35;
   // Center-third tap opens the reader menu (0 = disabled, 1 = enabled). Only
   // surfaced on home-key boards, where the menu stays reachable without it.
   uint8_t tapForReaderMenu = 1;

@@ -201,12 +201,23 @@ class SwipeDir(enum.Enum):
     UP = "UP"
     DOWN = "DOWN"
 
+TOUCH_SWIPE_MIN_DISTANCE: float = 40.0
+TOUCH_TAP_MAX_MOVEMENT: float = 18.0
+
+
+class TouchGestureClassification(enum.Enum):
+    NONE = "NONE"
+    TAP = "TAP"
+    SWIPE = "SWIPE"
+    FILTERED_NOISE = "FILTERED_NOISE"
+
+
 def classify_swipe(
     start_x: float,
     start_y: float,
     end_x: float,
     end_y: float,
-    threshold: float = 50.0,
+    threshold: float = 40.0,
 ) -> SwipeDir:
     """Classifies swipe direction according to GfxRenderer/InputManager physics."""
     dx = end_x - start_x
@@ -221,6 +232,125 @@ def classify_swipe(
         return SwipeDir.LEFT if dx < 0 else SwipeDir.RIGHT
     else:
         return SwipeDir.UP if dy < 0 else SwipeDir.DOWN
+
+
+class TouchInputModel:
+    """
+    Authoritative Hardware & Debounce Model for GT911 Capacitive Touch on Xteink X4 Pro.
+    Calibrated gesture thresholds for BookPoint v2.2.4:
+    - TOUCH_SWIPE_MIN_DISTANCE = 40 px (reduced from 60 px for sensitive micro-flicks)
+    - TOUCH_TAP_MAX_MOVEMENT = 18 px (reduced from 28 px to filter contact roll)
+    - Rejection band: 19..39 px (classified as neither tap nor swipe)
+    - Continuous contact tracking: touchPressed || touchHomeKeyDown || touchContactActive
+    """
+    SWIPE_MIN_DISTANCE: float = 40.0
+    TAP_MAX_MOVEMENT: float = 18.0
+    TOUCH_SWIPE_MAX_MS: float = 700.0
+    TOUCH_TAP_MAX_MS: float = 1000.0
+
+    @classmethod
+    def classify_gesture(
+        cls,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        duration_ms: float = 200.0,
+    ) -> Tuple[TouchGestureClassification, Optional[SwipeDir]]:
+        """
+        Classifies touch movement using calibrated debounce thresholds:
+        - Movement <= 18px and duration <= 1000ms -> (TAP, None)
+        - Max axis displacement >= 40px and duration <= 700ms -> (SWIPE, SwipeDir)
+        - Movement between 19px and 39px -> (FILTERED_NOISE, None)
+        """
+        dx = end_x - start_x
+        dy = end_y - start_y
+        adx = abs(dx)
+        ady = abs(dy)
+        movement = math.hypot(dx, dy)
+
+        if movement <= cls.TAP_MAX_MOVEMENT:
+            if duration_ms <= cls.TOUCH_TAP_MAX_MS:
+                return TouchGestureClassification.TAP, None
+            return TouchGestureClassification.NONE, None
+
+        if (adx >= cls.SWIPE_MIN_DISTANCE or ady >= cls.SWIPE_MIN_DISTANCE) and duration_ms <= cls.TOUCH_SWIPE_MAX_MS:
+            swipe_dir = classify_swipe(start_x, start_y, end_x, end_y, threshold=cls.SWIPE_MIN_DISTANCE)
+            return TouchGestureClassification.SWIPE, swipe_dir
+
+        return TouchGestureClassification.FILTERED_NOISE, None
+
+    @staticmethod
+    def was_touch_activity(
+        touch_pressed: bool,
+        touch_home_key_down: bool,
+        touch_contact_active: bool,
+        touch_pressed_event: bool = False,
+        touch_released_event: bool = False,
+        touch_home_key_event: bool = False,
+        touch_home_key_tap_event: bool = False,
+        touch_home_key_long_event: bool = False,
+    ) -> bool:
+        """
+        Evaluates touch activity state including continuous contact (hold/drag).
+        Prevents sleep starvation by returning True during active contact.
+        """
+        screen_activity = touch_pressed or touch_contact_active or touch_pressed_event or touch_released_event
+        home_activity = (
+            touch_home_key_down
+            or touch_home_key_event
+            or touch_home_key_tap_event
+            or touch_home_key_long_event
+        )
+        return bool(screen_activity or home_activity)
+
+    @staticmethod
+    def should_inhibit_light_sleep(has_touch: bool, is_touch_active: bool) -> bool:
+        """
+        Determines whether HalPowerManager should inhibit light sleep.
+        Guarantees CPU remains at 240MHz and does not miss GT911 INT pulses while touch is active.
+        """
+        return bool(has_touch and is_touch_active)
+
+
+class I2CBusConcurrencyModel:
+    """
+    Simulation model for ScopedI2CBusLock thread-safe synchronization across
+    Goodix GT911 (0x5D), Belling BM8563 (0x51), and CellWise CW2017 (0x63).
+    """
+    ADDR_GT911: int = 0x5D
+    ADDR_BM8563: int = 0x51
+    ADDR_CW2017: int = 0x63
+
+    def __init__(self):
+        self.lock_owner: Optional[str] = None
+        self.lock_recursion_depth: int = 0
+        self.bus_transactions: List[Tuple[str, int, str]] = []
+
+    def acquire(self, task_name: str) -> bool:
+        if self.lock_owner is None:
+            self.lock_owner = task_name
+            self.lock_recursion_depth = 1
+            return True
+        elif self.lock_owner == task_name:
+            self.lock_recursion_depth += 1
+            return True
+        else:
+            return False  # Mutex contention: other task must wait
+
+    def release(self, task_name: str) -> bool:
+        if self.lock_owner != task_name:
+            return False
+        self.lock_recursion_depth -= 1
+        if self.lock_recursion_depth == 0:
+            self.lock_owner = None
+        return True
+
+    def execute_transaction(self, task_name: str, device_addr: int, op_type: str) -> bool:
+        if self.lock_owner != task_name:
+            return False  # Bus access without holding ScopedI2CBusLock is forbidden
+        self.bus_transactions.append((task_name, device_addr, op_type))
+        return True
 
 def classify_3zone_cover_tap(
     tap_x: int,
@@ -2719,623 +2849,512 @@ class ZeroBrickRiskModel:
 
 
 # ==============================================================================
-# 26. AUTHORITATIVE HARDWARE SIMULATION MODELS (BM8563, CW2017, GT911, SSD1677)
+# 28. CLOCK OFFSET HITBOX & ROUTING MODEL (BookPoint v2.2.4 R1)
 # ==============================================================================
 
-
-class BM8563RtcModel:
+class ClockOffsetHitboxModel:
     """
-    Authoritative Hardware Simulation Model for Belling BM8563 / NXP PCF8563 Real-Time Clock.
-    Physical hardware ground truth:
-    - I2C Address: 0x51 (shared bus SDA 39 / SCL 38 @ 400kHz).
-      Strictly prohibits DS3231 address 0x68 (used on Xteink X3).
-    - Register Map:
-      0x00: Control/Status 1 (STOP bit, test modes)
-      0x01: Control/Status 2 (Alarm/Timer interrupt flags)
-      0x02: Seconds (BCD 00-59, bit 7 = VL [Voltage Low / Integrity flag])
-      0x03: Minutes (BCD 00-59, bits 6:0)
-      0x04: Hours   (BCD 00-23, bits 5:0)
-      0x05: Days    (BCD 01-31, bits 5:0)
-      0x06: Weekdays(BCD 00-06, bits 2:0)
-      0x07: Century/Months (BCD 01-12, bit 7 = Century: 1=1900, 0=2000)
-      0x08: Years   (BCD 00-99, bits 7:0)
+    R1 Contract: ClockOffsetActivity Hit-Testing & Touch Event Routing.
+    Models the UTC offset picker (+/- buttons, field select, biased quarter-hour storage).
+    Verifies:
+    1. 56px touch button size (TOUCH_BUTTON_SIZE = 56, +62% hit area over 44px).
+    2. Vertical centering: buttonY = centreY + (fieldHeight - 56) // 2.
+    3. Offset encoding/decoding with biased range [0..104] (0 = UTC-12, 48 = UTC+0, 104 = UTC+14).
+    4. Single-tap 100% capture: routes via InputTouch | InputRelease, capturing both
+       clean taps and finger roll centroid drift releases where (rx, ry) = (-1, -1).
+    5. Sign and boundary clamping: maximum positive hours = 14, negative = 12.
+       At boundary (+14 or -12), minutes are clamped to :00.
     """
-    I2C_ADDR: int = 0x51
-    FORBIDDEN_DS3231_ADDR: int = 0x68
+    TOUCH_BUTTON_SIZE: int = 56
+    TOUCH_BUTTON_GAP: int = 18
+    MAX_POS_HOURS: int = 14
+    MAX_NEG_HOURS: int = 12
+    MINUTE_STEPS: int = 4  # 0, 15, 30, 45
+    MINUTES_PER_QUARTER: int = 15
+    BIAS_QUARTER_HOURS: int = 48  # 0 = UTC-12, 48 = UTC+0, 104 = UTC+14
 
-    REG_CTRL_STATUS1: int = 0x00
-    REG_CTRL_STATUS2: int = 0x01
-    REG_SEC: int = 0x02
-    REG_MIN: int = 0x03
-    REG_HOUR: int = 0x04
-    REG_DAY: int = 0x05
-    REG_WDAY: int = 0x06
-    REG_MONTH: int = 0x07
-    REG_YEAR: int = 0x08
+    @classmethod
+    def encode_offset(cls, sign: int, hours: int, quarter: int) -> int:
+        signed_quarter = hours * 4 + quarter
+        if sign == 1:
+            signed_quarter = -signed_quarter
+        biased = signed_quarter + cls.BIAS_QUARTER_HOURS
+        return max(0, min(104, biased))
 
-    VL_FLAG: int = 0x80       # Bit 7 of 0x02: 1 = Voltage Low / Oscillator stopped
-    CENTURY_FLAG: int = 0x80  # Bit 7 of 0x07: 1 = 19xx, 0 = 20xx
-
-    # Backwards compatibility attributes matching earlier tests
-    BM8563_ADDR: int = 0x51
-    DS3231_ADDR: int = 0x68
-    BM8563_SEC_REG: int = 0x02
-    DS3231_SEC_REG: int = 0x00
-    BM8563_VL_FLAG: int = 0x80
-
-    def __init__(self, initial_registers: Optional[List[int]] = None) -> None:
-        self.registers: List[int] = [0x00] * 16
-        if initial_registers:
-            for i, val in enumerate(initial_registers[:16]):
-                self.registers[i] = val & 0xFF
+    @classmethod
+    def decode_offset(cls, biased: int) -> Tuple[int, int, int]:
+        if biased > 104:
+            biased = cls.BIAS_QUARTER_HOURS
+        signed_quarter = biased - cls.BIAS_QUARTER_HOURS
+        if signed_quarter < 0:
+            sign = 1
+            signed_quarter = -signed_quarter
         else:
-            # Default state after power loss: VL set, oscillator stopped
-            self.registers[self.REG_SEC] = self.VL_FLAG
-
-    @staticmethod
-    def decode_bcd(bcd_val: int) -> int:
-        return ((bcd_val >> 4) * 10) + (bcd_val & 0x0F)
-
-    @staticmethod
-    def encode_bcd(dec_val: int) -> int:
-        return ((dec_val // 10) << 4) | (dec_val % 10)
+            sign = 0
+        hours = signed_quarter // 4
+        quarter = signed_quarter % 4
+        return sign, hours, quarter
 
     @classmethod
-    def verify_address(cls, addr: int) -> bool:
-        """Verifies if the given I2C address is the valid BM8563 address (0x51). Prohibits 0x68."""
-        if addr == cls.FORBIDDEN_DS3231_ADDR:
-            raise ValueError(f"Legacy DS3231 address 0x{addr:02X} detected! BM8563 must use 0x51 on X4 Pro.")
-        return addr == cls.I2C_ADDR
-
-    @classmethod
-    def serialize_bm8563_registers(
-        cls, year: int, month: int, day: int, weekday: int, hour: int, minute: int, second: int, vl: bool = False
-    ) -> List[int]:
-        """Serializes calendar datetime to raw 7-byte register array (0x02..0x08)."""
-        vl_bit = cls.VL_FLAG if vl else 0x00
-        century_bit = cls.CENTURY_FLAG if year < 2000 else 0x00
-        return [
-            (cls.encode_bcd(second) & 0x7F) | vl_bit,
-            cls.encode_bcd(minute) & 0x7F,
-            cls.encode_bcd(hour) & 0x3F,
-            cls.encode_bcd(day) & 0x3F,
-            cls.encode_bcd(weekday % 7) & 0x07,
-            (cls.encode_bcd(month) & 0x1F) | century_bit,
-            cls.encode_bcd(year % 100) & 0xFF,
-        ]
-
-    @classmethod
-    def parse_bm8563_registers(cls, raw_7_bytes: List[int]) -> Dict[str, Any]:
-        """Parses raw 7-byte register array (0x02..0x08) into datetime fields with VL integrity check."""
-        if len(raw_7_bytes) < 7:
-            return {"valid": False, "error": "Insufficient bytes (needs 7)"}
-
-        sec_byte = raw_7_bytes[0]
-        vl_set = bool(sec_byte & cls.VL_FLAG)
-        if vl_set:
-            return {
-                "valid": False,
-                "error": "Oscillator stopped / VL (voltage low) flag set",
-                "vl": True,
-            }
-
-        sec = cls.decode_bcd(sec_byte & 0x7F)
-        minute = cls.decode_bcd(raw_7_bytes[1] & 0x7F)
-        hr = cls.decode_bcd(raw_7_bytes[2] & 0x3F)
-        day = cls.decode_bcd(raw_7_bytes[3] & 0x3F)
-        wday = cls.decode_bcd(raw_7_bytes[4] & 0x07)
-        month_byte = raw_7_bytes[5]
-        century = 1900 if (month_byte & cls.CENTURY_FLAG) else 2000
-        month = cls.decode_bcd(month_byte & 0x1F)
-        year = century + cls.decode_bcd(raw_7_bytes[6])
-
-        # Range validity checks
-        if not (0 <= sec < 60 and 0 <= minute < 60 and 0 <= hr < 24 and 1 <= month <= 12 and 1 <= day <= 31):
-            return {"valid": False, "error": "Corrupt BCD values out of range", "vl": False}
-
-        return {
-            "valid": True,
-            "year": year,
-            "month": month,
-            "day": day,
-            "weekday": wday,
-            "hour": hr,
-            "minute": minute,
-            "second": sec,
-            "vl": False,
+    def get_button_rects(cls, screen_w: int = 800, screen_h: int = 480,
+                         total_field_w: int = 240) -> Dict[str, Dict[str, int]]:
+        centre_y = screen_h // 2 - 40
+        field_height = 26  # lineHeight 24 + 2
+        button_y = centre_y + (field_height - cls.TOUCH_BUTTON_SIZE) // 2
+        offset_x = (screen_w - total_field_w) // 2
+        minus_rect = {
+            "x": offset_x - cls.TOUCH_BUTTON_GAP - cls.TOUCH_BUTTON_SIZE,
+            "y": button_y,
+            "w": cls.TOUCH_BUTTON_SIZE,
+            "h": cls.TOUCH_BUTTON_SIZE,
         }
-
-    def write_time(self, year: int, month: int, day: int, weekday: int, hour: int, minute: int, second: int) -> None:
-        """Simulates writing new time to the chip, automatically clearing the VL flag."""
-        regs = self.serialize_bm8563_registers(year, month, day, weekday, hour, minute, second, vl=False)
-        for i, val in enumerate(regs):
-            self.registers[self.REG_SEC + i] = val
-
-    def read_time(self) -> Dict[str, Any]:
-        """Reads 7 time registers from simulated hardware."""
-        raw_7 = self.registers[self.REG_SEC : self.REG_SEC + 7]
-        return self.parse_bm8563_registers(raw_7)
-
-    def trigger_power_loss(self) -> None:
-        """Simulates battery backup discharge / cold start setting VL bit."""
-        self.registers[self.REG_SEC] |= self.VL_FLAG
-
-
-# Backwards compatibility alias
-HardwareRtcModel = BM8563RtcModel
-
-
-class CW2017FuelGaugeModel:
-    """
-    Authoritative Hardware Simulation Model for CellWise CW2017 Fuel Gauge IC.
-    Physical hardware ground truth:
-    - I2C Address: 0x63 (shared bus SDA 39 / SCL 38 @ 400kHz).
-    - Registers:
-      0x00: REG_VERSION (0xA0 during power-on/reset; 0x0D/0x0F when running)
-      0x02: REG_VCELL_H (upper 6 bits of 14-bit cell voltage)
-      0x03: REG_VCELL_L (lower 8 bits of 14-bit cell voltage)
-      0x04: REG_SOC     (integer state-of-charge percentage, 0..100)
-      0x05: REG_SOC_DEC (fractional percentage, 1/256th)
-      0x08: REG_MODE    (0x00=Normal, 0x30=Restart, 0xF0=Default reset)
-      0x0B: REG_SOC_ALERT (bit 7 = 0x80 profile update flag)
-      0x10..0x5F: REG_BATINFO (80-byte profile resident in SRAM)
-    - Thresholds:
-      Critical battery voltage: < 3400 mV (HalPowerManager: 2000 < mv < 3400)
-      Flash write safety threshold: >= 3200 mV (below 3200 mV brownout abort)
-    """
-    I2C_ADDR: int = 0x63
-
-    REG_VERSION: int = 0x00
-    REG_VCELL_H: int = 0x02
-    REG_VCELL_L: int = 0x03
-    REG_SOC: int = 0x04
-    REG_SOC_DEC: int = 0x05
-    REG_MODE: int = 0x08
-    REG_SOC_ALERT: int = 0x0B
-    REG_BATINFO: int = 0x10
-
-    MODE_NORMAL: int = 0x00
-    MODE_RESTART: int = 0x30
-    MODE_DEFAULT: int = 0xF0
-    UPDATE_FLAG: int = 0x80
-
-    VERSION_STARTING: int = 0xA0
-    VERSION_RUNNING: int = 0x0D
-
-    CRITICAL_BATTERY_THRESHOLD_MV: int = 3400
-    MIN_OPERATING_VOLTAGE_MV: int = 2000
-    FLASH_WRITE_SAFE_VOLTAGE_MV: int = 3200
-
-    OEM_BATINFO_PROFILE: List[int] = [
-        0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA, 0xBF, 0xB5, 0xB4, 0xA4, 0x9C, 0xEB, 0xE2,
-        0xDF, 0xE5, 0xCA, 0xA0, 0x8A, 0x62, 0x53, 0x48, 0x40, 0x3A, 0x32, 0xB1, 0xAE, 0xDA, 0xB5, 0xFF,
-        0xFF, 0xFF, 0xE8, 0xDB, 0xD9, 0xD6, 0xD4, 0xD2, 0xD0, 0xCB, 0xC3, 0xBC, 0x9E, 0x87, 0x7B, 0x71,
-        0x72, 0x7C, 0x8C, 0xA3, 0xB7, 0xC8, 0xA5, 0x4F, 0x00, 0x00, 0xAB, 0x02, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23,
-    ]
-
-    def __init__(self, initial_soc: int = 85, initial_mv: int = 3850, profile_loaded: bool = True) -> None:
-        self.registers: Dict[int, int] = {}
-        for r in range(0x60):
-            self.registers[r] = 0x00
-
-        self.registers[self.REG_MODE] = self.MODE_NORMAL
-        self.registers[self.REG_VERSION] = self.VERSION_RUNNING if profile_loaded else self.VERSION_STARTING
-        self.registers[self.REG_SOC_ALERT] = self.UPDATE_FLAG if profile_loaded else 0x00
-
-        if profile_loaded:
-            for idx, val in enumerate(self.OEM_BATINFO_PROFILE):
-                self.registers[self.REG_BATINFO + idx] = val
-
-        self.set_voltage_mv(initial_mv)
-        self.set_soc(initial_soc if profile_loaded else 0)
-
-    @classmethod
-    def verify_address(cls, addr: int) -> bool:
-        """Verifies if the given I2C address is the valid CW2017 address (0x63)."""
-        return addr == cls.I2C_ADDR
-
-    @staticmethod
-    def raw14_to_mv(raw14: int) -> int:
-        """Converts raw 14-bit VCELL reading to millivolts via OEM formula ((raw14 * 5 + 8) >> 4)."""
-        return (raw14 * 5 + 8) >> 4
-
-    @staticmethod
-    def mv_to_raw14(mv: int) -> int:
-        """Converts millivolts to 14-bit VCELL register representation."""
-        return max(0, min(0x3FFF, ((mv << 4) - 8 + 2) // 5))
-
-    @classmethod
-    def is_battery_critical(cls, mv: int) -> bool:
-        """Matches HalPowerManager::isBatteryCritical(): mv > 2000 && mv < 3400."""
-        return cls.MIN_OPERATING_VOLTAGE_MV < mv < cls.CRITICAL_BATTERY_THRESHOLD_MV
-
-    @classmethod
-    def is_voltage_safe_for_write(cls, mv: int) -> bool:
-        """Matches ZeroBrickRiskModel / HalStorage: safe only when >= 3200 mV."""
-        return mv >= cls.FLASH_WRITE_SAFE_VOLTAGE_MV
-
-    def set_voltage_mv(self, mv: int) -> None:
-        raw14 = self.mv_to_raw14(mv)
-        self.registers[self.REG_VCELL_H] = (raw14 >> 8) & 0x3F
-        self.registers[self.REG_VCELL_L] = raw14 & 0xFF
-
-    def get_voltage_mv(self) -> int:
-        hi = self.registers.get(self.REG_VCELL_H, 0)
-        lo = self.registers.get(self.REG_VCELL_L, 0)
-        raw14 = ((hi & 0x3F) << 8) | lo
-        return self.raw14_to_mv(raw14)
-
-    def set_soc(self, soc: int) -> None:
-        self.registers[self.REG_SOC] = max(0, min(100, soc))
-
-    def get_soc(self) -> int:
-        # If profile not loaded or version not running, CW2017 reports 0%
-        if not self.is_profile_valid() or (self.registers.get(self.REG_VERSION, 0) & 0xFD) != 0x0D:
-            return 0
-        return self.registers.get(self.REG_SOC, 0)
-
-    def is_profile_valid(self) -> bool:
-        if (self.registers.get(self.REG_SOC_ALERT, 0) & self.UPDATE_FLAG) == 0:
-            return False
-        for idx, val in enumerate(self.OEM_BATINFO_PROFILE):
-            if self.registers.get(self.REG_BATINFO + idx, 0) != val:
-                return False
-        return True
-
-    def simulate_soft_reset(self) -> bool:
-        """Simulates cw2017Reset(): MODE 0xF0 -> 0x30 -> 0x00."""
-        self.registers[self.REG_MODE] = self.MODE_DEFAULT
-        self.registers[self.REG_MODE] = self.MODE_RESTART
-        self.registers[self.REG_MODE] = self.MODE_NORMAL
-        self.registers[self.REG_VERSION] = self.VERSION_RUNNING
-        return True
-
-
-class GT911TouchModel:
-    """
-    Authoritative Hardware Simulation Model for Goodix GT911 Capacitive Touch Controller.
-    Physical hardware ground truth:
-    - I2C Address: 0x5D on shared I2C bus (SDA 39 / SCL 38 @ 400kHz).
-    - Status Register: 0x814E
-      bit 7 (0x80): Buffer ready / data valid.
-      bit 4 (0x10): Capacitive Home key pressed.
-      bits 3:0 (0x0F): Active touch points count (0..5).
-    - Coordinates: Contiguous records starting at 0x814F / 0x8150:
-      Each point record: [track_id, x_lo, x_hi, y_lo, y_hi, size_lo, size_hi, reserved]
-    - Status clearing: Driver must write 0x00 to 0x814E after reading each frame.
-    - I2C Bus Glitch Recovery: Upon 5 consecutive communication failures:
-      1. 9 SCL bus-clear clock pulses.
-      2. Valid I2C STOP condition.
-      3. Wire peripheral re-init.
-      4. Hardware reset (RST low 10ms, high 10ms).
-    """
-    I2C_ADDR: int = 0x5D
-    ALT_I2C_ADDR: int = 0x14
-
-    REG_STATUS: int = 0x814E
-    REG_POINTS_START: int = 0x814F
-    REG_POINTS_RECORD_BASE: int = 0x8150
-
-    STATUS_BUFFER_READY: int = 0x80
-    STATUS_HOME_KEY: int = 0x10
-    STATUS_COUNT_MASK: int = 0x0F
-
-    MAX_POINTS: int = 5
-    POINT_RECORD_SIZE: int = 8
-
-    CONSECUTIVE_FAILURES_THRESHOLD: int = 5
-    BUS_CLEAR_PULSES: int = 9
-    RST_PULSE_LOW_MS: int = 10
-    RST_PULSE_HIGH_MS: int = 10
-
-    PANEL_WIDTH: int = 800
-    PANEL_HEIGHT: int = 480
-
-    def __init__(self) -> None:
-        self.status: int = 0x00
-        self.points: List[Dict[str, int]] = []
-        self.home_key_pressed: bool = False
-        self.consecutive_failures: int = 0
-        self.bus_jammed: bool = False
-        self.last_recovery_log: List[str] = []
-
-    @classmethod
-    def verify_address(cls, addr: int) -> bool:
-        """Verifies if the given I2C address is the valid GT911 address (0x5D)."""
-        return addr == cls.I2C_ADDR
-
-    def set_touch(self, contacts: List[Tuple[int, int]], home_key: bool = False) -> None:
-        """Injects touch contacts (up to 5) and Home key state into controller buffer."""
-        self.home_key_pressed = home_key
-        self.points = []
-        num_contacts = min(len(contacts), self.MAX_POINTS)
-        for i in range(num_contacts):
-            x, y = contacts[i]
-            clamped_x = max(0, min(self.PANEL_WIDTH - 1, x))
-            clamped_y = max(0, min(self.PANEL_HEIGHT - 1, y))
-            self.points.append({
-                "id": i,
-                "x": clamped_x,
-                "y": clamped_y,
-                "size": 30,
-            })
-
-        self.status = self.STATUS_BUFFER_READY | (num_contacts & self.STATUS_COUNT_MASK)
-        if home_key:
-            self.status |= self.STATUS_HOME_KEY
-
-    def read_frame(self) -> Dict[str, Any]:
-        """Simulates driver reading status register and point records over I2C."""
-        if self.bus_jammed:
-            self.consecutive_failures += 1
-            recovery_result = self.check_recovery()
-            return {
-                "success": False,
-                "error": "I2C bus NACK / line held low",
-                "consecutive_failures": self.consecutive_failures,
-                "recovery": recovery_result,
-            }
-
-        self.consecutive_failures = 0
-        return {
-            "success": True,
-            "status_reg": self.status,
-            "buffer_ready": bool(self.status & self.STATUS_BUFFER_READY),
-            "home_key": bool(self.status & self.STATUS_HOME_KEY),
-            "point_count": self.status & self.STATUS_COUNT_MASK,
-            "points": list(self.points),
+        plus_rect = {
+            "x": offset_x + total_field_w + cls.TOUCH_BUTTON_GAP,
+            "y": button_y,
+            "w": cls.TOUCH_BUTTON_SIZE,
+            "h": cls.TOUCH_BUTTON_SIZE,
         }
+        return {"minus": minus_rect, "plus": plus_rect}
 
-    def clear_status(self) -> None:
-        """Simulates driver clearing status register 0x814E."""
-        self.status = 0x00
-        self.points = []
+    @classmethod
+    def test_single_tap(cls, press_x: int, press_y: int,
+                        release_x: int, release_y: int,
+                        button_rect: Dict[str, int]) -> bool:
+        """
+        Simulates InputTouch | InputRelease routing.
+        Returns True if the step action is dispatched.
+        Dispatches if:
+        a) release_x, release_y falls inside button_rect (standard tap release).
+        b) press_x, press_y fell inside button_rect and release_x == -1 (finger roll drift fallback).
+        """
+        bx, by, bw, bh = button_rect["x"], button_rect["y"], button_rect["w"], button_rect["h"]
+        pressed_on_btn = (bx <= press_x < bx + bw) and (by <= press_y < by + bh)
+        released_on_btn = (bx <= release_x < bx + bw) and (by <= release_y < by + bh)
 
-    def jam_bus(self) -> None:
-        """Simulates an I2C bus stall (SDA line held low)."""
-        self.bus_jammed = True
+        if released_on_btn:
+            return True
+        if pressed_on_btn and (release_x == -1 or release_y == -1):
+            return True
+        return False
 
-    def check_recovery(self) -> Dict[str, Any]:
-        """Evaluates whether consecutive failures trigger the hardware bus-clear + RST recovery sequence."""
-        if self.consecutive_failures >= self.CONSECUTIVE_FAILURES_THRESHOLD:
-            self.last_recovery_log = [
-                f"Generated {self.BUS_CLEAR_PULSES} SCL clock pulses",
-                "Sent I2C STOP condition",
-                "Re-initialized Wire peripheral (400kHz)",
-                f"Pulsed hardware RST pin (LOW {self.RST_PULSE_LOW_MS}ms, HIGH {self.RST_PULSE_HIGH_MS}ms)",
-            ]
-            self.bus_jammed = False
-            self.consecutive_failures = 0
-            self.status = 0x00
-            self.points = []
-            return {
-                "triggered": True,
-                "pulses": self.BUS_CLEAR_PULSES,
-                "rst_low_ms": self.RST_PULSE_LOW_MS,
-                "bus_restored": True,
-            }
-        return {"triggered": False, "consecutive_failures": self.consecutive_failures}
-
-
-class SSD1677DisplayModel:
-    """
-    Authoritative Hardware Simulation Model for Solomon Systech SSD1677 Active Matrix EPD Controller.
-    Physical hardware ground truth:
-    - Interface: 4-wire SPI (MOSI 11, SCLK 12, CS 13, DC 14, RST 15, BUSY 16 @ 20MHz).
-    - Resolution: 800 x 480 (800 columns x 480 gate lines).
-      Row bytes = 800 // 8 = 100 bytes. Buffer size = 48,000 bytes.
-    - Polarity: 1 = White, 0 = Black. Active-HIGH BUSY.
-    - Dual RAM:
-      BW RAM: 0x24 (Write), 0x46 (Auto-write) -> holds incoming new frame.
-      RED RAM: 0x26 (Write), 0x47 (Auto-write) -> holds previous frame baseline.
-    - Update Sequences (CMD 0x22 Display Update Control 2):
-      FULL Refresh:
-        CTRL1 = 0x40 (CTRL1_BYPASS_RED)
-        CTRL2 = 0xF7 (All phases enabled, OTP full waveform, ~1800 ms)
-        Border = 0xC0 or 0x01
-      FAST / PARTIAL Refresh:
-        CTRL1 = 0x00 (CTRL1_NORMAL, differential)
-        CTRL2 = 0xFC (or 0x1C incremental DU, ~500 ms / ~77 ms)
-        Border = 0xC0 or 0x80
-      HALF Refresh:
-        CTRL1 = 0x40
-        CMD 0x1A = 0x5A
-        CTRL2 = 0xD7
-      Master Activation: CMD 0x20 triggers display update execution.
-    """
-    WIDTH: int = 800
-    HEIGHT: int = 480
-    BYTES_PER_ROW: int = 100
-    FRAMEBUFFER_SIZE: int = 48000
-
-    CMD_DEEP_SLEEP: int = 0x10
-    CMD_DATA_ENTRY_MODE: int = 0x11
-    CMD_SOFT_RESET: int = 0x12
-    CMD_TEMP_SENSOR_CONTROL: int = 0x18
-    CMD_WRITE_TEMP: int = 0x1A
-    CMD_MASTER_ACTIVATION: int = 0x20
-    CMD_DISPLAY_UPDATE_CTRL1: int = 0x21
-    CMD_DISPLAY_UPDATE_CTRL2: int = 0x22
-    CMD_WRITE_RAM_BW: int = 0x24
-    CMD_WRITE_RAM_RED: int = 0x26
-    CMD_BORDER_WAVEFORM: int = 0x3C
-    CMD_SET_RAM_X_RANGE: int = 0x44
-    CMD_SET_RAM_Y_RANGE: int = 0x45
-    CMD_AUTO_WRITE_BW_RAM: int = 0x46
-    CMD_AUTO_WRITE_RED_RAM: int = 0x47
-    CMD_SET_RAM_X_COUNTER: int = 0x4E
-    CMD_SET_RAM_Y_COUNTER: int = 0x4F
-
-    CTRL1_NORMAL: int = 0x00
-    CTRL1_BYPASS_RED: int = 0x40
-
-    SEQ_FULL: int = 0xF7
-    SEQ_FAST_PARTIAL: int = 0xFC
-    SEQ_FAST_INCREMENTAL: int = 0x1C
-    SEQ_HALF: int = 0xD7
-
-    DURATION_FULL_MS: int = 1800
-    DURATION_PARTIAL_MS: int = 500
-    DURATION_FAST_INCREMENTAL_MS: int = 77
-
-    def __init__(self) -> None:
-        self.bw_ram: bytearray = bytearray([0xFF] * self.FRAMEBUFFER_SIZE)
-        self.red_ram: bytearray = bytearray([0xFF] * self.FRAMEBUFFER_SIZE)
-        self.visible_panel: bytearray = bytearray([0xFF] * self.FRAMEBUFFER_SIZE)
-
-        self.ctrl1: int = self.CTRL1_NORMAL
-        self.ctrl2: int = 0x00
-        self.border_waveform: int = 0x80
-        self.temp_deg_c: int = 25
-        self.is_sleeping: bool = False
-        self.is_busy: bool = False
-        self.last_refresh_type: Optional[str] = None
-        self.last_refresh_duration_ms: int = 0
-        self.refresh_count_full: int = 0
-        self.refresh_count_partial: int = 0
-
-    def write_bw_ram(self, data: bytes | bytearray) -> None:
-        """Writes data into BW RAM (0x24)."""
-        limit = min(len(data), self.FRAMEBUFFER_SIZE)
-        self.bw_ram[:limit] = data[:limit]
-
-    def write_red_ram(self, data: bytes | bytearray) -> None:
-        """Writes data into RED/previous RAM (0x26)."""
-        limit = min(len(data), self.FRAMEBUFFER_SIZE)
-        self.red_ram[:limit] = data[:limit]
-
-    def send_command(self, cmd: int, data: Optional[List[int]] = None) -> None:
-        """Simulates SPI command + data write."""
-        if cmd == self.CMD_SOFT_RESET:
-            self.bw_ram = bytearray([0xFF] * self.FRAMEBUFFER_SIZE)
-            self.red_ram = bytearray([0xFF] * self.FRAMEBUFFER_SIZE)
-            self.is_sleeping = False
-        elif cmd == self.CMD_DISPLAY_UPDATE_CTRL1:
-            if data:
-                self.ctrl1 = data[0]
-        elif cmd == self.CMD_DISPLAY_UPDATE_CTRL2:
-            if data:
-                self.ctrl2 = data[0]
-        elif cmd == self.CMD_BORDER_WAVEFORM:
-            if data:
-                self.border_waveform = data[0]
-        elif cmd == self.CMD_WRITE_TEMP:
-            if data:
-                self.temp_deg_c = data[0]
-        elif cmd == self.CMD_DEEP_SLEEP:
-            self.is_sleeping = True
-        elif cmd == self.CMD_MASTER_ACTIVATION:
-            self.execute_master_activation()
-
-    def execute_master_activation(self) -> Dict[str, Any]:
-        """Executes display refresh update sequence according to CTRL1 and CTRL2."""
-        if self.ctrl2 in (self.SEQ_FULL,):
-            refresh_type = "FULL"
-            duration = self.DURATION_FULL_MS
-            self.refresh_count_full += 1
-            self.visible_panel[:] = self.bw_ram[:]
-            self.red_ram[:] = self.bw_ram[:]
-        elif self.ctrl2 in (self.SEQ_FAST_PARTIAL, self.SEQ_FAST_INCREMENTAL, 0xFF):
-            refresh_type = "PARTIAL"
-            duration = (
-                self.DURATION_FAST_INCREMENTAL_MS
-                if self.ctrl2 == self.SEQ_FAST_INCREMENTAL
-                else self.DURATION_PARTIAL_MS
-            )
-            self.refresh_count_partial += 1
-            for i in range(self.FRAMEBUFFER_SIZE):
-                self.visible_panel[i] = self.bw_ram[i]
-            self.red_ram[:] = self.bw_ram[:]
-        elif self.ctrl2 == self.SEQ_HALF:
-            refresh_type = "HALF"
-            duration = 900
-            self.visible_panel[:] = self.bw_ram[:]
-            self.red_ram[:] = self.bw_ram[:]
-        else:
-            refresh_type = "UNKNOWN"
-            duration = 100
-
-        self.last_refresh_type = refresh_type
-        self.last_refresh_duration_ms = duration
-        return {
-            "refresh_type": refresh_type,
-            "ctrl1": self.ctrl1,
-            "ctrl2": self.ctrl2,
-            "duration_ms": duration,
-            "is_screen_on": (self.ctrl2 & 0x03) == 0,
-        }
+    @classmethod
+    def clamp_offset(cls, sign: int, hours: int, quarter: int) -> Tuple[int, int, int]:
+        max_h = cls.MAX_NEG_HOURS if sign == 1 else cls.MAX_POS_HOURS
+        hours = min(hours, max_h)
+        if hours == max_h and quarter != 0:
+            quarter = 0
+        return sign, hours, quarter
 
 
 # ==============================================================================
-# 36. R4: HIGH-FIDELITY IN-BOOK IMAGE ENGINE OVERHAUL
+# 29. VIRTUAL KEYBOARD 5-ROW MODEL (BookPoint v2.2.4 R1)
 # ==============================================================================
 
-class HighFidelityImageEngineModel:
+class VirtualKeyboard5RowModel:
     """
-    R4 Contract: High-Fidelity In-Book Image Engine Overhaul.
-    - 64-level 8x8 Bayer dithering matrix for smooth gradients without checkerboards.
-    - Calibrated perceptual Gamma 1.8 expansion LUT (256 entries).
-    - Clean White Bleaching (gray >= 242 -> Level 3 / White).
-    - Clean Black Bleaching (gray <= 10 -> Level 0 / Black).
-    - Symmetric 4-level quantization thresholds around [43, 128, 213].
-    - PSRAM Multi-Slot Cache Pool (MAX_PXC_SLOTS = 4) avoiding DRAM exhaustion and SD thrashing.
-    - HTML width/height attribute parsing for inline images.
+    R1 Contract: Virtual Keyboard 5-Row Layout, Language Switch & Default InputType.
+    Models the FreeInkUI 5-row virtual keyboard component.
+    Verifies:
+    1. Default layout selection:
+       - InputType::Password (Wi-Fi password entry) -> QwertyEn
+       - InputType::Url -> QwertyEn
+       - InputType::Text with RU locale -> CyrillicRu
+    2. Bottom row LANG_ROW4 layout geometry:
+       - ?123 Mode key: 2 units
+       - Lang (RU/EN toggle) key: 2 units (expanded from 1 unit, physical target >= 56px)
+       - Space bar: 4 units (reduced from 5 units)
+       - OK key: 2 units
+       - Total units: 10 units
+    3. Physical dimensions on portrait (480x800) and landscape (800x480):
+       - Portrait: unitW = 44px -> Lang key = 88px (>= 56px)
+       - Landscape: unitW = 74px -> Lang key = 148px (>= 56px)
+    4. Hit arbitration between Lang key (-4) and Space bar (32):
+       - Taps on the border or in overlapping slop areas are resolved with Lang having priority.
     """
-    MAX_PXC_SLOTS: int = 4
-    WHITE_BLEACH_THRESHOLD: int = 242
-    BLACK_BLEACH_THRESHOLD: int = 10
-    QUANT_THRESHOLDS: Tuple[int, int, int] = (43, 128, 213)
+    QWERTY_KEY_MODE: int = -2
+    QWERTY_KEY_LANG: int = -4
+    QWERTY_KEY_SPACE: int = 32
+    QWERTY_KEY_ENTER: int = 13
 
-    BAYER_8X8: List[List[int]] = [
-        [ 0, 32,  8, 40,  2, 34, 10, 42],
-        [48, 16, 56, 24, 50, 18, 58, 26],
-        [12, 44,  4, 36, 14, 46,  6, 38],
-        [60, 28, 52, 20, 62, 30, 54, 22],
-        [ 3, 35, 11, 43,  1, 33,  9, 41],
-        [51, 19, 59, 27, 49, 17, 57, 25],
-        [15, 47,  7, 39, 13, 45,  5, 37],
-        [63, 31, 55, 23, 61, 29, 53, 21]
-    ]
+    ROW4_UNITS: Dict[str, int] = {
+        "MODE": 2,
+        "LANG": 2,
+        "SPACE": 4,
+        "OK": 2,
+    }
 
-    EINK_GAMMA_TABLE: List[int] = [
-          0,  12,  17,  22,  25,  29,  32,  35,  37,  40,  42,  44,  47,  49,  51,  53,
-         55,  57,  58,  60,  62,  64,  65,  67,  69,  70,  72,  73,  75,  76,  78,  79,
-         80,  82,  83,  85,  86,  87,  89,  90,  91,  92,  94,  95,  96,  97,  98, 100,
-        101, 102, 103, 104, 105, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
-        118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133,
-        134, 135, 136, 137, 138, 139, 139, 140, 141, 142, 143, 144, 145, 146, 146, 147,
-        148, 149, 150, 151, 152, 152, 153, 154, 155, 156, 157, 157, 158, 159, 160, 161,
-        161, 162, 163, 164, 165, 165, 166, 167, 168, 169, 169, 170, 171, 172, 172, 173,
-        174, 175, 175, 176, 177, 178, 178, 179, 180, 181, 181, 182, 183, 183, 184, 185,
-        186, 186, 187, 188, 188, 189, 190, 191, 191, 192, 193, 193, 194, 195, 195, 196,
-        197, 198, 198, 199, 200, 200, 201, 202, 202, 203, 204, 204, 205, 206, 206, 207,
-        208, 208, 209, 209, 210, 211, 211, 212, 213, 213, 214, 215, 215, 216, 217, 217,
-        218, 218, 219, 220, 220, 221, 222, 222, 223, 223, 224, 225, 225, 226, 226, 227,
-        228, 228, 229, 230, 230, 231, 231, 232, 233, 233, 234, 234, 235, 236, 236, 237,
-        237, 238, 238, 239, 240, 240, 241, 241, 242, 243, 243, 244, 244, 245, 245, 246,
-        247, 247, 248, 248, 249, 249, 250, 251, 251, 252, 252, 253, 253, 254, 254, 255,
+    @classmethod
+    def resolve_default_layout(cls, input_type: str, locale: str) -> str:
+        if input_type in ("Password", "Url"):
+            return "QwertyEn"
+        if locale == "RU":
+            return "CyrillicRu"
+        if locale == "UK":
+            return "CyrillicUk"
+        if locale == "BE":
+            return "CyrillicBe"
+        if locale == "KK":
+            return "CyrillicKk"
+        return "QwertyEn"
+
+    @classmethod
+    def compute_bottom_row_geometry(cls, screen_w: int, margin_pct: float = 0.94) -> Dict[str, Dict[str, int]]:
+        kb_w = int(screen_w * margin_pct)
+        gap = 3
+        total_units = sum(cls.ROW4_UNITS.values())  # 10
+        unit_w = (kb_w - gap * 3) // total_units
+
+        start_x = (screen_w - kb_w) // 2
+        x = start_x
+
+        keys = {}
+        for name, units in cls.ROW4_UNITS.items():
+            w = unit_w * units
+            keys[name] = {"x": x, "w": w, "units": units}
+            x += w + gap
+        return keys
+
+    @classmethod
+    def arbitrate_touch(cls, tap_x: int, tap_y: int,
+                        lang_rect: Dict[str, int], space_rect: Dict[str, int]) -> int:
+        """
+        Hit-testing arbitration on boundary taps between Lang and Space.
+        Returns QWERTY_KEY_LANG or QWERTY_KEY_SPACE.
+        """
+        lx, lw = lang_rect["x"], lang_rect["w"]
+        sx, sw = space_rect["x"], space_rect["w"]
+
+        in_lang = (lx <= tap_x <= lx + lw)
+        in_space = (sx <= tap_x <= sx + sw)
+
+        if in_lang:
+            return cls.QWERTY_KEY_LANG
+        if in_space:
+            return cls.QWERTY_KEY_SPACE
+        return 0
+
+
+# ==============================================================================
+# 30. SLIDER DIALOG & TOUCH DRAG MODEL (BookPoint v2.2.4 R1)
+# ==============================================================================
+
+class SliderDialogModel:
+    """
+    R1 Contract: UiSliderDialog Dead Zone Elimination & Continuous Drag Navigation.
+    Models the UiSliderDialog component (EpubReaderPercentSelectionActivity, FrontlightPanelActivity).
+    Verifies:
+    1. Zero dead zone: step buttons '-' and '+' abut the slider track directly with 0px gap
+       (eliminating the legacy 8px theme.spaceSm dead zone).
+    2. Slider track percentage calculation from horizontal tap/drag position.
+    3. Continuous touch drag tracking via isScreenTouchHeld without requiring physical buttons.
+    4. Clamping to [0..100%] and discrete fine steps (+/-1% in dialog, +/-10% in curtain).
+    """
+    ROW_HEIGHT: int = 44
+
+    @classmethod
+    def compute_layout(cls, row_x: int, row_w: int, row_h: int = 44) -> Dict[str, Any]:
+        step_w = row_h  # 44px
+        minus_hit = {"x": row_x, "w": step_w, "h": row_h}
+        plus_hit = {"x": row_x + row_w - step_w, "w": step_w, "h": row_h}
+        track_hit = {"x": row_x + step_w, "w": row_w - 2 * step_w, "h": row_h}
+        return {
+            "minus": minus_hit,
+            "track": track_hit,
+            "plus": plus_hit,
+            "dead_zone_left_px": track_hit["x"] - (minus_hit["x"] + minus_hit["w"]),
+            "dead_zone_right_px": plus_hit["x"] - (track_hit["x"] + track_hit["w"]),
+        }
+
+    @classmethod
+    def classify_touch(cls, tap_x: int, layout: Dict[str, Any]) -> Dict[str, Any]:
+        m = layout["minus"]
+        p = layout["plus"]
+        t = layout["track"]
+
+        if m["x"] <= tap_x < m["x"] + m["w"]:
+            return {"action": "STEP_MINUS", "delta": -1}
+        if p["x"] <= tap_x <= p["x"] + p["w"]:
+            return {"action": "STEP_PLUS", "delta": +1}
+        if t["x"] <= tap_x < t["x"] + t["w"]:
+            frac = (tap_x - t["x"]) / float(t["w"]) if t["w"] > 0 else 0.0
+            percent = int(round(max(0.0, min(1.0, frac)) * 100))
+            return {"action": "SEEK", "percent": percent}
+        return {"action": "OUT_OF_BOUNDS"}
+
+    @classmethod
+    def simulate_continuous_drag(cls, start_x: int, end_x: int, steps: int,
+                                 layout: Dict[str, Any]) -> List[int]:
+        """Simulates continuous touch dragging across the track, returning visited percentages."""
+        percents = []
+        for step in range(steps + 1):
+            cur_x = start_x + int((end_x - start_x) * (step / float(steps)))
+            res = cls.classify_touch(cur_x, layout)
+            if res["action"] == "SEEK":
+                percents.append(res["percent"])
+        return percents
+
+
+# ==============================================================================
+# 31. PERCEPTUAL FRONTLIGHT MODEL (BookPoint v2.2.4 M3 / CrossDiTo)
+# ==============================================================================
+
+class PerceptualFrontlightModel:
+    """
+    M3 Contract: 10-bit Logarithmic/Perceptual Frontlight PWM Curve & Dual-CCT Clamping.
+    Models FrontlightManager on 10-bit PWM (0..1023):
+    1. Minimum duty at 1% setting is >= 2 LSB (0.1955% >= 0.10% duty), ensuring pitch-black visibility.
+    2. Exact reproduction of 101-element perception gamma table with D_min >= 2 LSB.
+    3. Dual-CCT channel clamping: for 0 < warmPercent < 100, both warmDuty and coolDuty
+       are clamped to >= 1 LSB (when totalDuty >= 2), preventing either LED from extinguishing.
+    4. Strict total duty conservation: totalDuty == warmDuty + coolDuty across all (b, w) pairs.
+    5. Pure channels: warmth = 0% yields warmDuty = 0, coolDuty = totalDuty;
+                      warmth = 100% yields warmDuty = totalDuty, coolDuty = 0.
+    6. Monotonicity: for any fixed brightness > 0, warmDuty is non-decreasing with warmth,
+       and coolDuty is non-increasing with warmth.
+    """
+    PWM_RESOLUTION_BITS: int = 10
+    FULL_DUTY: int = 1023  # (1 << 10) - 1
+
+    GAMMA_TABLE = [
+        0, 32, 101, 197, 318, 460, 622, 803, 1001, 1217, 1449, 1697, 1960, 2237, 2529,
+        2835, 3155, 3488, 3834, 4193, 4565, 4949, 5345, 5753, 6173, 6604, 7047, 7502, 7967, 8444,
+        8931, 9429, 9938, 10457, 10987, 11527, 12077, 12638, 13208, 13789, 14379, 14979, 15588, 16208, 16836,
+        17474, 18122, 18779, 19445, 20120, 20804, 21497, 22200, 22911, 23631, 24360, 25097, 25843, 26598, 27362,
+        28134, 28914, 29703, 30500, 31306, 32120, 32942, 33772, 34611, 35457, 36312, 37175, 38045, 38924, 39811,
+        40705, 41608, 42518, 43436, 44361, 45295, 46236, 47185, 48141, 49105, 50076, 51055, 52042, 53036, 54037,
+        55046, 56062, 57086, 58117, 59155, 60200, 61253, 62313, 63380, 64454, 65535
     ]
 
     @classmethod
-    def apply_bayer_dither_4level(cls, gray: int, x: int, y: int) -> int:
-        """Emulates DitherUtils.h applyBayerDither4Level exactly."""
-        if gray >= cls.WHITE_BLEACH_THRESHOLD:
-            return 3
-        if gray <= cls.BLACK_BLEACH_THRESHOLD:
+    def perceptual_duty(cls, pct: int, full: int = 1023) -> int:
+        if pct <= 0:
             return 0
-        mapped_gray = cls.EINK_GAMMA_TABLE[gray]
-        bayer = cls.BAYER_8X8[y & 7][x & 7]
-        dither = ((bayer - 31) * 85) >> 6
-        adjusted = mapped_gray + dither
-        if adjusted < 0:
-            adjusted = 0
-        elif adjusted > 255:
-            adjusted = 255
-        if adjusted < cls.QUANT_THRESHOLDS[0]:
-            return 0
-        if adjusted < cls.QUANT_THRESHOLDS[1]:
-            return 1
-        if adjusted < cls.QUANT_THRESHOLDS[2]:
+        if pct > 100:
+            pct = 100
+        duty = (full * cls.GAMMA_TABLE[pct] + 32767) // 65535
+        if full >= 1023 and duty < 2:
             return 2
-        return 3
+        return duty if duty > 0 else 1
+
+    @classmethod
+    def calculate_cct(cls, brightness: int, warmth: int, full: int = 1023) -> Tuple[int, int, int]:
+        """Returns (totalDuty, coolDuty, warmDuty)."""
+        total = cls.perceptual_duty(brightness, full)
+        if total == 0:
+            return 0, 0, 0
+        if warmth <= 0:
+            return total, total, 0
+        if warmth >= 100:
+            return total, 0, total
+
+        warm = (total * warmth + 50) // 100
+        if total >= 2:
+            if warm < 1:
+                warm = 1
+            if warm >= total:
+                warm = total - 1
+        cool = total - warm
+        return total, cool, warm
+
+
+# ==============================================================================
+# 32. QUICK RETURN JUMP MODEL (BookPoint v2.2.4 M3 / CrossDiTo)
+# ==============================================================================
+
+class QuickReturnJumpModel:
+    """
+    M3 Contract: Reading Position Memory & Quick Return Jump.
+    Models departure origin tracking in EpubReaderActivity:
+    1. Records origin (spineIndex, pageNumber) before explicit jump actions:
+       - TOC chapter navigation
+       - Hyperlink and footnote jumps
+       - Scrubber slider seeks
+       - Go to percent navigation
+    2. Single-action return restores departure position and clears origin memory.
+    3. Normal sequential page turns (next/prev) do NOT overwrite the jump origin.
+    4. Has origin query can_quick_return().
+    """
+    def __init__(self):
+        self.current_spine: int = 0
+        self.current_page: int = 0
+        self.previous_position: Optional[Tuple[int, int]] = None
+
+    def record_jump_origin(self) -> None:
+        self.previous_position = (self.current_spine, self.current_page)
+
+    def jump_to(self, spine: int, page: int, record_origin: bool = True) -> None:
+        if record_origin:
+            self.record_jump_origin()
+        self.current_spine = spine
+        self.current_page = page
+
+    def page_turn(self, forward: bool) -> None:
+        """Sequential page turn within current chapter."""
+        if forward:
+            self.current_page += 1
+        else:
+            if self.current_page > 0:
+                self.current_page -= 1
+
+    def can_quick_return(self) -> bool:
+        return self.previous_position is not None
+
+    def quick_return(self) -> Optional[Tuple[int, int]]:
+        if self.previous_position is None:
+            return None
+        target = self.previous_position
+        self.previous_position = None
+        self.current_spine, self.current_page = target
+        return target
+
+    def reset_book(self, initial_spine: int = 0, initial_page: int = 0) -> None:
+        self.current_spine = initial_spine
+        self.current_page = initial_page
+        self.previous_position = None
+
+
+# ==============================================================================
+# 33. DISPLAY REVISION DETECTION MODEL (BookPoint v2.2.4 M3 / inkMOD 1.1.7)
+# ==============================================================================
+
+class DisplayRevisionDetectionModel:
+    """
+    M3 Contract: Safe Display Revision Auto-Detection & Booster Soft-Start Guarding.
+    Models SSD1677 vs UC8279 identification and power sequencing safety:
+    1. Evaluates half-duplex bit-banged SPI responses (VER 0x70, FLG 0x71).
+    2. Differentiates SSD1677 (no response / uniform 0xFF or 0x00) from UC8279 (driven FLG, LUT_VER 0x02/0x68/0x69).
+    3. Booster soft-start command (0x0C, {0xAE, 0xC7, 0xC3, 0xC0, 0x80}) must run ONLY on SSD1677.
+    4. Guards UC8279 from receiving 0x0C, preventing internal power register corruption,
+       coil whine, and display artifacts.
+    """
+    CMD_BOOSTER_SOFT_START: int = 0x0C
+    SSD1677_BOOSTER_BYTES: List[int] = [0xAE, 0xC7, 0xC3, 0xC0, 0x80]
+
+    CONTROLLER_SSD1677 = "SSD1677"
+    CONTROLLER_UC8279 = "UC8279"
+    CONTROLLER_UC8179 = "UC8179"
+    CONTROLLER_UC8253 = "UC8253"
+
+    @classmethod
+    def resolve_controller_from_probe(cls, flg: Optional[int], ver: List[int]) -> str:
+        if flg is None or ver is None or len(ver) < 3:
+            return cls.CONTROLLER_SSD1677
+
+        # Check if line is floating (uniform 0xFF or uniform 0x00)
+        if all(b == 0xFF for b in ver) or all(b == 0x00 for b in ver):
+            return cls.CONTROLLER_SSD1677
+
+        lut_ver = ver[2]
+        if lut_ver in (0x02, 0x68, 0x69):
+            return cls.CONTROLLER_UC8279
+        if lut_ver == 0x01:
+            return cls.CONTROLLER_UC8179
+        return cls.CONTROLLER_UC8179
+
+    @classmethod
+    def should_apply_booster_soft_start(cls, controller: str, is_x3: bool = False) -> bool:
+        """
+        Booster soft-start 0x0C belongs strictly to SSD1677 on X4.
+        Returns False for UC8279, UC8179, and any X3 panel.
+        """
+        if is_x3:
+            return False
+        return controller == cls.CONTROLLER_SSD1677
+
+
+# ==============================================================================
+# 34. READER TOUCH ZONES MODEL (BookPoint v2.2.4 M3 / inkMOD 1.1.7)
+# ==============================================================================
+
+class ReaderTouchZonesModel:
+    """
+    M3 Contract: Configurable Reader Touch Zones (3-Zone, 9-Zone, 2-Zone Handed).
+    Models touch page turn and menu invocation geometry across the 800x480 screen:
+    1. Layouts:
+       - TOUCH_LAYOUT_2_ZONE_HANDED (0): 75/25 handed split with center menu cutout.
+       - TOUCH_LAYOUT_3_ZONE (1): 3 columns (Left, Center 30-40%, Right).
+       - TOUCH_LAYOUT_9_ZONE (2): 3x3 grid (3 cols x 3 rows).
+    2. Configurable center menu zone width: 30%..40% (default 35%), margins (100 - W)/2.
+    3. Center vertical menu zone: 35%..65% height.
+    4. Full touch classification across all regions with zero dead zones.
+    5. Handedness (right/left) and inverted tap support.
+    """
+    LAYOUT_2_ZONE_HANDED = 0
+    LAYOUT_3_ZONE = 1
+    LAYOUT_9_ZONE = 2
+
+    @classmethod
+    def compute_menu_zone(cls, screen_w: int, screen_h: int,
+                           center_width_pct: int = 35) -> Dict[str, int]:
+        w_pct = max(30, min(40, center_width_pct))
+        side_pct = (100 - w_pct) / 2.0
+        x_start = int(screen_w * side_pct / 100.0)
+        x_end = int(screen_w * (side_pct + w_pct) / 100.0)
+        y_start = int(screen_h * 35 / 100)
+        y_end = int(screen_h * 65 / 100)
+        return {
+            "x_start": x_start,
+            "x_end": x_end,
+            "y_start": y_start,
+            "y_end": y_end,
+            "width_pct": w_pct,
+        }
+
+    @classmethod
+    def classify_tap(cls, x: int, y: int, screen_w: int, screen_h: int,
+                     layout: int = 1, center_width_pct: int = 35,
+                     is_left_handed: bool = False, inverted: bool = False,
+                     tap_for_menu: bool = True) -> str:
+        """
+        Classifies tap coordinate (x, y) into actions:
+        - 'MENU': Center menu or overlay activation
+        - 'PAGE_NEXT': Page forward
+        - 'PAGE_PREV': Page backward
+        """
+        mz = cls.compute_menu_zone(screen_w, screen_h, center_width_pct)
+
+        # Center menu exclusion check
+        in_menu_x = (mz["x_start"] <= x < mz["x_end"])
+        in_menu_y = (mz["y_start"] <= y < mz["y_end"])
+        if tap_for_menu and in_menu_x and in_menu_y:
+            return "MENU"
+
+        forward = False
+
+        if layout == cls.LAYOUT_3_ZONE:
+            # 3-Zone Layout: Left (< x_start), Center ([x_start, x_end)), Right (>= x_end)
+            if in_menu_x:
+                if tap_for_menu:
+                    return "MENU"
+            if not is_left_handed:
+                forward = (x >= mz["x_end"])
+            else:
+                forward = (x < mz["x_start"])
+
+        elif layout == cls.LAYOUT_9_ZONE:
+            # 9-Zone Layout: 3x3 grid
+            if in_menu_x:
+                if tap_for_menu:
+                    return "MENU"
+            if not is_left_handed:
+                forward = (x >= mz["x_end"])
+            else:
+                forward = (x < mz["x_start"])
+
+        else:
+            # 2-Zone Handed (75/25)
+            if not is_left_handed:
+                forward = (x >= screen_w // 4)
+            else:
+                forward = (x < screen_w * 3 // 4)
+
+        if inverted:
+            forward = not forward
+
+        return "PAGE_NEXT" if forward else "PAGE_PREV"
+
+
+
+
+
+

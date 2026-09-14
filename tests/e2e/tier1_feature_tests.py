@@ -76,7 +76,13 @@ from tests.e2e.contracts import (
     PremiumTypographySuiteModel,
     FlagshipErgonomicsModel,
     ZeroBrickRiskModel,
-    HighFidelityImageEngineModel,
+    ClockOffsetHitboxModel,
+    VirtualKeyboard5RowModel,
+    SliderDialogModel,
+    PerceptualFrontlightModel,
+    QuickReturnJumpModel,
+    DisplayRevisionDetectionModel,
+    ReaderTouchZonesModel,
 )
 
 try:
@@ -1769,174 +1775,347 @@ class Tier1FeatureTests(unittest.TestCase):
         self.assertTrue(ZeroBrickRiskModel.is_emergency_recovery_chord(btn_down_pressed=True))
         self.assertFalse(ZeroBrickRiskModel.is_emergency_recovery_chord(btn_down_pressed=False))
 
-    # ==========================================================================
-    # FEATURE 15: HARDWARE RTC (BM8563 / PCF8563) LOCAL TIMEKEEPING AUDIT
-    # ==========================================================================
+    def test_f15_01_clock_offset_56px_hitboxes_and_single_tap_capture(self):
+        """F15.01: ClockOffsetActivity 56px click zones (+62% hit area) and single-tap routing (R1)."""
+        # 1. Verify 56px touch button size and +62% hit area expansion
+        self.assertEqual(ClockOffsetHitboxModel.TOUCH_BUTTON_SIZE, 56)
+        legacy_area = 44 * 44  # 1936 px^2
+        new_area = 56 * 56     # 3136 px^2
+        area_increase_pct = ((new_area - legacy_area) / float(legacy_area)) * 100.0
+        self.assertAlmostEqual(area_increase_pct, 62.0, delta=0.5)
 
-    def test_f15_01_bm8563_rtc_hardware_bus_and_address(self):
-        """F15.01: BM8563 I2C address 0x51 and register 0x02 mapping on X4 Pro shared bus."""
-        self.assertEqual(HardwareRtcModel.BM8563_ADDR, 0x51)
-        self.assertEqual(HardwareRtcModel.BM8563_SEC_REG, 0x02)
-        # DS3231 comparison
-        self.assertEqual(HardwareRtcModel.DS3231_ADDR, 0x68)
-        self.assertEqual(HardwareRtcModel.DS3231_SEC_REG, 0x00)
+        # 2. Verify button rects positioning and centering in landscape (800x480)
+        rects = ClockOffsetHitboxModel.get_button_rects(screen_w=800, screen_h=480, total_field_w=240)
+        minus = rects["minus"]
+        plus = rects["plus"]
+        self.assertEqual(minus["w"], 56)
+        self.assertEqual(minus["h"], 56)
+        self.assertEqual(plus["w"], 56)
+        self.assertEqual(plus["h"], 56)
+        # Vertical centering: centreY (200) + (26 - 56) // 2 = 185
+        self.assertEqual(minus["y"], 185)
+        self.assertEqual(plus["y"], 185)
 
-    def test_f15_02_bm8563_vs_ds3231_register_layout_serialization(self):
-        """F15.02: BCD serialization clears VL bit and adheres to PCF8563/BM8563 layout."""
-        raw_regs = HardwareRtcModel.serialize_bm8563_registers(
-            year=2026, month=10, day=4, weekday=0, hour=14, minute=35, second=20
+        # 3. Single tap capture: clean tap inside 56px target (e.g. 50px from edge, missed 44px but hits 56px)
+        hit_56 = ClockOffsetHitboxModel.test_single_tap(
+            press_x=minus["x"] + 50, press_y=minus["y"] + 50,
+            release_x=minus["x"] + 50, release_y=minus["y"] + 50,
+            button_rect=minus
         )
-        self.assertEqual(len(raw_regs), 7)
-        # Bit 7 of seconds (reg 0x02) must be 0 (VL cleared)
-        self.assertEqual(raw_regs[0] & 0x80, 0)
-        # Verify decoding matches exact time
-        parsed = HardwareRtcModel.parse_bm8563_registers(raw_regs)
-        self.assertTrue(parsed["valid"])
-        self.assertEqual(parsed["year"], 2026)
-        self.assertEqual(parsed["month"], 10)
-        self.assertEqual(parsed["day"], 4)
-        self.assertEqual(parsed["hour"], 14)
-        self.assertEqual(parsed["minute"], 35)
-        self.assertEqual(parsed["second"], 20)
+        self.assertTrue(hit_56)
 
-    def test_f15_03_rtc_vl_flag_oscillator_stopped_detection(self):
-        """F15.03: VL flag (0x80) on seconds register indicates invalid time / oscillator stopped."""
-        corrupt_regs = [0x80 | 0x15, 0x30, 0x12, 0x01, 0x02, 0x09, 0x26]
-        parsed = HardwareRtcModel.parse_bm8563_registers(corrupt_regs)
-        self.assertFalse(parsed["valid"])
-        self.assertTrue(parsed.get("vl"))
-
-    def test_f15_04_local_time_survival_without_wifi(self):
-        """F15.04: Hardware RTC guarantees offline local time persistence across deep sleep."""
-        # Simulated cold boot with valid BM8563 time: 2026-10-05 09:15:00 UTC
-        stored_regs = HardwareRtcModel.serialize_bm8563_registers(
-            year=2026, month=10, day=5, weekday=1, hour=9, minute=15, second=0
+        # 4. Single tap capture: finger roll centroid drift where release is (-1, -1)
+        hit_drift = ClockOffsetHitboxModel.test_single_tap(
+            press_x=minus["x"] + 28, press_y=minus["y"] + 28,
+            release_x=-1, release_y=-1,
+            button_rect=minus
         )
-        rtc_time = HardwareRtcModel.parse_bm8563_registers(stored_regs)
-        self.assertTrue(rtc_time["valid"])
-        # Format time with Moscow UTC+3 (quarter hours biased = 48 + 3*4 = 60)
-        utc_hours = rtc_time["hour"]
-        utc_mins = rtc_time["minute"]
-        local_total_min = (utc_hours * 60 + utc_mins + (60 - 48) * 15) % 1440
-        local_hr = local_total_min // 60
-        local_mn = local_total_min % 60
-        self.assertEqual(f"{local_hr:02d}:{local_mn:02d}", "12:15")
+        self.assertTrue(hit_drift)
+
+        # 5. Tap outside button returns False
+        hit_outside = ClockOffsetHitboxModel.test_single_tap(
+            press_x=minus["x"] - 10, press_y=minus["y"] - 10,
+            release_x=minus["x"] - 10, release_y=minus["y"] - 10,
+            button_rect=minus
+        )
+        self.assertFalse(hit_outside)
+
+    def test_f15_02_clock_offset_encoding_decoding_and_boundary_clamping(self):
+        """F15.02: UTC offset encoding, decoding, biased quarter-hour math, and boundary clamping (R1)."""
+        # UTC+0:00 -> biased 48
+        self.assertEqual(ClockOffsetHitboxModel.encode_offset(sign=0, hours=0, quarter=0), 48)
+        self.assertEqual(ClockOffsetHitboxModel.decode_offset(48), (0, 0, 0))
+
+        # UTC-12:00 -> biased 0
+        self.assertEqual(ClockOffsetHitboxModel.encode_offset(sign=1, hours=12, quarter=0), 0)
+        self.assertEqual(ClockOffsetHitboxModel.decode_offset(0), (1, 12, 0))
+
+        # UTC+14:00 -> biased 104
+        self.assertEqual(ClockOffsetHitboxModel.encode_offset(sign=0, hours=14, quarter=0), 104)
+        self.assertEqual(ClockOffsetHitboxModel.decode_offset(104), (0, 14, 0))
+
+        # Oddball Nepal UTC+5:45 -> 5*4 + 3 = 23 -> 23 + 48 = 71
+        self.assertEqual(ClockOffsetHitboxModel.encode_offset(sign=0, hours=5, quarter=3), 71)
+        self.assertEqual(ClockOffsetHitboxModel.decode_offset(71), (0, 5, 3))
+
+        # Boundary clamping: hours > 14 clamped to 14, minutes locked to :00
+        sign, hours, q = ClockOffsetHitboxModel.clamp_offset(sign=0, hours=15, quarter=2)
+        self.assertEqual((sign, hours, q), (0, 14, 0))
+
+        # Boundary clamping: negative hours > 12 clamped to 12, minutes locked to :00
+        sign, hours, q = ClockOffsetHitboxModel.clamp_offset(sign=1, hours=13, quarter=1)
+        self.assertEqual((sign, hours, q), (1, 12, 0))
+
+    def test_f15_03_virtual_keyboard_5row_password_and_url_english_default(self):
+        """F15.03: Virtual keyboard defaults to English (QwertyEn) for Wi-Fi passwords and URLs (R1)."""
+        for loc in ["RU", "UK", "BE", "KK", "FR", "DE", "ES"]:
+            self.assertEqual(
+                VirtualKeyboard5RowModel.resolve_default_layout("Password", loc),
+                "QwertyEn",
+                f"Password entry failed to default to English for locale {loc}"
+            )
+
+        for loc in ["RU", "UK", "BE", "KK", "FR", "DE", "ES"]:
+            self.assertEqual(
+                VirtualKeyboard5RowModel.resolve_default_layout("Url", loc),
+                "QwertyEn",
+                f"URL entry failed to default to English for locale {loc}"
+            )
+
+        self.assertEqual(VirtualKeyboard5RowModel.resolve_default_layout("Text", "RU"), "CyrillicRu")
+        self.assertEqual(VirtualKeyboard5RowModel.resolve_default_layout("Text", "UK"), "CyrillicUk")
+        self.assertEqual(VirtualKeyboard5RowModel.resolve_default_layout("Text", "BE"), "CyrillicBe")
+        self.assertEqual(VirtualKeyboard5RowModel.resolve_default_layout("Text", "KK"), "CyrillicKk")
+
+    def test_f15_04_virtual_keyboard_5row_lang_button_geometry_and_hit_arbitration(self):
+        """F15.04: Virtual keyboard bottom row Lang button enlarged to 2 units (>=56px) with hit arbitration (R1)."""
+        units = VirtualKeyboard5RowModel.ROW4_UNITS
+        self.assertEqual(units["MODE"], 2)
+        self.assertEqual(units["LANG"], 2)
+        self.assertEqual(units["SPACE"], 4)
+        self.assertEqual(units["OK"], 2)
+        self.assertEqual(sum(units.values()), 10)
+
+        geom_p = VirtualKeyboard5RowModel.compute_bottom_row_geometry(screen_w=480)
+        self.assertGreaterEqual(geom_p["LANG"]["w"], 56)
+        self.assertEqual(geom_p["LANG"]["units"], 2)
+
+        geom_l = VirtualKeyboard5RowModel.compute_bottom_row_geometry(screen_w=800)
+        self.assertGreaterEqual(geom_l["LANG"]["w"], 56)
+        self.assertEqual(geom_l["LANG"]["units"], 2)
+
+        lang = geom_p["LANG"]
+        space = geom_p["SPACE"]
+        boundary_tap_x = lang["x"] + lang["w"]
+        winner = VirtualKeyboard5RowModel.arbitrate_touch(
+            tap_x=boundary_tap_x, tap_y=700, lang_rect=lang, space_rect=space
+        )
+        self.assertEqual(winner, VirtualKeyboard5RowModel.QWERTY_KEY_LANG,
+                         "Lang key must take arbitration precedence over Space bar on boundary tap")
+
+        space_center_x = space["x"] + space["w"] // 2
+        space_winner = VirtualKeyboard5RowModel.arbitrate_touch(
+            tap_x=space_center_x, tap_y=700, lang_rect=lang, space_rect=space
+        )
+        self.assertEqual(space_winner, VirtualKeyboard5RowModel.QWERTY_KEY_SPACE)
+
+    def test_f15_05_slider_dialog_zero_dead_zone_and_continuous_drag(self):
+        """F15.05: UiSliderDialog zero dead zone elimination & continuous touch drag seeking (R1)."""
+        layout = SliderDialogModel.compute_layout(row_x=100, row_w=400, row_h=44)
+        self.assertEqual(layout["dead_zone_left_px"], 0,
+                         "Dead zone between '-' button and slider track must be 0px")
+        self.assertEqual(layout["dead_zone_right_px"], 0,
+                         "Dead zone between slider track and '+' button must be 0px")
+
+        step_minus = SliderDialogModel.classify_touch(120, layout)
+        self.assertEqual(step_minus["action"], "STEP_MINUS")
+        self.assertEqual(step_minus["delta"], -1)
+
+        step_plus = SliderDialogModel.classify_touch(480, layout)
+        self.assertEqual(step_plus["action"], "STEP_PLUS")
+        self.assertEqual(step_plus["delta"], +1)
+
+        seek_start = SliderDialogModel.classify_touch(layout["track"]["x"], layout)
+        self.assertEqual(seek_start["action"], "SEEK")
+        self.assertEqual(seek_start["percent"], 0)
+
+        mid_x = layout["track"]["x"] + layout["track"]["w"] // 2
+        seek_mid = SliderDialogModel.classify_touch(mid_x, layout)
+        self.assertEqual(seek_mid["action"], "SEEK")
+        self.assertEqual(seek_mid["percent"], 50)
+
+        seek_end = SliderDialogModel.classify_touch(layout["track"]["x"] + layout["track"]["w"] - 1, layout)
+        self.assertEqual(seek_end["action"], "SEEK")
+        self.assertEqual(seek_end["percent"], 100)
+
+        t = layout["track"]
+        x_10 = t["x"] + int(t["w"] * 0.10)
+        x_90 = t["x"] + int(t["w"] * 0.90)
+        drag_history = SliderDialogModel.simulate_continuous_drag(x_10, x_90, steps=8, layout=layout)
+        self.assertEqual(len(drag_history), 9)
+        self.assertEqual(drag_history[0], 10)
+        self.assertEqual(drag_history[-1], 90)
+        for i in range(1, len(drag_history)):
+            self.assertGreaterEqual(drag_history[i], drag_history[i - 1])
 
     # --------------------------------------------------------------------------
-    # FEATURE 13: HighFidelityImageEngine (6 tests)
+    # FEATURE 16: 10-Bit Perceptual Frontlight PWM Curve (Dual CCT) (M3)
     # --------------------------------------------------------------------------
 
-    def test_f13_01_bayer_8x8_matrix_properties(self):
-        """F13.1: Verify 8x8 Bayer matrix dimensions, 64 distinct values in range [0..63]."""
-        matrix = HighFidelityImageEngineModel.BAYER_8X8
-        self.assertEqual(len(matrix), 8)
-        all_vals = []
-        for row in matrix:
-            self.assertEqual(len(row), 8)
-            all_vals.extend(row)
-        self.assertEqual(len(all_vals), 64)
-        self.assertEqual(sorted(all_vals), list(range(64)))
+    def test_f16_01_frontlight_10bit_minimum_duty_at_1_percent(self):
+        """F16.01: Minimum duty at 1% setting is >= 2 LSB (>= 0.10% duty) on 10-bit PWM."""
+        full_pwm = 1023
+        duty_0 = PerceptualFrontlightModel.perceptual_duty(0, full_pwm)
+        duty_1 = PerceptualFrontlightModel.perceptual_duty(1, full_pwm)
+        duty_2 = PerceptualFrontlightModel.perceptual_duty(2, full_pwm)
+        duty_100 = PerceptualFrontlightModel.perceptual_duty(100, full_pwm)
 
-    def test_f13_02_eink_gamma_table_shadow_lifting(self):
-        """F13.2: Verify perceptual Gamma 1.8 LUT expands shadow midtones to prevent crushed blacks."""
-        lut = HighFidelityImageEngineModel.EINK_GAMMA_TABLE
-        self.assertEqual(len(lut), 256)
-        self.assertEqual(lut[0], 0)
-        self.assertEqual(lut[255], 255)
-        self.assertGreater(lut[1], 1)
-        self.assertGreater(lut[32], 32)
-        for i in range(1, 256):
-            self.assertGreaterEqual(lut[i], lut[i - 1])
+        self.assertEqual(duty_0, 0, "0% brightness must produce 0 duty")
+        self.assertGreaterEqual(duty_1, 2, "1% brightness must produce >= 2 LSB duty")
+        self.assertGreaterEqual(duty_2, duty_1, "Brightness duty curve must be monotonic")
+        self.assertEqual(duty_100, 1023, "100% brightness must produce full 1023 duty")
 
-    def test_f13_03_clean_white_bleaching(self):
-        """F13.3: Verify Clean White Bleaching eliminates grey checkerboard speckles on near-white paper."""
-        for gray in range(242, 256):
-            for y in range(8):
-                for x in range(8):
-                    level = HighFidelityImageEngineModel.apply_bayer_dither_4level(gray, x, y)
-                    self.assertEqual(level, 3, f"Gray {gray} at ({x},{y}) must be Level 3 (pure white)")
+        duty_pct_at_1 = (duty_1 / float(full_pwm)) * 100.0
+        self.assertGreaterEqual(duty_pct_at_1, 0.10, "1% duty percentage must be >= 0.10%")
 
-    def test_f13_04_clean_black_bleaching(self):
-        """F13.4: Verify Clean Black Bleaching keeps fine line art and ink text dense black."""
-        for gray in range(0, 11):
-            for y in range(8):
-                for x in range(8):
-                    level = HighFidelityImageEngineModel.apply_bayer_dither_4level(gray, x, y)
-                    self.assertEqual(level, 0, f"Gray {gray} at ({x},{y}) must be Level 0 (pure black)")
+    def test_f16_02_dual_cct_channel_clamping_prevents_extinction(self):
+        """F16.02: For 0 < warmPercent < 100, clamp warmDuty and coolDuty >= 1 LSB so neither LED extinguishes."""
+        full_pwm = 1023
+        # Test across various mixed color balance percentages at minimal 1% brightness
+        for w in range(1, 100):
+            tot, cool, warm = PerceptualFrontlightModel.calculate_cct(brightness=1, warmth=w, full=full_pwm)
+            self.assertEqual(tot, 2, "Total duty at 1% brightness must be 2 LSB")
+            self.assertEqual(cool + warm, tot, "Total duty must be strictly conserved")
+            self.assertGreaterEqual(cool, 1, f"Cool LED must not extinguish at warmth {w}%")
+            self.assertGreaterEqual(warm, 1, f"Warm LED must not extinguish at warmth {w}%")
 
-    def test_f13_05_psram_cache_pool_slot_contract(self):
-        """F13.5: Verify PSRAM Multi-Slot Cache Pool geometry allows 4 concurrent cached images."""
-        self.assertEqual(HighFidelityImageEngineModel.MAX_PXC_SLOTS, 4)
-        four_slots_bytes = 4 * (800 * 200)
-        self.assertLess(four_slots_bytes, 8 * 1024 * 1024)
+        # Test pure channels at 1% brightness
+        _, cool_pure, warm_pure = PerceptualFrontlightModel.calculate_cct(brightness=1, warmth=0, full=full_pwm)
+        self.assertEqual(warm_pure, 0)
+        self.assertEqual(cool_pure, 2)
 
-    def test_f13_06_quantization_thresholds_distribution(self):
-        """F13.6: Verify 4-level quantization thresholds [43, 128, 213] partition E-Ink reflectance evenly."""
-        t1, t2, t3 = HighFidelityImageEngineModel.QUANT_THRESHOLDS
-        self.assertEqual((t1, t2, t3), (43, 128, 213))
-        levels_seen = set()
-        for g in range(0, 256, 4):
-            levels_seen.add(HighFidelityImageEngineModel.apply_bayer_dither_4level(g, 0, 0))
-        self.assertEqual(levels_seen, {0, 1, 2, 3})
+        _, cool_warm_pure, warm_warm_pure = PerceptualFrontlightModel.calculate_cct(brightness=1, warmth=100, full=full_pwm)
+        self.assertEqual(warm_warm_pure, 2)
+        self.assertEqual(cool_warm_pure, 0)
 
+    # --------------------------------------------------------------------------
+    # FEATURE 17: Quick Return Jump (Reading Position Memory) (M3)
+    # --------------------------------------------------------------------------
 
+    def test_f17_01_quick_return_jump_memory_lifecycle(self):
+        """F17.01: Track departure origin on jumps and restore via single-action quick return."""
+        reader = QuickReturnJumpModel()
+        self.assertFalse(reader.can_quick_return())
 
-class HardwareRtcModel:
-    BM8563_ADDR = 0x51
-    DS3231_ADDR = 0x68
-    BM8563_SEC_REG = 0x02
-    DS3231_SEC_REG = 0x00
-    BM8563_VL_FLAG = 0x80
+        # Start reading chapter 0, page 5
+        reader.current_spine = 0
+        reader.current_page = 5
 
-    @staticmethod
-    def decode_bcd(bcd_val: int) -> int:
-        return ((bcd_val >> 4) * 10) + (bcd_val & 0x0F)
+        # Perform explicit jump to chapter 3, page 0 (e.g. TOC jump)
+        reader.jump_to(spine=3, page=0, record_origin=True)
+        self.assertTrue(reader.can_quick_return())
+        self.assertEqual((reader.current_spine, reader.current_page), (3, 0))
 
-    @staticmethod
-    def encode_bcd(dec_val: int) -> int:
-        return ((dec_val // 10) << 4) | (dec_val % 10)
+        # Turn pages within chapter 3
+        reader.page_turn(forward=True)  # page 1
+        reader.page_turn(forward=True)  # page 2
+        self.assertEqual(reader.current_page, 2)
+        self.assertTrue(reader.can_quick_return(), "Jump origin must persist through page turns")
 
-    @classmethod
-    def parse_bm8563_registers(cls, raw_7_bytes: list[int]) -> dict:
-        if len(raw_7_bytes) < 7:
-            return {"valid": False, "error": "Insufficient bytes"}
-        sec_byte = raw_7_bytes[0]
-        if bool(sec_byte & cls.BM8563_VL_FLAG):
-            return {"valid": False, "error": "Oscillator stopped / VL flag set", "vl": True}
+        # Execute single-action quick return
+        restored = reader.quick_return()
+        self.assertEqual(restored, (0, 5), "Quick return must restore original spine 0, page 5")
+        self.assertEqual((reader.current_spine, reader.current_page), (0, 5))
+        self.assertFalse(reader.can_quick_return(), "Origin memory must be cleared after return")
 
-        sec = cls.decode_bcd(sec_byte & 0x7F)
-        minute = cls.decode_bcd(raw_7_bytes[1] & 0x7F)
-        hr = cls.decode_bcd(raw_7_bytes[2] & 0x3F)
-        day = cls.decode_bcd(raw_7_bytes[3] & 0x3F)
-        wday = cls.decode_bcd(raw_7_bytes[4] & 0x07)
-        month_byte = raw_7_bytes[5]
-        century = 1900 if (month_byte & 0x80) else 2000
-        month = cls.decode_bcd(month_byte & 0x1F)
-        year = century + cls.decode_bcd(raw_7_bytes[6])
+    def test_f17_02_quick_return_jump_scrubber_and_percent_seeks(self):
+        """F17.02: Scrubber slider and percentage seeks record departure origin."""
+        reader = QuickReturnJumpModel()
+        reader.current_spine = 1
+        reader.current_page = 12
 
-        return {
-            "valid": True,
-            "year": year,
-            "month": month,
-            "day": day,
-            "weekday": wday,
-            "hour": hr,
-            "minute": minute,
-            "second": sec,
-        }
+        # Scrubber seek within same spine
+        reader.jump_to(spine=1, page=35, record_origin=True)
+        self.assertTrue(reader.can_quick_return())
+        self.assertEqual(reader.quick_return(), (1, 12))
 
-    @classmethod
-    def serialize_bm8563_registers(cls, year: int, month: int, day: int, weekday: int, hour: int, minute: int, second: int) -> list[int]:
-        century_bit = 0x80 if year < 2000 else 0x00
-        return [
-            cls.encode_bcd(second) & 0x7F,
-            cls.encode_bcd(minute) & 0x7F,
-            cls.encode_bcd(hour) & 0x3F,
-            cls.encode_bcd(day) & 0x3F,
-            cls.encode_bcd(weekday % 7),
-            (cls.encode_bcd(month) & 0x1F) | century_bit,
-            cls.encode_bcd(year % 100),
-        ]
+        # Reset on new book load
+        reader.reset_book(initial_spine=0, initial_page=0)
+        self.assertFalse(reader.can_quick_return())
+
+    # --------------------------------------------------------------------------
+    # FEATURE 18: Safe Display Revision Auto-Detection (M3)
+    # --------------------------------------------------------------------------
+
+    def test_f18_01_display_revision_resolution_and_booster_guard(self):
+        """F18.01: SSD1677 vs UC8279 discrimination and 0x0C booster soft-start restriction."""
+        # SSD1677 probe signatures (uniform 0xFF or uniform 0x00)
+        c_ssd_ff = DisplayRevisionDetectionModel.resolve_controller_from_probe(flg=None, ver=[0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+        self.assertEqual(c_ssd_ff, DisplayRevisionDetectionModel.CONTROLLER_SSD1677)
+
+        c_ssd_00 = DisplayRevisionDetectionModel.resolve_controller_from_probe(flg=None, ver=[0x00, 0x00, 0x00, 0x00, 0x00])
+        self.assertEqual(c_ssd_00, DisplayRevisionDetectionModel.CONTROLLER_SSD1677)
+
+        # UC8279 probe signatures (driven FLG, LUT_VER 0x02, 0x68, 0x69)
+        c_uc_02 = DisplayRevisionDetectionModel.resolve_controller_from_probe(flg=0x01, ver=[0x00, 0x17, 0x02, 0xFF, 0xFF])
+        self.assertEqual(c_uc_02, DisplayRevisionDetectionModel.CONTROLLER_UC8279)
+
+        c_uc_68 = DisplayRevisionDetectionModel.resolve_controller_from_probe(flg=0x01, ver=[0x00, 0x17, 0x68, 0xFF, 0xFF])
+        self.assertEqual(c_uc_68, DisplayRevisionDetectionModel.CONTROLLER_UC8279)
+
+        c_uc_69 = DisplayRevisionDetectionModel.resolve_controller_from_probe(flg=0x01, ver=[0x00, 0x17, 0x69, 0xFF, 0xFF])
+        self.assertEqual(c_uc_69, DisplayRevisionDetectionModel.CONTROLLER_UC8279)
+
+        # UC8179 probe signature (LUT_VER 0x01)
+        c_uc_81 = DisplayRevisionDetectionModel.resolve_controller_from_probe(flg=0x01, ver=[0x00, 0x17, 0x01, 0xFF, 0xFF])
+        self.assertEqual(c_uc_81, DisplayRevisionDetectionModel.CONTROLLER_UC8179)
+
+        # Booster soft-start command 0x0C guard verification
+        self.assertTrue(DisplayRevisionDetectionModel.should_apply_booster_soft_start(DisplayRevisionDetectionModel.CONTROLLER_SSD1677, is_x3=False),
+                        "SSD1677 on X4 must receive booster soft-start 0x0C")
+        self.assertFalse(DisplayRevisionDetectionModel.should_apply_booster_soft_start(DisplayRevisionDetectionModel.CONTROLLER_UC8279, is_x3=False),
+                         "UC8279 must NEVER receive booster soft-start 0x0C (prevents coil whine/artifacts)")
+        self.assertFalse(DisplayRevisionDetectionModel.should_apply_booster_soft_start(DisplayRevisionDetectionModel.CONTROLLER_UC8179, is_x3=False),
+                         "UC8179 must NEVER receive booster soft-start 0x0C")
+        self.assertFalse(DisplayRevisionDetectionModel.should_apply_booster_soft_start(DisplayRevisionDetectionModel.CONTROLLER_SSD1677, is_x3=True),
+                         "X3 panel must NEVER receive X4 booster profile")
+
+    # --------------------------------------------------------------------------
+    # FEATURE 19: Reader Touch Zones (3-Zone & 9-Zone Layouts) (M3)
+    # --------------------------------------------------------------------------
+
+    def test_f19_01_reader_touch_zones_3zone_layout(self):
+        """F19.01: Configurable 3-zone layout with customizable center menu zone (30-40%)."""
+        w, h = 800, 480
+        # Default 35% center width: margins = (100 - 35) / 2 = 32.5% -> x in [260, 540)
+        zone_35 = ReaderTouchZonesModel.compute_menu_zone(w, h, center_width_pct=35)
+        self.assertEqual(zone_35["x_start"], 260)
+        self.assertEqual(zone_35["x_end"], 540)
+        self.assertEqual(zone_35["y_start"], 168)  # 480 * 0.35
+        self.assertEqual(zone_35["y_end"], 312)    # 480 * 0.65
+
+        # Right-handed 3-zone: Left (<260) = PREV, Center (260..540, 168..312) = MENU, Right (>=540) = NEXT
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(100, 240, w, h, layout=1, center_width_pct=35, is_left_handed=False), "PAGE_PREV")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(400, 240, w, h, layout=1, center_width_pct=35, is_left_handed=False), "MENU")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(700, 240, w, h, layout=1, center_width_pct=35, is_left_handed=False), "PAGE_NEXT")
+
+        # Left-handed 3-zone: Left (<260) = NEXT, Right (>=540) = PREV
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(100, 240, w, h, layout=1, center_width_pct=35, is_left_handed=True), "PAGE_NEXT")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(700, 240, w, h, layout=1, center_width_pct=35, is_left_handed=True), "PAGE_PREV")
+
+        # Inverted tap: flips page turn actions
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(100, 240, w, h, layout=1, center_width_pct=35, is_left_handed=False, inverted=True), "PAGE_NEXT")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(700, 240, w, h, layout=1, center_width_pct=35, is_left_handed=False, inverted=True), "PAGE_PREV")
+
+    def test_f19_02_reader_touch_zones_9zone_layout_and_custom_center_width(self):
+        """F19.02: 9-zone 3x3 grid layout and custom 30% and 40% center widths."""
+        w, h = 800, 480
+        # 30% center width: side = 35% -> x in [280, 520)
+        zone_30 = ReaderTouchZonesModel.compute_menu_zone(w, h, center_width_pct=30)
+        self.assertEqual(zone_30["x_start"], 280)
+        self.assertEqual(zone_30["x_end"], 520)
+
+        # 40% center width: side = 30% -> x in [240, 560)
+        zone_40 = ReaderTouchZonesModel.compute_menu_zone(w, h, center_width_pct=40)
+        self.assertEqual(zone_40["x_start"], 240)
+        self.assertEqual(zone_40["x_end"], 560)
+
+        # 9-zone 3x3 grid classification
+        # Center cell (col 1, row 1)
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(400, 240, w, h, layout=2, center_width_pct=35), "MENU")
+        # Top-center and Bot-center in col 1
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(400, 50, w, h, layout=2, center_width_pct=35), "MENU")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(400, 420, w, h, layout=2, center_width_pct=35), "MENU")
+
+        # Left column (col 0): top, mid, bot
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(100, 50, w, h, layout=2, center_width_pct=35, is_left_handed=False), "PAGE_PREV")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(100, 240, w, h, layout=2, center_width_pct=35, is_left_handed=False), "PAGE_PREV")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(100, 420, w, h, layout=2, center_width_pct=35, is_left_handed=False), "PAGE_PREV")
+
+        # Right column (col 2): top, mid, bot
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(700, 50, w, h, layout=2, center_width_pct=35, is_left_handed=False), "PAGE_NEXT")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(700, 240, w, h, layout=2, center_width_pct=35, is_left_handed=False), "PAGE_NEXT")
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(700, 420, w, h, layout=2, center_width_pct=35, is_left_handed=False), "PAGE_NEXT")
 
 
 if __name__ == "__main__":

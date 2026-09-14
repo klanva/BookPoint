@@ -25,7 +25,7 @@ constexpr uint8_t MAX_NEG_HOURS = 12;
 constexpr uint8_t MINUTE_STEPS = 4;  // 0, 15, 30, 45
 constexpr uint8_t MINUTES_PER_QUARTER = 15;
 constexpr uint8_t BIAS_QUARTER_HOURS = 48;  // 0 stored = UTC-12, 48 stored = UTC+0
-constexpr int TOUCH_BUTTON_SIZE = 44;
+constexpr int TOUCH_BUTTON_SIZE = 56;
 constexpr int TOUCH_BUTTON_GAP = 18;
 
 // Convert a (sign, hours, quarter) triple into the biased storage value.
@@ -277,8 +277,9 @@ void ClockOffsetActivity::buildOffsetScreen(UiScreen& screen) {
   Rect minusRect;
   Rect plusRect;
   getTouchControlRects(minusRect, plusRect);
-  screen.frame().hit(toFui(minusRect), ACTION_STEP, -1, fui::InputTouch);
-  screen.frame().hit(toFui(plusRect), ACTION_STEP, +1, fui::InputTouch);
+  const uint16_t stepMask = static_cast<uint16_t>(fui::InputTouch | fui::InputRelease);
+  screen.frame().hit(toFui(minusRect), ACTION_STEP, -1, stepMask);
+  screen.frame().hit(toFui(plusRect), ACTION_STEP, +1, stepMask);
 }
 
 void ClockOffsetActivity::render(RenderLock&&) {

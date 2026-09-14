@@ -111,25 +111,55 @@ inline TouchPageTurn detectTouchPageTurn(GfxRenderer& renderer, const MappedInpu
   const int width = renderer.getScreenWidth();
   const int height = renderer.getScreenHeight();
 
-  // Center menu exclusion zone (middle 40% width, middle 30% height)
-  const int menu_x_start = width * 30 / 100;
-  const int menu_x_end = width * 70 / 100;
+  // Configurable center menu zone (30%..40% width, default 35%)
+  const int menuPct = std::clamp(static_cast<int>(SETTINGS.touchMenuZoneWidthPercent), 30, 40);
+  const int sidePct = (100 - menuPct) / 2;
+  const int menu_x_start = width * sidePct / 100;
+  const int menu_x_end = width * (sidePct + menuPct) / 100;
   const int menu_y_start = height * 35 / 100;
   const int menu_y_end = height * 65 / 100;
+
+  // Center menu exclusion zone: tapping here opens the menu/overlay, not page turns
   if (SETTINGS.tapForReaderMenu && (x >= menu_x_start && x < menu_x_end) && (y >= menu_y_start && y < menu_y_end)) {
     return result;
   }
 
-  // 75/25 Handed Touch Zones
   const bool isLeftHanded = (SETTINGS.handedness == CrossPointSettings::HANDEDNESS_LEFT);
   const bool inverted = (SETTINGS.touchReaderControls == CrossPointSettings::TOUCH_READER_INVERTED_TAP);
   bool forward = false;
-  if (!isLeftHanded) {
-    // Right-handed: 0..25% is PREV, 25..100% is NEXT
-    forward = (x >= width / 4);
+
+  if (SETTINGS.readerTouchZoneLayout == CrossPointSettings::TOUCH_LAYOUT_3_ZONE) {
+    // 3-Zone Layout: Left column (0..menu_x_start), Center column (menu_x_start..menu_x_end), Right column (menu_x_end..width)
+    if (x >= menu_x_start && x < menu_x_end) {
+      if (SETTINGS.tapForReaderMenu) return result;
+    }
+    if (!isLeftHanded) {
+      forward = (x >= menu_x_end);
+    } else {
+      forward = (x < menu_x_start);
+    }
+  } else if (SETTINGS.readerTouchZoneLayout == CrossPointSettings::TOUCH_LAYOUT_9_ZONE) {
+    // 9-Zone Layout (3x3 Grid):
+    // Columns: Left (< menu_x_start), Center (menu_x_start..menu_x_end), Right (>= menu_x_end)
+    // Rows: Top (< menu_y_start), Center (menu_y_start..menu_y_end), Bottom (>= menu_y_end)
+    const bool inCenterCol = (x >= menu_x_start && x < menu_x_end);
+    if (inCenterCol && SETTINGS.tapForReaderMenu) {
+      return result;
+    }
+    if (!isLeftHanded) {
+      forward = (x >= menu_x_end);
+    } else {
+      forward = (x < menu_x_start);
+    }
   } else {
-    // Left-handed: 0..75% is NEXT, 75..100% is PREV
-    forward = (x < width * 3 / 4);
+    // TOUCH_LAYOUT_2_ZONE_HANDED (75/25 handed touch zones - legacy compatibility)
+    if (!isLeftHanded) {
+      // Right-handed: 0..25% is PREV, 25..100% is NEXT
+      forward = (x >= width / 4);
+    } else {
+      // Left-handed: 0..75% is NEXT, 75..100% is PREV
+      forward = (x < width * 3 / 4);
+    }
   }
 
   if (inverted) {
@@ -142,7 +172,7 @@ inline TouchPageTurn detectTouchPageTurn(GfxRenderer& renderer, const MappedInpu
   return result;
 }
 
-// Tap in the center menu zone of the screen (middle 40% width, middle 30% height):
+// Tap in the center menu zone of the screen (configurable 30..40% width, middle 30% height):
 // invokes reader overlay / menu.
 inline bool isTouchMenuTap(const GfxRenderer& renderer, const MappedInputManager& input) {
   if (!input.hasTouch()) return false;
@@ -152,8 +182,10 @@ inline bool isTouchMenuTap(const GfxRenderer& renderer, const MappedInputManager
   if (!input.wasScreenTapped(x, y)) return false;
   const int width = renderer.getScreenWidth();
   const int height = renderer.getScreenHeight();
-  const int menu_x_start = width * 30 / 100;
-  const int menu_x_end = width * 70 / 100;
+  const int menuPct = std::clamp(static_cast<int>(SETTINGS.touchMenuZoneWidthPercent), 30, 40);
+  const int sidePct = (100 - menuPct) / 2;
+  const int menu_x_start = width * sidePct / 100;
+  const int menu_x_end = width * (sidePct + menuPct) / 100;
   const int menu_y_start = height * 35 / 100;
   const int menu_y_end = height * 65 / 100;
   return (x >= menu_x_start && x < menu_x_end) && (y >= menu_y_start && y < menu_y_end);

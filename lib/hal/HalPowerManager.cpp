@@ -24,30 +24,7 @@ HalPowerManager powerManager;  // Singleton instance
 // X4 Pro display chip select.
 static constexpr gpio_num_t XTEINK_C3_GPIO13 = GPIO_NUM_13;
 
-extern "C" SemaphoreHandle_t getSharedI2cBusMutex();
-
-namespace {
-class ScopedI2CBusLock {
-  bool _locked = false;
- public:
-  ScopedI2CBusLock() {
-    SemaphoreHandle_t m = getSharedI2cBusMutex();
-    if (m != nullptr) {
-      xSemaphoreTakeRecursive(m, portMAX_DELAY);
-      _locked = true;
-    }
-  }
-  ~ScopedI2CBusLock() {
-    if (_locked) {
-      SemaphoreHandle_t m = getSharedI2cBusMutex();
-      if (m != nullptr) {
-        xSemaphoreGiveRecursive(m);
-      }
-      _locked = false;
-    }
-  }
-};
-}  // namespace
+#include "ScopedI2CBusLock.h"
 
 void HalPowerManager::begin() {
   if (BoardConfig::ACTIVE.batteryAdc >= 0) {
@@ -119,6 +96,13 @@ bool HalPowerManager::tryLightSleepSlice(const HalGPIO& gpio) {
   // Raw button state is inside the debounce window: commit needs a second
   // matching sample, so poll again quickly instead of halting the chip.
   if (gpio.isDebouncePending()) return false;
+  // Guard against light sleep while touch is actively held down or active.
+  // Entering light sleep during touch contact misses finger motion,
+  // causes GT911 register 0x814E buffer desynchronization, and freezes touch.
+  if (gpio.hasTouch()) {
+    float dummyX = 0.0f, dummyY = 0.0f;
+    if (gpio.isTouchHeldAt(dummyX, dummyY) || gpio.wasTouchActivity()) return false;
+  }
 
   const auto& input = BoardConfig::ACTIVE.input;
   const auto& touch = BoardConfig::ACTIVE.touch;

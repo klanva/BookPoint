@@ -74,6 +74,12 @@ class EpubReaderActivity final : public ReaderActivity {
   SavedPosition savedPositions[MAX_FOOTNOTE_DEPTH] = {};
   int footnoteDepth = 0;
 
+  // Quick return jump: reading position memory (CrossDiTo innovation)
+  std::optional<SavedPosition> previousReadingPosition;
+  bool hasPreviousReadingPosition() const { return previousReadingPosition.has_value(); }
+  void rememberPendingJumpOrigin();
+  void returnToPreviousReadingPosition();
+
   uint16_t buildViewportWidth = 0;
   uint16_t buildViewportHeight = 0;
 

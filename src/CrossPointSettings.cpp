@@ -111,6 +111,8 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   if (clockLastSyncedEpoch != 0) {
     doc["clockLastSyncedEpoch"] = clockLastSyncedEpoch;
   }
+  doc["readerTouchZoneLayout"] = readerTouchZoneLayout;
+  doc["touchMenuZoneWidthPercent"] = touchMenuZoneWidthPercent;
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc) {
@@ -243,6 +245,14 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   }
   clockDateHasBeenSynced = clamp(doc["clockDateHasBeenSynced"] | (uint8_t)0, (uint8_t)2, (uint8_t)0);
   clockLastSyncedEpoch = doc["clockLastSyncedEpoch"] | (uint32_t)0;
+  if (!doc["readerTouchZoneLayout"].isNull()) {
+    readerTouchZoneLayout =
+        clamp(doc["readerTouchZoneLayout"] | (uint8_t)TOUCH_LAYOUT_3_ZONE, TOUCH_LAYOUT_COUNT, TOUCH_LAYOUT_3_ZONE);
+  }
+  if (!doc["touchMenuZoneWidthPercent"].isNull()) {
+    const uint8_t v = doc["touchMenuZoneWidthPercent"] | (uint8_t)35;
+    touchMenuZoneWidthPercent = std::clamp<uint8_t>(v, 30, 40);
+  }
 
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");

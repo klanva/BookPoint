@@ -133,9 +133,11 @@ fui::KeyboardLayoutId layoutForLanguage(const Language language) {
 void KeyboardEntryActivity::onEnter() {
   Activity::onEnter();
   cursorPos = text.length();
-  // URL layers are EN-arranged app tables; everything else follows the UI
-  // language.
-  layoutId = inputType == InputType::Url ? fui::KeyboardLayoutId::QwertyEn : layoutForLanguage(I18N.getLanguage());
+  // URL and Password fields default to English (QwertyEn); everything else follows
+  // the UI language.
+  layoutId = (inputType == InputType::Url || inputType == InputType::Password)
+                 ? fui::KeyboardLayoutId::QwertyEn
+                 : layoutForLanguage(I18N.getLanguage());
   shifted = false;
   symbols = false;
   urlPanel = false;
@@ -298,10 +300,11 @@ bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPr
     case fui::QWERTY_KEY_LANG:
       delPressCount = 0;
       hintVisible = false;
-      if (layoutId == fui::KeyboardLayoutId::CyrillicRu) {
-        layoutId = fui::KeyboardLayoutId::QwertyEn;
+      if (layoutId == fui::KeyboardLayoutId::QwertyEn) {
+        const fui::KeyboardLayoutId nativeLayout = layoutForLanguage(I18N.getLanguage());
+        layoutId = (nativeLayout != fui::KeyboardLayoutId::QwertyEn) ? nativeLayout : fui::KeyboardLayoutId::CyrillicRu;
       } else {
-        layoutId = fui::KeyboardLayoutId::CyrillicRu;
+        layoutId = fui::KeyboardLayoutId::QwertyEn;
       }
       shifted = false;
       symbols = false;

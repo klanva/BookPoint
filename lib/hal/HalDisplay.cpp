@@ -1,10 +1,37 @@
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <SPI.h>
+#include <BoardConfig.h>
 
 // Global HalDisplay instance
 HalDisplay display;
 
 #define SD_SPI_MISO 7
+
+namespace {
+// Official Xteink X4 6.2.4 production firmware identifies the production
+// panel as GDEQ0426T82 (QY 4.26). Re-apply the vendor booster soft-start
+// profile after the common SSD1677 initialization. This must run ONLY when the
+// selected controller is actually SSD1677; never send it to an UltraChip part (UC8279 / UC8179)
+// to prevent power register corruption, coil whine, and booster artifacts.
+void applyX4QyPanelCompatibilityProfile() {
+  constexpr uint8_t CMD_BOOSTER_SOFT_START = 0x0C;
+  constexpr uint8_t booster[] = {0xAE, 0xC7, 0xC3, 0xC0, 0x80};
+  const SPISettings panelSpi(10000000, MSBFIRST, SPI_MODE0);
+
+  SPI.beginTransaction(panelSpi);
+  digitalWrite(EPD_DC, LOW);
+  digitalWrite(EPD_CS, LOW);
+  SPI.transfer(CMD_BOOSTER_SOFT_START);
+  digitalWrite(EPD_CS, HIGH);
+
+  digitalWrite(EPD_DC, HIGH);
+  digitalWrite(EPD_CS, LOW);
+  SPI.writeBytes(booster, sizeof(booster));
+  digitalWrite(EPD_CS, HIGH);
+  SPI.endTransaction();
+}
+}  // namespace
 
 HalDisplay::HalDisplay() : einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY) {}
 
@@ -17,6 +44,13 @@ void HalDisplay::begin(bool seamless) {
   }
 
   einkDisplay.begin();
+
+  // The QY booster soft-start (0x0C) belongs strictly to SSD1677.
+  // Guard UC8279/UC8179 from receiving 0x0C to prevent internal power register corruption,
+  // coil whine, and booster artifacts.
+  if (!gpio.deviceIsX3() && BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::SSD1677) {
+    applyX4QyPanelCompatibilityProfile();
+  }
 
   if (seamless) {
     // Defuse the SDK's X3 _x3InitialFullSyncsRemaining counter (no-op on X4)

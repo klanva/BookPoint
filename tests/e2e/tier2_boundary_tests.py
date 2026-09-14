@@ -68,6 +68,10 @@ from tests.e2e.contracts import (
     PremiumTypographySuiteModel,
     FlagshipErgonomicsModel,
     ZeroBrickRiskModel,
+    PerceptualFrontlightModel,
+    QuickReturnJumpModel,
+    DisplayRevisionDetectionModel,
+    ReaderTouchZonesModel,
 )
 
 try:
@@ -1016,6 +1020,80 @@ class Tier2BoundaryTests(unittest.TestCase):
         # 10 failures -> keeps hardware recovery active
         r10 = ZeroBrickRiskModel.evaluate_i2c_recovery(10)
         self.assertEqual(r10["action"], "HARDWARE_RECOVERY")
+
+    # --------------------------------------------------------------------------
+    # M3 BOUNDARY TESTS: F16, F17, F18, F19
+    # --------------------------------------------------------------------------
+
+    def test_f16_b01_frontlight_boundary_and_out_of_range_inputs(self):
+        """F16.B1: Frontlight duty calculation handles negative, 0%, 100%, and >100% inputs."""
+        full = 1023
+        # Negative brightness clamps to 0
+        self.assertEqual(PerceptualFrontlightModel.perceptual_duty(-5, full), 0)
+        # >100% brightness clamps to 100%
+        self.assertEqual(PerceptualFrontlightModel.perceptual_duty(150, full), 1023)
+
+        # CCT with out-of-range warmth
+        tot, cool, warm = PerceptualFrontlightModel.calculate_cct(brightness=50, warmth=-10, full=full)
+        self.assertEqual(warm, 0)
+        self.assertEqual(cool, tot)
+
+        tot, cool, warm = PerceptualFrontlightModel.calculate_cct(brightness=50, warmth=120, full=full)
+        self.assertEqual(warm, tot)
+        self.assertEqual(cool, 0)
+
+    def test_f17_b01_quick_return_jump_stack_boundaries(self):
+        """F17.B1: Quick return jump origin boundary handling (consecutive jumps, multiple returns, reset)."""
+        reader = QuickReturnJumpModel()
+        # Return when no origin is saved returns None
+        self.assertIsNone(reader.quick_return())
+
+        # Jump from (0, 10) to (2, 0)
+        reader.current_spine, reader.current_page = 0, 10
+        reader.jump_to(2, 0, record_origin=True)
+        self.assertEqual(reader.previous_position, (0, 10))
+
+        # Consecutive jump to (5, 0) updates origin to previous departure point (2, 0)
+        reader.jump_to(5, 0, record_origin=True)
+        self.assertEqual(reader.previous_position, (2, 0))
+
+        # First return succeeds
+        self.assertEqual(reader.quick_return(), (2, 0))
+        # Second immediate return returns None
+        self.assertIsNone(reader.quick_return())
+
+    def test_f18_b01_display_revision_probe_edge_cases(self):
+        """F18.B1: Display probe handles missing, truncated, or unknown LUT_VER values safely."""
+        # Truncated or empty VER bytes fallback safely to SSD1677
+        self.assertEqual(DisplayRevisionDetectionModel.resolve_controller_from_probe(None, []),
+                         DisplayRevisionDetectionModel.CONTROLLER_SSD1677)
+        self.assertEqual(DisplayRevisionDetectionModel.resolve_controller_from_probe(0x01, [0x00, 0x17]),
+                         DisplayRevisionDetectionModel.CONTROLLER_SSD1677)
+
+        # Unknown LUT_VER (e.g. 0x99) defaults to UC8179 (not SSD1677), ensuring 0x0C is NOT sent
+        c_unknown = DisplayRevisionDetectionModel.resolve_controller_from_probe(0x01, [0x00, 0x17, 0x99, 0xFF, 0xFF])
+        self.assertFalse(DisplayRevisionDetectionModel.should_apply_booster_soft_start(c_unknown, is_x3=False),
+                         "Unknown UltraChip revision must not receive SSD1677 booster profile")
+
+    def test_f19_b01_reader_touch_zones_coordinate_boundaries(self):
+        """F19.B1: Reader touch zone classification across exact boundary edges with no dead zones."""
+        w, h = 800, 480
+        # Clamping of center width setting
+        z_clamp_low = ReaderTouchZonesModel.compute_menu_zone(w, h, center_width_pct=10)
+        self.assertEqual(z_clamp_low["width_pct"], 30, "Center width must clamp min 30%")
+
+        z_clamp_high = ReaderTouchZonesModel.compute_menu_zone(w, h, center_width_pct=80)
+        self.assertEqual(z_clamp_high["width_pct"], 40, "Center width must clamp max 40%")
+
+        # Test exact boundary transitions for 3-zone layout (default 35% -> x_start=260, x_end=540)
+        # x = 259 -> PAGE_PREV
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(259, 240, w, h, layout=1, center_width_pct=35), "PAGE_PREV")
+        # x = 260 -> MENU
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(260, 240, w, h, layout=1, center_width_pct=35), "MENU")
+        # x = 539 -> MENU
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(539, 240, w, h, layout=1, center_width_pct=35), "MENU")
+        # x = 540 -> PAGE_NEXT
+        self.assertEqual(ReaderTouchZonesModel.classify_tap(540, 240, w, h, layout=1, center_width_pct=35), "PAGE_NEXT")
 
 
 if __name__ == "__main__":

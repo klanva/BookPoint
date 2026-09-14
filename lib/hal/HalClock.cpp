@@ -80,33 +80,7 @@ time_t calendarToEpochUtc(uint16_t year, uint8_t month, uint8_t day, uint8_t hou
 
 }  // namespace
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-
-extern "C" SemaphoreHandle_t getSharedI2cBusMutex();
-
-namespace {
-class ScopedI2CBusLock {
-  bool _locked = false;
- public:
-  ScopedI2CBusLock() {
-    SemaphoreHandle_t m = getSharedI2cBusMutex();
-    if (m != nullptr) {
-      xSemaphoreTakeRecursive(m, portMAX_DELAY);
-      _locked = true;
-    }
-  }
-  ~ScopedI2CBusLock() {
-    if (_locked) {
-      SemaphoreHandle_t m = getSharedI2cBusMutex();
-      if (m != nullptr) {
-        xSemaphoreGiveRecursive(m);
-      }
-      _locked = false;
-    }
-  }
-};
-}  // namespace
+#include "ScopedI2CBusLock.h"
 
 void HalClock::begin() {
   const auto& sensors = BoardConfig::ACTIVE.sensors;

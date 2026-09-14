@@ -255,24 +255,37 @@ class TestChallenger1BacklightDualSlidersAndCCT(unittest.TestCase):
 
     @classmethod
     def perceptual_duty_cpp(cls, pct: int, full: int = 1023) -> int:
-        """Exact reproduction of C++ perceptualDuty(pct, full)."""
+        """Exact reproduction of C++ perceptualDuty(pct, full) in BookPoint v2.2.4."""
         if pct <= 0:
             return 0
         if pct > 100:
             pct = 100
         duty = (full * cls.GAMMA_TABLE[pct] + 32767) // 65535
+        if full >= 1023 and duty < 2:
+            return 2
         return duty if duty > 0 else 1
 
     @classmethod
     def calculate_cct_channels(cls, brightness_pct: int, warmth_pct: int, full: int = 1023) -> Tuple[int, int, int]:
         """
-        Exact reproduction of C++ FrontlightManager::apply() duty split logic:
+        Exact reproduction of C++ FrontlightManager::apply() duty split logic in BookPoint v2.2.4:
         totalDuty = perceptualDuty(brightness, full)
-        warmDuty = (totalDuty * warmPercent + 50) / 100
-        coolDuty = totalDuty - warmDuty
+        Mixed color balance clamping: warmDuty clamped to [1, totalDuty-1] when totalDuty >= 2.
         """
         total_duty = cls.perceptual_duty_cpp(brightness_pct, full)
+        if total_duty == 0:
+            return 0, 0, 0
+        if warmth_pct <= 0:
+            return total_duty, total_duty, 0
+        if warmth_pct >= 100:
+            return total_duty, 0, total_duty
+
         warm_duty = (total_duty * warmth_pct + 50) // 100
+        if total_duty >= 2:
+            if warm_duty < 1:
+                warm_duty = 1
+            if warm_duty >= total_duty:
+                warm_duty = total_duty - 1
         cool_duty = total_duty - warm_duty
         return total_duty, cool_duty, warm_duty
 

@@ -65,8 +65,8 @@ inline void buildSliderDialogScreen(UiAppHost::UiScreen& screen, const GfxRender
   props.value = spec.value;
   props.max = spec.max;
   props.action = spec.sliderAction;
-  props.inputMask = fui::InputTouch | fui::InputDrag;
-  const int16_t sideGap = static_cast<int16_t>(stepW + theme.spaceSm);
+  // Eliminate dead zone between -/+ step buttons and slider track by abutting directly
+  const int16_t sideGap = stepW;
   fui::slider(screen.frame(), row.inset(fui::Insets{0, sideGap, 0, sideGap}), props);
 
   if (mappedInput.hasTouch()) {

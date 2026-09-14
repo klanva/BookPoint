@@ -495,6 +495,29 @@ void EpubReaderActivity::loop() {
   }
 
   if (inBookOverlaysActive) {
+    int hx = 0, hy = 0;
+    if (mappedInput.isScreenTouchHeld(hx, hy)) {
+      const int sW = renderer.getScreenWidth();
+      const int sH = renderer.getScreenHeight();
+      const int kMargin = 12;
+      const int topW = sW - 2 * kMargin;
+      const int botH = 126;
+      const int botY = sH - kMargin - botH;
+      if (((hy >= botY + 20 && hy <= botY + 62) || (hy >= 690 && hy <= 740)) && section && section->pageCount > 0) {
+        const int scrubLeft = kMargin + 16;
+        const int scrubRight = kMargin + topW - 16;
+        float frac = (scrubRight > scrubLeft)
+                         ? static_cast<float>(hx - scrubLeft) / static_cast<float>(scrubRight - scrubLeft)
+                         : 0.0f;
+        frac = std::clamp(frac, 0.0f, 1.0f);
+        int targetP = static_cast<int>(frac * (section->pageCount - 1));
+        if (section->currentPage != targetP) {
+          section->currentPage = targetP;
+          requestUpdate();
+        }
+        return;
+      }
+    }
     int tx = 0, ty = 0;
     if (mappedInput.wasScreenTapped(tx, ty)) {
       if (handleInBookOverlaysTouch(tx, ty)) {
@@ -634,6 +657,7 @@ void EpubReaderActivity::jumpToPercent(int percent) {
   if (!epub) return;
   const size_t bookSize = epub->getBookSize();
   if (bookSize == 0) return;
+  rememberPendingJumpOrigin();
 
   percent = clampPercent(percent);
 
@@ -680,6 +704,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       openReaderMenu();
     } else {
       const auto& sync = std::get<ProgressChangeResult>(result.data);
+      rememberPendingJumpOrigin();
 
       if (sync.hasVisibleTextOffset && sync.spineIndex >= 0 && sync.spineIndex < epub->getSpineItemsCount()) {
         RenderLock lock;
@@ -758,6 +783,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
             const auto& chapterResult = std::get<ChapterResult>(result.data);
             RenderLock lock;
             clearDeferredReposition();
+            previousReadingPosition = SavedPosition{cachedSpineIndex, nextPageNumber};
             currentSpineIndex = chapterResult.spineIndex;
             pendingAnchor = chapterResult.anchor;
             nextPageNumber = 0;
@@ -1818,6 +1844,7 @@ void EpubReaderActivity::renderStatusBar() const {
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {
   if (!epub) return;
   noteReadingDwell();
+  rememberPendingJumpOrigin();
 
   if (savePosition && section && footnoteDepth < MAX_FOOTNOTE_DEPTH) {
     savedPositions[footnoteDepth] = {currentSpineIndex, section->currentPage};
@@ -2050,6 +2077,28 @@ void EpubReaderActivity::restoreSavedPosition() {
   const auto& pos = savedPositions[footnoteDepth];
   LOG_DBG("ERS", "Restoring position [%d]: spine %d, page %d", footnoteDepth, pos.spineIndex, pos.pageNumber);
 
+  {
+    RenderLock lock;
+    clearDeferredReposition();
+    currentSpineIndex = pos.spineIndex;
+    nextPageNumber = pos.pageNumber;
+    section.reset();
+  }
+  requestUpdate();
+}
+
+void EpubReaderActivity::rememberPendingJumpOrigin() {
+  if (section) {
+    previousReadingPosition = SavedPosition{currentSpineIndex, section->currentPage};
+    LOG_DBG("ERS", "Quick return origin saved: spine %d, page %d", currentSpineIndex, section->currentPage);
+  }
+}
+
+void EpubReaderActivity::returnToPreviousReadingPosition() {
+  if (!previousReadingPosition.has_value()) return;
+  const auto pos = *previousReadingPosition;
+  previousReadingPosition.reset();
+  LOG_INF("ERS", "Quick return restoring origin: spine %d, page %d", pos.spineIndex, pos.pageNumber);
   {
     RenderLock lock;
     clearDeferredReposition();
@@ -2314,9 +2363,16 @@ void EpubReaderActivity::renderInBookOverlays() {
   renderer.drawRect(bookmarkX, kMargin + 6, 44, 44);
   renderer.drawText(UI_12_FONT_ID, bookmarkX + 12, kMargin + 18, currentPageBookmarked ? "[*]" : "[ ]");
 
+  const int returnX = bookmarkX - 54;
+  if (hasPreviousReadingPosition()) {
+    renderer.drawRect(returnX, kMargin + 6, 44, 44);
+    renderer.drawText(UI_12_FONT_ID, returnX + 12, kMargin + 18, "<*");
+  }
+
   // Title: Safely truncated via pixel measurement
   const int titleX = kMargin + 124;
-  const int maxTitleW = std::max(60, bookmarkX - titleX - 12);
+  const int rightAnchor = hasPreviousReadingPosition() ? returnX : bookmarkX;
+  const int maxTitleW = std::max(60, rightAnchor - titleX - 12);
   std::string rawTitle = getBookTitle();
   if (rawTitle.empty()) rawTitle = "Книга";
   const std::string safeTitle = renderer.truncatedText(UI_12_FONT_ID, rawTitle.c_str(), maxTitleW, EpdFontFamily::BOLD);
@@ -2756,20 +2812,30 @@ bool EpubReaderActivity::handleInBookOverlaysTouch(int tx, int ty) {
       requestUpdate();
       return true;
     }
+    if (hasPreviousReadingPosition() &&
+        ((tx >= kMargin + topW - 158 && tx < kMargin + topW - 104) || (ty < 64 && tx >= 308 && tx < 364))) {
+      // Quick Return Jump button
+      inBookOverlaysActive = false;
+      returnToPreviousReadingPosition();
+      return true;
+    }
     return true;
   }
 
   // Check Bottom Bar: floating card (kMargin, botY, topW, botH) or legacy (ty >= 672)
   if ((tx >= kMargin && tx <= kMargin + topW && ty >= botY && ty <= botY + botH) || (ty >= 672)) {
     // Scrubber
-    if (((ty >= botY + 30 && ty <= botY + 60) || (ty >= 700 && ty <= 738)) && section && section->pageCount > 0) {
+    if (((ty >= botY + 20 && ty <= botY + 62) || (ty >= 690 && ty <= 740)) && section && section->pageCount > 0) {
       const int scrubLeft = kMargin + 16;
       const int scrubRight = kMargin + topW - 16;
       float frac = (scrubRight > scrubLeft) ? static_cast<float>(tx - scrubLeft) / static_cast<float>(scrubRight - scrubLeft) : 0.0f;
       frac = std::clamp(frac, 0.0f, 1.0f);
       int targetP = static_cast<int>(frac * (section->pageCount - 1));
-      section->currentPage = targetP;
-      requestUpdate();
+      if (targetP != section->currentPage) {
+        rememberPendingJumpOrigin();
+        section->currentPage = targetP;
+        requestUpdate();
+      }
       return true;
     }
     // Aa Typography: (kMargin + 10, botY + 66, 95, 48) or legacy (tx: 20..115, ty >= 742)

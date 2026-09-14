@@ -166,14 +166,59 @@ void FrontlightPanelActivity::loop() {
     return;
   }
 
+  const int pageWidth = renderer.getScreenWidth();
+  const int offsetX = (pageWidth > 480) ? (pageWidth - 448) / 2 : 0;
+
+  int heldX = -1, heldY = -1;
+  if (mappedInput.isScreenTouchHeld(heldX, heldY)) {
+    // Brightness track continuous drag (offsetX + 68, 54, 344, 44)
+    if (heldX >= offsetX + 68 && heldX <= offsetX + 412 && heldY >= 54 && heldY <= 98) {
+      float frac = static_cast<float>(heldX - (offsetX + 68)) / 344.0f;
+      int val = static_cast<int>(std::round(frac * 100.0f));
+      if (val < 0) val = 0;
+      if (val > 100) val = 100;
+      if (brightness != static_cast<uint8_t>(val)) {
+        brightness = static_cast<uint8_t>(val);
+        Frontlight.setBrightness(brightness);
+        if (!lightOn) {
+          lightOn = true;
+          lightOnChanged = true;
+          Frontlight.setOn(true);
+        }
+        SETTINGS.frontlightBrightness = brightness;
+        draggingSlider = true;
+        requestUpdate();
+      }
+      return;
+    }
+    // Warmth track continuous drag (offsetX + 68, 104, 344, 44)
+    if (heldX >= offsetX + 68 && heldX <= offsetX + 412 && heldY >= 104 && heldY <= 148) {
+      float frac = static_cast<float>(heldX - (offsetX + 68)) / 344.0f;
+      int val = static_cast<int>(std::round(frac * 100.0f));
+      if (val < 0) val = 0;
+      if (val > 100) val = 100;
+      if (warmth != static_cast<uint8_t>(val)) {
+        warmth = static_cast<uint8_t>(val);
+        Frontlight.setWarmth(warmth);
+        SETTINGS.frontlightWarmth = warmth;
+        draggingSlider = true;
+        requestUpdate();
+      }
+      return;
+    }
+  }
+
+  if (draggingSlider && mappedInput.wasScreenTouchReleased()) {
+    draggingSlider = false;
+    SETTINGS.saveToFile();
+  }
+
   int tapX = 0, tapY = 0;
   if (mappedInput.wasScreenTapped(tapX, tapY)) {
     if (tapY >= 360) {
       close();
       return;
     }
-    const int pageWidth = renderer.getScreenWidth();
-    const int offsetX = (pageWidth > 480) ? (pageWidth - 448) / 2 : 0;
 
     // Check 4 control pills:
     // WIFI: (offsetX + 20, 155, 210, 46)

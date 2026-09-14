@@ -412,6 +412,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
 #endif
         SettingInfo::Toggle(StrId::STR_FRONTLIGHT, &CrossPointSettings::frontlightOn, "frontlightOn"),
 
+        // Reader touch zone settings: persisted and web-exposed, category-less
+        SettingInfo::Enum(StrId::STR_NONE_OPT, &CrossPointSettings::readerTouchZoneLayout,
+                          {StrId::STR_NONE_OPT, StrId::STR_NONE_OPT, StrId::STR_NONE_OPT}, "readerTouchZoneLayout"),
+        SettingInfo::Value(StrId::STR_NONE_OPT, &CrossPointSettings::touchMenuZoneWidthPercent, {30, 40, 1},
+                           "touchMenuZoneWidthPercent"),
+
         // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
         SettingInfo::DynamicString(
             StrId::STR_KOREADER_USERNAME, [] { return KOREADER_STORE.getUsername(); },
