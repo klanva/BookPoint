@@ -7,6 +7,7 @@
 #include <Memory.h>
 
 #include <algorithm>
+#include <esp_heap_caps.h>
 
 #include "CrossPointSettings.h"
 #include "ProgressFile.h"
@@ -152,7 +153,10 @@ void XtcReaderActivity::renderPage() {
     pageBufferSize = ((pageWidth + 7) / 8) * pageHeight;
   }
 
-  uint8_t* pageBuffer = static_cast<uint8_t*>(malloc(pageBufferSize));
+  uint8_t* pageBuffer = static_cast<uint8_t*>(heap_caps_malloc(pageBufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!pageBuffer) {
+    pageBuffer = static_cast<uint8_t*>(malloc(pageBufferSize));
+  }
   if (!pageBuffer) {
     LOG_ERR("XTR", "Failed to allocate page buffer (%lu bytes)", pageBufferSize);
     renderer.clearScreen();

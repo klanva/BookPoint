@@ -498,3 +498,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 
 // Helper macro to access settings
 #define SETTINGS CrossPointSettings::getInstance()
+
+// BookPoint aliases (preserves /.crosspoint/ settings path on storage)
+using BookPointSettings = CrossPointSettings;
+#define BOOKPOINT_SETTINGS CrossPointSettings::getInstance()

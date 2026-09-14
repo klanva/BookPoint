@@ -31,3 +31,4 @@ sdkconfig.sticky
 flake.*
 .ghtoken
 *.pyc
+.agents/
