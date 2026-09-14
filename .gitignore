@@ -32,3 +32,4 @@ flake.*
 .ghtoken
 *.pyc
 .agents/
+*.bin
