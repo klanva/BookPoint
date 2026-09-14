@@ -260,7 +260,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t statusBarHidden = 0;
   uint8_t statusBarPosition = POSITION_BOTTOM;
   uint8_t xtcStatusBarMode = XTC_STATUS_BAR_HIDE;
-  // Clock display in status bar (X3 only, requires DS3231 RTC)
+  // Clock display in status bar (hardware RTC)
   uint8_t statusBarClock = STATUS_BAR_CLOCK_HIDE;
   // Clock UTC offset in quarter-hour steps, biased by 48 so it fits in uint8_t.
   // Value 48 = UTC+0, 0 = UTC-12:00, 104 = UTC+14:00.

@@ -80,6 +80,34 @@ time_t calendarToEpochUtc(uint16_t year, uint8_t month, uint8_t day, uint8_t hou
 
 }  // namespace
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+extern "C" SemaphoreHandle_t getSharedI2cBusMutex();
+
+namespace {
+class ScopedI2CBusLock {
+  bool _locked = false;
+ public:
+  ScopedI2CBusLock() {
+    SemaphoreHandle_t m = getSharedI2cBusMutex();
+    if (m != nullptr) {
+      xSemaphoreTakeRecursive(m, portMAX_DELAY);
+      _locked = true;
+    }
+  }
+  ~ScopedI2CBusLock() {
+    if (_locked) {
+      SemaphoreHandle_t m = getSharedI2cBusMutex();
+      if (m != nullptr) {
+        xSemaphoreGiveRecursive(m);
+      }
+      _locked = false;
+    }
+  }
+};
+}  // namespace
+
 void HalClock::begin() {
   const auto& sensors = BoardConfig::ACTIVE.sensors;
   const bool hasHwRtc = (sensors.rtcAddr != 0 && sensors.rtcType != BoardConfig::RtcType::None) || gpio.deviceIsX3();
@@ -91,11 +119,12 @@ void HalClock::begin() {
     return;
   }
 
-  // Attempt to bring up the hardware RTC driver (BM8563/PCF8563 at 0x51 on X4 Pro, DS3231 at 0x68 on X3)
+  // Attempt to bring up the hardware RTC driver (BM8563/PCF8563 at 0x51 on X4 Pro)
+  ScopedI2CBusLock i2cLock;
   if (_rtc.begin()) {
     _useHardwareRtc = true;
     _available = true;
-    const uint8_t rtcAddr = sensors.rtcAddr != 0 ? sensors.rtcAddr : 0x68;
+    const uint8_t rtcAddr = sensors.rtcAddr != 0 ? sensors.rtcAddr : 0x51;
     LOG_INF("CLK", "Hardware RTC found and initialized at I2C 0x%02X", rtcAddr);
 
     // Read initial date/time from hardware RTC
@@ -148,6 +177,7 @@ bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
     }
 
     freeink::Rtc::DateTime dt;
+    ScopedI2CBusLock i2cLock;
     if (const_cast<freeink::Rtc&>(_rtc).now(dt)) {
       _cachedHour = dt.hour;
       _cachedMinute = dt.minute;
@@ -235,6 +265,7 @@ bool HalClock::getDate(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& ho
     }
 
     freeink::Rtc::DateTime dt;
+    ScopedI2CBusLock i2cLock;
     if (const_cast<freeink::Rtc&>(_rtc).now(dt) && isValidDate(dt.year, dt.month, dt.day)) {
       _cachedHour = dt.hour;
       _cachedMinute = dt.minute;
@@ -319,6 +350,7 @@ bool HalClock::writeDateTimeToRTC(uint16_t year, uint8_t month, uint8_t day, uin
 
   if (!_useHardwareRtc) return false;
 
+  ScopedI2CBusLock i2cLock;
   freeink::Rtc::DateTime dt;
   dt.year = year;
   dt.month = month;

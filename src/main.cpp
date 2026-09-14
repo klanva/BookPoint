@@ -761,6 +761,14 @@ void loop() {
     }
   }
 
+  // Low-voltage battery protection guard (< 3.4V) to prevent brownout and flash corruption
+  if (powerManager.isBatteryCritical()) {
+    LOG_ERR("PWR", "Battery voltage critical (< 3.4V: %u mV) - entering shutdown deep sleep",
+            powerManager.getBatteryVoltageMv());
+    enterDeepSleep();
+    return;
+  }
+
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
   if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity() ||

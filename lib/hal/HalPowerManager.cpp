@@ -24,6 +24,31 @@ HalPowerManager powerManager;  // Singleton instance
 // X4 Pro display chip select.
 static constexpr gpio_num_t XTEINK_C3_GPIO13 = GPIO_NUM_13;
 
+extern "C" SemaphoreHandle_t getSharedI2cBusMutex();
+
+namespace {
+class ScopedI2CBusLock {
+  bool _locked = false;
+ public:
+  ScopedI2CBusLock() {
+    SemaphoreHandle_t m = getSharedI2cBusMutex();
+    if (m != nullptr) {
+      xSemaphoreTakeRecursive(m, portMAX_DELAY);
+      _locked = true;
+    }
+  }
+  ~ScopedI2CBusLock() {
+    if (_locked) {
+      SemaphoreHandle_t m = getSharedI2cBusMutex();
+      if (m != nullptr) {
+        xSemaphoreGiveRecursive(m);
+      }
+      _locked = false;
+    }
+  }
+};
+}  // namespace
+
 void HalPowerManager::begin() {
   if (BoardConfig::ACTIVE.batteryAdc >= 0) {
     pinMode(BoardConfig::ACTIVE.batteryAdc, INPUT);
@@ -201,6 +226,7 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
 }
 
 uint16_t HalPowerManager::getBatteryPercentage() const {
+  ScopedI2CBusLock i2cLock;
   static const BatteryMonitor battery;
   if (BoardConfig::ACTIVE.batteryGauge.gaugeAddr != 0) {
     const unsigned long now = millis();
@@ -227,8 +253,14 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
 }
 
 uint16_t HalPowerManager::getBatteryVoltageMv() const {
+  ScopedI2CBusLock i2cLock;
   static const BatteryMonitor battery;
   return battery.readMillivolts();
+}
+
+bool HalPowerManager::isBatteryCritical() const {
+  const uint16_t mv = getBatteryVoltageMv();
+  return mv > 2000 && mv < 3400;
 }
 
 HalPowerManager::Lock::Lock() {

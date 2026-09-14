@@ -11,7 +11,7 @@ extern HalClock halClock;  // Singleton
 
 class HalClock {
   bool _available = false;
-  // True when a physical RTC chip was found (BM8563/PCF8563 on X4 Pro, DS3231 on X3).
+  // True when a physical RTC chip was found (BM8563/PCF8563 on X4 Pro).
   // False means we fall back to a software clock backed by the ESP32's internal timekeeping,
   // which is populated by syncFromNTP() and needs a fresh NTP sync after real power loss.
   bool _useHardwareRtc = false;

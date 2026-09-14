@@ -3,12 +3,12 @@
 #include <Arduino.h>
 #include <InputManager.h>
 
-// Display SPI pins (custom pins for XteinkX4, not hardware SPI defaults)
-#define EPD_SCLK 8   // SPI Clock
-#define EPD_MOSI 10  // SPI MOSI (Master Out Slave In)
-#define EPD_CS 21    // Chip Select
-#define EPD_DC 4     // Data/Command
-#define EPD_RST 5    // Reset
+// Display SPI pins (X4 Pro hardware SPI pins)
+#define EPD_SCLK 12  // SPI Clock
+#define EPD_MOSI 11  // SPI MOSI (Master Out Slave In)
+#define EPD_CS 13    // Chip Select
+#define EPD_DC 18    // Data/Command
+#define EPD_RST 14   // Reset
 #define EPD_BUSY 6   // Busy
 
 #define SPI_MISO 7  // SPI MISO, shared between SD card and display (Master In Slave Out)
@@ -28,9 +28,9 @@
 #define BQ27220_CUR_REG 0x0C   // Current() command code (signed mA)
 #define BQ27220_VOLT_REG 0x08  // Voltage() command code (mV)
 
-// Analog DS3231 RTC I2C
-#define I2C_ADDR_DS3231 0x68  // RTC I2C address
-#define DS3231_SEC_REG 0x00   // Seconds command code (BCD)
+// BM8563 RTC I2C
+#define I2C_ADDR_BM8563 0x51  // RTC I2C address
+#define BM8563_SEC_REG 0x02   // Seconds register (BCD)
 
 // QST QMI8658 IMU I2C
 #define I2C_ADDR_QMI8658 0x6B        // IMU I2C address

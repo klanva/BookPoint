@@ -329,8 +329,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         // battery measurements before it can become the default.
         SettingInfo::Toggle(StrId::STR_LIGHT_SLEEP_IDLE, &CrossPointSettings::lightSleepIdle, "lightSleepIdle",
                             StrId::STR_CAT_SYSTEM),
-        // Time. Works on both device classes: X3 via the DS3231 RTC, X4 via
-        // the NTP-set software clock.
+        // Time. Hardware RTC (BM8563 on X4 Pro) or NTP-set software clock.
         SettingInfo::Enum(StrId::STR_CLOCK_FORMAT, &CrossPointSettings::clockFormat,
                           {StrId::STR_CLOCK_FORMAT_24H, StrId::STR_CLOCK_FORMAT_12H}, "clockFormat",
                           StrId::STR_CAT_SYSTEM),
