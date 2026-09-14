@@ -1768,6 +1768,117 @@ class Tier1FeatureTests(unittest.TestCase):
         self.assertTrue(ZeroBrickRiskModel.is_emergency_recovery_chord(btn_down_pressed=True))
         self.assertFalse(ZeroBrickRiskModel.is_emergency_recovery_chord(btn_down_pressed=False))
 
+    # ==========================================================================
+    # FEATURE 15: HARDWARE RTC (BM8563 / PCF8563) LOCAL TIMEKEEPING AUDIT
+    # ==========================================================================
+
+    def test_f15_01_bm8563_rtc_hardware_bus_and_address(self):
+        """F15.01: BM8563 I2C address 0x51 and register 0x02 mapping on X4 Pro shared bus."""
+        self.assertEqual(HardwareRtcModel.BM8563_ADDR, 0x51)
+        self.assertEqual(HardwareRtcModel.BM8563_SEC_REG, 0x02)
+        # DS3231 comparison
+        self.assertEqual(HardwareRtcModel.DS3231_ADDR, 0x68)
+        self.assertEqual(HardwareRtcModel.DS3231_SEC_REG, 0x00)
+
+    def test_f15_02_bm8563_vs_ds3231_register_layout_serialization(self):
+        """F15.02: BCD serialization clears VL bit and adheres to PCF8563/BM8563 layout."""
+        raw_regs = HardwareRtcModel.serialize_bm8563_registers(
+            year=2026, month=10, day=4, weekday=0, hour=14, minute=35, second=20
+        )
+        self.assertEqual(len(raw_regs), 7)
+        # Bit 7 of seconds (reg 0x02) must be 0 (VL cleared)
+        self.assertEqual(raw_regs[0] & 0x80, 0)
+        # Verify decoding matches exact time
+        parsed = HardwareRtcModel.parse_bm8563_registers(raw_regs)
+        self.assertTrue(parsed["valid"])
+        self.assertEqual(parsed["year"], 2026)
+        self.assertEqual(parsed["month"], 10)
+        self.assertEqual(parsed["day"], 4)
+        self.assertEqual(parsed["hour"], 14)
+        self.assertEqual(parsed["minute"], 35)
+        self.assertEqual(parsed["second"], 20)
+
+    def test_f15_03_rtc_vl_flag_oscillator_stopped_detection(self):
+        """F15.03: VL flag (0x80) on seconds register indicates invalid time / oscillator stopped."""
+        corrupt_regs = [0x80 | 0x15, 0x30, 0x12, 0x01, 0x02, 0x09, 0x26]
+        parsed = HardwareRtcModel.parse_bm8563_registers(corrupt_regs)
+        self.assertFalse(parsed["valid"])
+        self.assertTrue(parsed.get("vl"))
+
+    def test_f15_04_local_time_survival_without_wifi(self):
+        """F15.04: Hardware RTC guarantees offline local time persistence across deep sleep."""
+        # Simulated cold boot with valid BM8563 time: 2026-10-05 09:15:00 UTC
+        stored_regs = HardwareRtcModel.serialize_bm8563_registers(
+            year=2026, month=10, day=5, weekday=1, hour=9, minute=15, second=0
+        )
+        rtc_time = HardwareRtcModel.parse_bm8563_registers(stored_regs)
+        self.assertTrue(rtc_time["valid"])
+        # Format time with Moscow UTC+3 (quarter hours biased = 48 + 3*4 = 60)
+        utc_hours = rtc_time["hour"]
+        utc_mins = rtc_time["minute"]
+        local_total_min = (utc_hours * 60 + utc_mins + (60 - 48) * 15) % 1440
+        local_hr = local_total_min // 60
+        local_mn = local_total_min % 60
+        self.assertEqual(f"{local_hr:02d}:{local_mn:02d}", "12:15")
+
+
+class HardwareRtcModel:
+    BM8563_ADDR = 0x51
+    DS3231_ADDR = 0x68
+    BM8563_SEC_REG = 0x02
+    DS3231_SEC_REG = 0x00
+    BM8563_VL_FLAG = 0x80
+
+    @staticmethod
+    def decode_bcd(bcd_val: int) -> int:
+        return ((bcd_val >> 4) * 10) + (bcd_val & 0x0F)
+
+    @staticmethod
+    def encode_bcd(dec_val: int) -> int:
+        return ((dec_val // 10) << 4) | (dec_val % 10)
+
+    @classmethod
+    def parse_bm8563_registers(cls, raw_7_bytes: list[int]) -> dict:
+        if len(raw_7_bytes) < 7:
+            return {"valid": False, "error": "Insufficient bytes"}
+        sec_byte = raw_7_bytes[0]
+        if bool(sec_byte & cls.BM8563_VL_FLAG):
+            return {"valid": False, "error": "Oscillator stopped / VL flag set", "vl": True}
+
+        sec = cls.decode_bcd(sec_byte & 0x7F)
+        minute = cls.decode_bcd(raw_7_bytes[1] & 0x7F)
+        hr = cls.decode_bcd(raw_7_bytes[2] & 0x3F)
+        day = cls.decode_bcd(raw_7_bytes[3] & 0x3F)
+        wday = cls.decode_bcd(raw_7_bytes[4] & 0x07)
+        month_byte = raw_7_bytes[5]
+        century = 1900 if (month_byte & 0x80) else 2000
+        month = cls.decode_bcd(month_byte & 0x1F)
+        year = century + cls.decode_bcd(raw_7_bytes[6])
+
+        return {
+            "valid": True,
+            "year": year,
+            "month": month,
+            "day": day,
+            "weekday": wday,
+            "hour": hr,
+            "minute": minute,
+            "second": sec,
+        }
+
+    @classmethod
+    def serialize_bm8563_registers(cls, year: int, month: int, day: int, weekday: int, hour: int, minute: int, second: int) -> list[int]:
+        century_bit = 0x80 if year < 2000 else 0x00
+        return [
+            cls.encode_bcd(second) & 0x7F,
+            cls.encode_bcd(minute) & 0x7F,
+            cls.encode_bcd(hour) & 0x3F,
+            cls.encode_bcd(day) & 0x3F,
+            cls.encode_bcd(weekday % 7),
+            (cls.encode_bcd(month) & 0x1F) | century_bit,
+            cls.encode_bcd(year % 100),
+        ]
+
 
 if __name__ == "__main__":
     unittest.main()

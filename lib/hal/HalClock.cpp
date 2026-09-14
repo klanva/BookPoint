@@ -10,23 +10,10 @@
 
 HalClock halClock;  // Singleton instance
 
-// DS3231 register layout (BCD encoded):
-//   0x00: Seconds  (bits 6-4 = tens, bits 3-0 = ones)
-//   0x01: Minutes  (bits 6-4 = tens, bits 3-0 = ones)
-//   0x02: Hours    (bit 6 = 12/24 mode, bits 5-4 = tens, bits 3-0 = ones)
-//   0x03: Day      (1-7, not used for display)
-//   0x04: Date     (day of month)
-//   0x05: Month    (bit 7 = century, bits 4-0 = month)
-//   0x06: Year     (00-99, interpreted as 2000-2099)
-
-static uint8_t bcdToDec(uint8_t bcd) { return ((bcd >> 4) * 10) + (bcd & 0x0F); }
-static uint8_t decToBcd(uint8_t dec) { return ((dec / 10) << 4) | (dec % 10); }
-
 namespace {
 constexpr uint16_t kBaseYear = 2000;
-// Software clock (X4) reads are considered "unsynced" below this epoch value
-// (2024-01-01 00:00:00 UTC) — the ESP32 boots with its internal clock near zero,
-// so this filters out that default before the first successful NTP sync.
+// Software clock reads are considered "unsynced" below this epoch value
+// (2024-01-01 00:00:00 UTC) — filters out the boot default before sync.
 constexpr time_t kMinValidEpoch = 1704067200;
 constexpr const char* kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -74,106 +61,134 @@ void adjustDateByDays(uint16_t& year, uint8_t& month, uint8_t& day, const int da
     }
   }
 }
+
+// Convert UTC calendar components to epoch seconds (POSIX timegm equivalent)
+time_t calendarToEpochUtc(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute, uint8_t second) {
+  if (!isValidDate(year, month, day) || hour >= 24 || minute >= 60 || second >= 60) return 0;
+  static const uint16_t kDaysBeforeMonth[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+  uint32_t days = 0;
+  for (uint16_t y = 1970; y < year; ++y) {
+    days += isLeapYear(y) ? 366 : 365;
+  }
+  days += kDaysBeforeMonth[month - 1];
+  if (month > 2 && isLeapYear(year)) {
+    days += 1;
+  }
+  days += (day - 1);
+  return static_cast<time_t>(days * 86400ULL + hour * 3600ULL + minute * 60ULL + second);
+}
+
 }  // namespace
 
 void HalClock::begin() {
   const auto& sensors = BoardConfig::ACTIVE.sensors;
-  const bool hasHwRtc = (sensors.rtcType == BoardConfig::RtcType::Pcf8563 || gpio.deviceIsX3());
+  const bool hasHwRtc = (sensors.rtcAddr != 0 && sensors.rtcType != BoardConfig::RtcType::None) || gpio.deviceIsX3();
+
   if (!hasHwRtc) {
-    // Fall back to a software clock backed by the ESP32's internal timekeeping.
     _useHardwareRtc = false;
     _available = true;
-    LOG_INF("CLK", "No hardware RTC on this device - using software clock");
+    LOG_INF("CLK", "No hardware RTC on this device profile - using software clock");
     return;
   }
 
-  _useHardwareRtc = true;
-  const uint8_t rtcAddr = sensors.rtcAddr != 0 ? sensors.rtcAddr : I2C_ADDR_DS3231;
-  const uint8_t regSec = (sensors.rtcType == BoardConfig::RtcType::Pcf8563) ? 0x02 : DS3231_SEC_REG;
+  // Attempt to bring up the hardware RTC driver (BM8563/PCF8563 at 0x51 on X4 Pro, DS3231 at 0x68 on X3)
+  if (_rtc.begin()) {
+    _useHardwareRtc = true;
+    _available = true;
+    const uint8_t rtcAddr = sensors.rtcAddr != 0 ? sensors.rtcAddr : 0x68;
+    LOG_INF("CLK", "Hardware RTC found and initialized at I2C 0x%02X", rtcAddr);
 
-  // Probe the RTC by reading the seconds register.
-  Wire.beginTransmission(rtcAddr);
-  Wire.write(regSec);
-  if (Wire.endTransmission(false) != 0) {
-    LOG_INF("CLK", "Hardware RTC not found at 0x%02X", rtcAddr);
-    _available = false;
-    return;
-  }
-  Wire.requestFrom(rtcAddr, (uint8_t)1);
-  if (Wire.available() < 1) {
-    _available = false;
-    return;
-  }
-  Wire.read();  // discard — just testing connectivity
+    // Read initial date/time from hardware RTC
+    freeink::Rtc::DateTime dt;
+    if (_rtc.now(dt) && isValidDate(dt.year, dt.month, dt.day)) {
+      _cachedHour = dt.hour;
+      _cachedMinute = dt.minute;
+      _cachedYear = dt.year;
+      _cachedMonth = dt.month;
+      _cachedDay = dt.day;
+      _hasCachedTime = true;
+      _hasCachedDate = true;
+      _lastPollMs = millis();
+      _usingFallbackTime = false;
 
+      // Immediately synchronize ESP32 system time from hardware RTC
+      const time_t epochUtc = calendarToEpochUtc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+      if (epochUtc >= kMinValidEpoch) {
+        struct timeval tv {};
+        tv.tv_sec = epochUtc;
+        tv.tv_usec = 0;
+        settimeofday(&tv, nullptr);
+        LOG_INF("CLK", "System clock synchronized from hardware RTC: %04d-%02d-%02d %02d:%02d:%02d UTC",
+                dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+      }
+      return;
+    } else {
+      LOG_INF("CLK", "Hardware RTC present at 0x%02X, but oscillator stopped or time uninitialized", rtcAddr);
+      _usingFallbackTime = true;
+      return;
+    }
+  }
+
+  // Hardware RTC failed to ACK on the bus — fall back to software clock
+  LOG_ERR("CLK", "Hardware RTC at 0x%02X did not ACK - falling back to software clock", sensors.rtcAddr);
+  _useHardwareRtc = false;
   _available = true;
-  LOG_INF("CLK", "Hardware RTC found at 0x%02X", rtcAddr);
-
-  // Prime the cache with an initial read
-  uint8_t h, m;
-  getTime(h, m);
 }
 
 bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
   if (!_available) return false;
 
-  if (!_useHardwareRtc) {
-    const time_t now = time(nullptr);
-    if (now < kMinValidEpoch) return false;  // not synced yet
-    struct tm timeinfo;
-    gmtime_r(&now, &timeinfo);
-    hour = static_cast<uint8_t>(timeinfo.tm_hour);
-    minute = static_cast<uint8_t>(timeinfo.tm_min);
-    return true;
-  }
-
   const unsigned long now = millis();
-  if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS) {
-    hour = _cachedHour;
-    minute = _cachedMinute;
-    return true;
+
+  if (_useHardwareRtc) {
+    if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS && _hasCachedTime) {
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+
+    freeink::Rtc::DateTime dt;
+    if (const_cast<freeink::Rtc&>(_rtc).now(dt)) {
+      _cachedHour = dt.hour;
+      _cachedMinute = dt.minute;
+      _cachedYear = dt.year;
+      _cachedMonth = dt.month;
+      _cachedDay = dt.day;
+      _hasCachedTime = true;
+      _hasCachedDate = isValidDate(dt.year, dt.month, dt.day);
+      _lastPollMs = now;
+      _usingFallbackTime = false;
+
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+
+    if (_hasCachedTime) {
+      _lastPollMs = now;
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+
+    const time_t sysNow = time(nullptr);
+    if (sysNow >= kMinValidEpoch) {
+      struct tm timeinfo;
+      gmtime_r(&sysNow, &timeinfo);
+      hour = static_cast<uint8_t>(timeinfo.tm_hour);
+      minute = static_cast<uint8_t>(timeinfo.tm_min);
+      return true;
+    }
+    return false;
   }
 
-  // Read 3 bytes starting at register 0x00: seconds, minutes, hours
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);
-  if (Wire.endTransmission(false) != 0) {
-    if (!_hasCachedTime) return false;
-    _lastPollMs = now;
-    hour = _cachedHour;
-    minute = _cachedMinute;
-    return true;
-  }
-  Wire.requestFrom(I2C_ADDR_DS3231, (uint8_t)3);
-  if (Wire.available() < 3) {
-    if (!_hasCachedTime) return false;
-    _lastPollMs = now;
-    hour = _cachedHour;
-    minute = _cachedMinute;
-    return true;
-  }
-
-  Wire.read();  // seconds — not needed
-  const uint8_t rawMin = Wire.read();
-  const uint8_t rawHour = Wire.read();
-
-  _cachedMinute = bcdToDec(rawMin & 0x7F);
-  // Handle 12/24h mode: bit 6 high = 12h mode
-  if (rawHour & 0x40) {
-    // 12h mode: bit 5 = PM, bits 4-0 = hours (1-12)
-    uint8_t h12 = bcdToDec(rawHour & 0x1F);
-    bool pm = rawHour & 0x20;
-    if (h12 == 12) h12 = 0;
-    _cachedHour = pm ? (h12 + 12) : h12;
-  } else {
-    // 24h mode: bits 5-0 = hours (0-23)
-    _cachedHour = bcdToDec(rawHour & 0x3F);
-  }
-  _lastPollMs = now;
-  _hasCachedTime = true;
-
-  hour = _cachedHour;
-  minute = _cachedMinute;
+  // Software clock mode (no hardware RTC)
+  const time_t sysNow = time(nullptr);
+  if (sysNow < kMinValidEpoch) return false;
+  struct tm timeinfo;
+  gmtime_r(&sysNow, &timeinfo);
+  hour = static_cast<uint8_t>(timeinfo.tm_hour);
+  minute = static_cast<uint8_t>(timeinfo.tm_min);
   return true;
 }
 
@@ -207,84 +222,73 @@ bool HalClock::formatTime(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHou
 bool HalClock::getDate(uint16_t& year, uint8_t& month, uint8_t& day, uint8_t& hour, uint8_t& minute) const {
   if (!_available) return false;
 
-  if (!_useHardwareRtc) {
-    const time_t now = time(nullptr);
-    if (now < kMinValidEpoch) return false;  // not synced yet
-    struct tm timeinfo;
-    gmtime_r(&now, &timeinfo);
-    year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
-    month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
-    day = static_cast<uint8_t>(timeinfo.tm_mday);
-    hour = static_cast<uint8_t>(timeinfo.tm_hour);
-    minute = static_cast<uint8_t>(timeinfo.tm_min);
-    return true;
-  }
-
   const unsigned long now = millis();
-  if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS && _hasCachedDate) {
-    year = _cachedYear;
-    month = _cachedMonth;
-    day = _cachedDay;
-    hour = _cachedHour;
-    minute = _cachedMinute;
-    return true;
+
+  if (_useHardwareRtc) {
+    if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS && _hasCachedDate) {
+      year = _cachedYear;
+      month = _cachedMonth;
+      day = _cachedDay;
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+
+    freeink::Rtc::DateTime dt;
+    if (const_cast<freeink::Rtc&>(_rtc).now(dt) && isValidDate(dt.year, dt.month, dt.day)) {
+      _cachedHour = dt.hour;
+      _cachedMinute = dt.minute;
+      _cachedYear = dt.year;
+      _cachedMonth = dt.month;
+      _cachedDay = dt.day;
+      _hasCachedTime = true;
+      _hasCachedDate = true;
+      _lastPollMs = now;
+      _usingFallbackTime = false;
+
+      year = _cachedYear;
+      month = _cachedMonth;
+      day = _cachedDay;
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+
+    if (_hasCachedDate) {
+      _lastPollMs = now;
+      year = _cachedYear;
+      month = _cachedMonth;
+      day = _cachedDay;
+      hour = _cachedHour;
+      minute = _cachedMinute;
+      return true;
+    }
+
+    const time_t sysNow = time(nullptr);
+    if (sysNow >= kMinValidEpoch) {
+      struct tm timeinfo;
+      gmtime_r(&sysNow, &timeinfo);
+      year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+      month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
+      day = static_cast<uint8_t>(timeinfo.tm_mday);
+      hour = static_cast<uint8_t>(timeinfo.tm_hour);
+      minute = static_cast<uint8_t>(timeinfo.tm_min);
+      return isValidDate(year, month, day);
+    }
+    return false;
   }
 
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);
-  if (Wire.endTransmission(false) != 0) {
-    if (!_hasCachedDate) return false;
-    _lastPollMs = now;
-    year = _cachedYear;
-    month = _cachedMonth;
-    day = _cachedDay;
-    hour = _cachedHour;
-    minute = _cachedMinute;
-    return true;
-  }
-  Wire.requestFrom(I2C_ADDR_DS3231, (uint8_t)7);
-  if (Wire.available() < 7) {
-    if (!_hasCachedDate) return false;
-    _lastPollMs = now;
-    year = _cachedYear;
-    month = _cachedMonth;
-    day = _cachedDay;
-    hour = _cachedHour;
-    minute = _cachedMinute;
-    return true;
-  }
-
-  Wire.read();  // seconds
-  const uint8_t rawMin = Wire.read();
-  const uint8_t rawHour = Wire.read();
-  Wire.read();  // weekday
-  const uint8_t rawDay = Wire.read();
-  const uint8_t rawMonth = Wire.read();
-  const uint8_t rawYear = Wire.read();
-
-  _cachedMinute = bcdToDec(rawMin & 0x7F);
-  if (rawHour & 0x40) {
-    uint8_t h12 = bcdToDec(rawHour & 0x1F);
-    const bool pm = rawHour & 0x20;
-    if (h12 == 12) h12 = 0;
-    _cachedHour = pm ? (h12 + 12) : h12;
-  } else {
-    _cachedHour = bcdToDec(rawHour & 0x3F);
-  }
-  _cachedYear = kBaseYear + bcdToDec(rawYear);
-  _cachedMonth = bcdToDec(rawMonth & 0x1F);
-  _cachedDay = bcdToDec(rawDay & 0x3F);
-  _lastPollMs = now;
-  _hasCachedTime = true;
-  _hasCachedDate = isValidDate(_cachedYear, _cachedMonth, _cachedDay);
-
-  if (!_hasCachedDate) return false;
-  year = _cachedYear;
-  month = _cachedMonth;
-  day = _cachedDay;
-  hour = _cachedHour;
-  minute = _cachedMinute;
-  return true;
+  // Software clock mode
+  const time_t sysNow = time(nullptr);
+  if (sysNow < kMinValidEpoch) return false;
+  struct tm timeinfo;
+  gmtime_r(&sysNow, &timeinfo);
+  year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+  month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
+  day = static_cast<uint8_t>(timeinfo.tm_mday);
+  hour = static_cast<uint8_t>(timeinfo.tm_hour);
+  minute = static_cast<uint8_t>(timeinfo.tm_min);
+  return isValidDate(year, month, day);
 }
 
 bool HalClock::formatDate(char* buf, size_t bufSize, uint8_t utcOffsetQuarterHoursBiased) const {
@@ -312,23 +316,33 @@ bool HalClock::writeDateTimeToRTC(uint16_t year, uint8_t month, uint8_t day, uin
   assert(minute < 60);
   assert(second < 60);
   assert(isValidDate(year, month, day));
-  assert(weekday >= 1 && weekday <= 7);
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);    // Start at register 0x00
-  Wire.write(decToBcd(second));  // 0x00: Seconds
-  Wire.write(decToBcd(minute));  // 0x01: Minutes
-  Wire.write(decToBcd(hour));    // 0x02: Hours (24h mode, bit 6 = 0)
-  Wire.write(decToBcd(weekday));
-  Wire.write(decToBcd(day));
-  Wire.write(decToBcd(month));
-  Wire.write(decToBcd(static_cast<uint8_t>(year - kBaseYear)));
-  if (Wire.endTransmission() != 0) {
-    LOG_ERR("CLK", "Failed to write date/time to DS3231");
+
+  if (!_useHardwareRtc) return false;
+
+  freeink::Rtc::DateTime dt;
+  dt.year = year;
+  dt.month = month;
+  dt.day = day;
+  dt.weekday = weekday % 7;
+  dt.hour = hour;
+  dt.minute = minute;
+  dt.second = second;
+
+  if (!_rtc.set(dt)) {
+    LOG_ERR("CLK", "Failed to write date/time to hardware RTC");
     return false;
   }
 
-  // Invalidate cache so next read fetches fresh data
-  _lastPollMs = 0;
+  // Synchronize ESP32 internal system clock to match
+  const time_t epochUtc = calendarToEpochUtc(year, month, day, hour, minute, second);
+  if (epochUtc >= kMinValidEpoch) {
+    struct timeval tv {};
+    tv.tv_sec = epochUtc;
+    tv.tv_usec = 0;
+    settimeofday(&tv, nullptr);
+  }
+
+  _lastPollMs = millis();
   _cachedHour = hour;
   _cachedMinute = minute;
   _cachedYear = year;
@@ -336,22 +350,57 @@ bool HalClock::writeDateTimeToRTC(uint16_t year, uint8_t month, uint8_t day, uin
   _cachedDay = day;
   _hasCachedTime = true;
   _hasCachedDate = true;
+  _usingFallbackTime = false;
   return true;
 }
 
+bool HalClock::setDateTime(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute, uint8_t second) {
+  if (!isValidDate(year, month, day) || hour >= 24 || minute >= 60 || second >= 60) return false;
+
+  // Sakamoto's algorithm: calculate day of week (0=Sunday .. 6=Saturday)
+  static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+  int y = year - (month < 3);
+  uint8_t weekday = static_cast<uint8_t>((y + y/4 - y/100 + y/400 + t[month-1] + day) % 7);
+
+  if (_useHardwareRtc) {
+    return writeDateTimeToRTC(year, month, day, weekday, hour, minute, second);
+  }
+
+  const time_t epochUtc = calendarToEpochUtc(year, month, day, hour, minute, second);
+  if (epochUtc >= kMinValidEpoch) {
+    struct timeval tv {};
+    tv.tv_sec = epochUtc;
+    tv.tv_usec = 0;
+    settimeofday(&tv, nullptr);
+    _lastPollMs = millis();
+    _cachedHour = hour;
+    _cachedMinute = minute;
+    _cachedYear = year;
+    _cachedMonth = month;
+    _cachedDay = day;
+    _hasCachedTime = true;
+    _hasCachedDate = true;
+    _usingFallbackTime = false;
+    return true;
+  }
+  return false;
+}
+
 bool HalClock::seedFallbackTime(time_t epochUtc) {
-  if (_useHardwareRtc) return false;  // X3 has a real battery-backed RTC; never needed.
-  if (epochUtc < kMinValidEpoch) return false;  // guard against a corrupt/zero persisted value.
+  if (_useHardwareRtc && !_usingFallbackTime && _hasCachedTime) {
+    return false;  // Physical RTC already has running, reliable time
+  }
+  if (epochUtc < kMinValidEpoch) return false;
 
   const time_t now = time(nullptr);
-  if (now >= kMinValidEpoch) return false;  // already have a real value this boot - don't clobber it.
+  if (now >= kMinValidEpoch && !_usingFallbackTime) return false;
 
   struct timeval tv {};
   tv.tv_sec = epochUtc;
   tv.tv_usec = 0;
   settimeofday(&tv, nullptr);
   _usingFallbackTime = true;
-  LOG_INF("CLK", "No NTP sync yet this boot - seeded software clock from last known synced time");
+  LOG_INF("CLK", "Seeded clock from persisted fallback time");
   return true;
 }
 
@@ -377,23 +426,23 @@ bool HalClock::syncFromNTP() {
       const uint16_t year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
       const uint8_t month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
       const uint8_t day = static_cast<uint8_t>(timeinfo.tm_mday);
-      const uint8_t weekday = static_cast<uint8_t>(timeinfo.tm_wday + 1);
+      const uint8_t weekday = static_cast<uint8_t>(timeinfo.tm_wday);
 
-      if (!_useHardwareRtc) {
-        // X4: SNTP already set the ESP32's internal clock, which is what getTime()/getDate()
-        // read from directly. There is no DS3231 to write to.
+      if (_useHardwareRtc) {
+        if (writeDateTimeToRTC(year, month, day, weekday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec)) {
+          LOG_INF("CLK", "Hardware RTC synchronized to %04d-%02d-%02d %02d:%02d:%02d UTC", year, month, day,
+                  timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+          _usingFallbackTime = false;
+          return true;
+        }
+        LOG_ERR("CLK", "Failed to write NTP time to hardware RTC");
+        return false;
+      } else {
         _usingFallbackTime = false;
         LOG_INF("CLK", "System clock set to %04d-%02d-%02d %02d:%02d:%02d UTC (software clock)", year, month, day,
                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
         return true;
       }
-
-      if (writeDateTimeToRTC(year, month, day, weekday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec)) {
-        LOG_INF("CLK", "RTC set to %04d-%02d-%02d %02d:%02d:%02d UTC", year, month, day, timeinfo.tm_hour,
-                timeinfo.tm_min, timeinfo.tm_sec);
-        return true;
-      }
-      return false;
     }
     delay(100);
   }
@@ -401,3 +450,4 @@ bool HalClock::syncFromNTP() {
   LOG_ERR("CLK", "NTP sync timed out");
   return false;
 }
+
