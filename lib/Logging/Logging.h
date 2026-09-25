@@ -32,12 +32,11 @@ won't trigger deprecation warnings.
 #endif
 
 #if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
-static HWCDC& logSerial = Serial;
 #define LOG_SERIAL_HAS_TX_TIMEOUT 1
 #else
-static HardwareSerial& logSerial = Serial;
 #define LOG_SERIAL_HAS_TX_TIMEOUT 0
 #endif
+static decltype(Serial)& logSerial = Serial;
 
 void logPrintf(const char* level, const char* origin, const char* format, ...);
 

@@ -31,6 +31,7 @@ enum class SettingAction {
   Games,
   Autonomy,
   SystemInfo,
+  RecoveryEscapeHatch,
   // Hierarchical Submenus
   DisplaySleepScreen,
   ReaderFontLayout,
@@ -256,6 +257,8 @@ class SettingsActivity final : public UiTabListActivity {
 
   void enterCategory(int categoryIndex);
   void toggleCurrentSetting();
+  void onSettingSelected(SettingAction action);
+  bool triggerRecoveryReboot();
   void openSleepTimeoutPicker();
   void rebuildSettingsLists();
   void syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged);

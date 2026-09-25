@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <BoardConfig.h>
+#include <RecoveryBoot.h>
 #include <Epub.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
@@ -442,6 +443,7 @@ void attemptSilentBootTimeSync(const BootTimeSyncCandidate& candidate) {
 }
 
 void setup() {
+  freeink::recovery::checkBootCombo();
   BoardConfig::holdPowerRails();
 
   t1 = millis();

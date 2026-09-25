@@ -641,3 +641,7 @@ STR_CONTROL_CENTER: "Control Center"
 STR_QUICK_ACCESS: "Quick Access"
 STR_LIBRARY: "Library"
 STR_TYPOGRAPHY: "Typography"
+STR_RECOVERY_ESCAPE_HATCH: "Recovery Mode (Escape Hatch)"
+STR_RECOVERY_ESCAPE_HATCH_PROMPT: "Reboot device into Escape Hatch recovery loader?"
+STR_RECOVERY_ESCAPE_HATCH_FAILED: "Failed to switch: partition is invalid or missing"
+

@@ -640,3 +640,7 @@ STR_CONTROL_CENTER: "Центр управления"
 STR_QUICK_ACCESS: "Быстрый доступ"
 STR_LIBRARY: "Библиотека"
 STR_TYPOGRAPHY: "Типографика"
+STR_RECOVERY_ESCAPE_HATCH: "Режим восстановления (Escape Hatch)"
+STR_RECOVERY_ESCAPE_HATCH_PROMPT: "Перезагрузить устройство в аварийный загрузчик Escape Hatch?"
+STR_RECOVERY_ESCAPE_HATCH_FAILED: "Не удалось переключиться: раздел повреждён или отсутствует"
+

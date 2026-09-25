@@ -31,7 +31,7 @@ constexpr UIIcon menuIcons[NetworkModeSelectionActivity::MENU_ITEM_COUNT] = {
     UIIcon::Library,
     UIIcon::Hotspot,
 #if FREEINK_CAP_USB_MSC
-    UIIcon::Usb,
+    UIIcon::Transfer,
 #endif
 };
 }  // namespace

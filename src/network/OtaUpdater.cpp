@@ -17,6 +17,11 @@
 
 #include "FirmwareBoardTag.h"
 #include "FirmwareFlasher.h"
+#include "network/OtaBootSwitch.h"
+
+#ifndef LOG_I
+#define LOG_I LOG_INF
+#endif
 
 namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/klanva/BookPoint/releases/latest";
@@ -226,15 +231,33 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   esp_err = esp_ota_end(otaHandle);  // verifies the written image
   if (esp_err != ESP_OK) {
     LOG_ERR("OTA", "esp_ota_end failed: %s", esp_err_to_name(esp_err));
+    if (esp_err != ESP_ERR_OTA_VALIDATE_FAILED) {
+      return INTERNAL_UPDATE_ERROR;
+    }
+  }
+
+  // 1) Validate that updatePartition starts with executable magic byte 0xE9
+  uint8_t magic = 0;
+  if (esp_partition_read(updatePartition, 0, &magic, 1) != ESP_OK || magic != 0xE9) {
+    LOG_ERR("OTA", "Destination partition missing 0xE9 magic byte (read 0x%02X)", magic);
     return INTERNAL_UPDATE_ERROR;
   }
 
+  // 2) Attempt esp_ota_set_boot_partition(updatePartition)
   esp_err = esp_ota_set_boot_partition(updatePartition);
   if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "esp_ota_set_boot_partition failed: %s", esp_err_to_name(esp_err));
-    return INTERNAL_UPDATE_ERROR;
+    LOG_ERR("OTA", "esp_ota_set_boot_partition failed: %s (Issue #1918), falling back to ota_boot::switchTo",
+            esp_err_to_name(esp_err));
+    // 3) Fallback to ota_boot::switchTo(updatePartition) matching FirmwareFlasher.cpp:350-354
+    if (!ota_boot::switchTo(updatePartition)) {
+      LOG_ERR("OTA", "otadata switch failed");
+      return INTERNAL_UPDATE_ERROR;
+    }
+    // 4) Log informative diagnostic message
+    LOG_I("OtaUpdater", "Partition switch finalized via ota_boot::switchTo");
   }
 
+  // 5) Return OtaUpdater::OK upon successful slot repoint
   LOG_INF("OTA", "Update completed");
   return OK;
 }

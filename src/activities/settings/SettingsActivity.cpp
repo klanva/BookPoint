@@ -10,6 +10,14 @@
 #include <cstring>
 #include <optional>
 
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include <esp_system.h>
+#include "network/OtaBootSwitch.h"
+#endif
+
+
 #include "ButtonRemapActivity.h"
 #include "ClearCacheActivity.h"
 #include "ClockOffsetActivity.h"
@@ -303,6 +311,8 @@ void SettingsActivity::rebuildSettingsLists() {
   systemUpdateLanguageSettings.push_back(SettingInfo::Action(StrId::STR_CHECK_UPDATES, SettingAction::CheckForUpdates));
   systemUpdateLanguageSettings.push_back(
       SettingInfo::Action(StrId::STR_SD_FIRMWARE_UPDATE, SettingAction::SdFirmwareUpdate));
+  systemUpdateLanguageSettings.push_back(
+      SettingInfo::Action(StrId::STR_RECOVERY_ESCAPE_HATCH, SettingAction::RecoveryEscapeHatch));
 
   // Root System: TOP ITEM (#1) IS SYSTEM DIAGNOSTICS
   systemSettings.push_back(SettingInfo::Action(StrId::STR_SYSTEM_INFO, SettingAction::SystemInfo));
@@ -313,6 +323,9 @@ void SettingsActivity::rebuildSettingsLists() {
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CLOCK_UTC_OFFSET, SettingAction::ClockUtcOffset));
   systemSettings.push_back(SettingInfo::Action(StrId::STR_CLOCK_SYNC, SettingAction::ClockSync));
   if (auto s = findSettingByPtr(&CrossPointSettings::batteryLogEnabled)) systemSettings.push_back(*s);
+  systemSettings.push_back(
+      SettingInfo::Action(StrId::STR_RECOVERY_ESCAPE_HATCH, SettingAction::RecoveryEscapeHatch));
+
 
   setCurrentSettingsForCategory();
   rebuildRowItems();
@@ -618,6 +631,9 @@ void SettingsActivity::toggleCurrentSetting() {
       case SettingAction::SystemInfo:
         startActivityForResult(std::make_unique<SystemInformationActivity>(renderer, mappedInput), resultHandler);
         break;
+      case SettingAction::RecoveryEscapeHatch:
+        onSettingSelected(setting.action);
+        break;
       default:
         break;
     }
@@ -631,6 +647,68 @@ void SettingsActivity::toggleCurrentSetting() {
   rebuildSettingsLists();
   applyUiSettingChange(setting.valuePtr);
   activeNav().selected = std::min(ringPos(), settingsCount);
+}
+
+void SettingsActivity::onSettingSelected(SettingAction action) {
+  switch (action) {
+    case SettingAction::RecoveryEscapeHatch: {
+      const char* options[] = {I18N.get(StrId::STR_CANCEL), I18N.get(StrId::STR_CONFIRM)};
+      optionPopup.show(tr(STR_RECOVERY_ESCAPE_HATCH_PROMPT), options, 2, 0, [this](int idx) {
+        if (idx == 1) {
+          if (!triggerRecoveryReboot()) {
+            const char* okOption[] = {I18N.get(StrId::STR_CONFIRM)};
+            optionPopup.show(tr(STR_RECOVERY_ESCAPE_HATCH_FAILED), okOption, 1, 0, [](int) {});
+            requestUpdate();
+          }
+        }
+      });
+      requestUpdate();
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+bool SettingsActivity::triggerRecoveryReboot() {
+#if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
+  // 1) Locate partition ota_0 (ESP_PARTITION_SUBTYPE_APP_OTA_0)
+  const esp_partition_t* hatch =
+      esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, nullptr);
+  if (!hatch) {
+    LOG_ERR("RECOVERY", "ota_0 partition not found in partition table");
+    return false;
+  }
+
+  // 2) Verify image magic byte 0xE9 at partition offset 0
+  uint8_t magic = 0;
+  if (esp_partition_read(hatch, 0, &magic, sizeof(magic)) != ESP_OK || magic != 0xE9) {
+    LOG_ERR("RECOVERY", "ota_0 does not contain valid executable image (magic=0x%02X, expected 0xE9)", magic);
+    return false;
+  }
+
+  // 3) Verify not currently running from ota_0
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (running && running->address == hatch->address) {
+    LOG_INF("RECOVERY", "Device already running from ota_0 (0x%08lx)", static_cast<unsigned long>(running->address));
+    return false;
+  }
+
+  // 5) If valid, call ota_boot::switchTo(hatch), save settings via SETTINGS.saveToFile(), delay briefly (100ms), and execute esp_restart()
+  if (!ota_boot::switchTo(hatch)) {
+    LOG_ERR("RECOVERY", "ota_boot::switchTo(ota_0) failed");
+    return false;
+  }
+
+  LOG_INF("RECOVERY", "Successfully switched to ota_0. Saving settings and rebooting...");
+  SETTINGS.saveToFile();
+  delay(100);
+  esp_restart();
+  return true;
+#else
+  LOG_INF("RECOVERY", "[Simulator] triggerRecoveryReboot simulated successfully");
+  return true;
+#endif
 }
 
 void SettingsActivity::syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged) {
