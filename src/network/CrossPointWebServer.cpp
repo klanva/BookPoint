@@ -1165,16 +1165,21 @@ void CrossPointWebServer::handleGetSettings() const {
   // three built-in fonts.
   const auto& settings = getSettingsList(&sdFontSystem.registry());
 
-  server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server->send(200, "application/json", "");
-  server->sendContent("[");
+  String body;
+  body.reserve(8192);
+  body = "[";
 
   char output[512];
   constexpr size_t outputSize = sizeof(output);
   bool seenFirst = false;
+  size_t settingsCount = 0;
   JsonDocument doc;
 
   for (const auto& s : settings) {
+    if ((++settingsCount & 0x07u) == 0u) {
+      resetTaskWatchdogIfSubscribed();
+      yield();
+    }
     if (!s.key) continue;  // Skip ACTION-only entries
 
     doc.clear();
@@ -1239,18 +1244,20 @@ void CrossPointWebServer::handleGetSettings() const {
     }
 
     if (seenFirst) {
-      server->sendContent(",");
+      body += ",";
     } else {
       seenFirst = true;
     }
-    server->sendContent(output);
-    yield();                          // Yield to allow WiFi and other tasks to process during a slow send
-    resetTaskWatchdogIfSubscribed();  // Reset watchdog: each sendContent() is a blocking network write
+    body.concat(output, written);
   }
 
-  server->sendContent("]");
-  server->sendContent("");
-  LOG_DBG("WEB", "Served settings API");
+  body += "]";
+  resetTaskWatchdogIfSubscribed();
+  yield();
+  server->sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  server->send(200, "application/json", body);
+  resetTaskWatchdogIfSubscribed();
+  LOG_DBG("WEB", "Served settings API (%u bytes)", static_cast<unsigned>(body.length()));
 }
 
 void CrossPointWebServer::handlePostSettings() {
